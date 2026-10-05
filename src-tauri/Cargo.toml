@@ -1,11 +1,11 @@
 [package]
-name = "flux-studio"
+name = "flux_go"
 version = "0.1.0"
 description = "FLUX.3 图像生成与编辑工作台"
 edition = "2021"
 
 [lib]
-name = "flux_studio_lib"
+name = "flux_go_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

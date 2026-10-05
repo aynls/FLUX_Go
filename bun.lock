@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "flux-studio",
+      "name": "flux_go",
       "dependencies": {
         "@phosphor-icons/react": "^2.1.7",
         "@tauri-apps/api": "^2.9.0",

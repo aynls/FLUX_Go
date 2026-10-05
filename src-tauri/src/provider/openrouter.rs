@@ -106,7 +106,7 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
     let resp = client()
         .post(ENDPOINT)
         .bearer_auth(key)
-        .header("X-Title", "Flux Studio")
+        .header("X-Title", "FLUX_Go")
         .json(&payload)
         .send()
         .await

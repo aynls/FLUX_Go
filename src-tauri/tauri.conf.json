@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Flux Studio",
+  "productName": "FLUX_Go",
   "version": "0.1.0",
-  "identifier": "app.fluxstudio.desktop",
+  "identifier": "app.fluxgo.desktop",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Flux Studio — FLUX.3 图像工作台",
+        "title": "FLUX_Go — FLUX.3 图像工作台",
         "width": 1480,
         "height": 920,
         "minWidth": 1024,

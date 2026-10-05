@@ -151,7 +151,7 @@ pub fn credential_entry(provider: &str) -> Result<keyring::Entry, String> {
     if !matches!(provider, "bfl" | "openrouter") {
         return Err("未知提供商".into());
     }
-    keyring::Entry::new("app.fluxstudio.desktop", provider)
+    keyring::Entry::new("app.fluxgo.desktop", provider)
         .map_err(|_| "无法访问系统凭据存储".into())
 }
 
@@ -286,7 +286,7 @@ mod tests {
     #[cfg(windows)]
     fn system_credential_roundtrip_in_isolated_namespace() {
         let entry = keyring::Entry::new(
-            "app.fluxstudio.verification",
+            "app.fluxgo.verification",
             &format!(
                 "test-{}-{}",
                 std::process::id(),

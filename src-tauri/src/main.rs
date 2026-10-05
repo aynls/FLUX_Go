@@ -1,5 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    flux_studio_lib::run()
+    flux_go_lib::run()
 }

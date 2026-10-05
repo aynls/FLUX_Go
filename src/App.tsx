@@ -213,7 +213,7 @@ export default function App() {
     return { ...b, srcRect: undefined, rect: b.role === "anchor" && b.srcRect && r ? scaleRect(b.srcRect, { w: r.width, h: r.height }, draft.canvas) : b.rect };
   });
   return <div className="workbench">
-    <header className="app-header"><div className="brand"><span className="brand-mark" aria-hidden="true" /><strong>Flux Studio</strong><span className="muted">FLUX.3 Image</span></div>
+    <header className="app-header"><div className="brand"><span className="brand-mark" aria-hidden="true" /><strong>FLUX_Go</strong><span className="muted">FLUX.3 Image</span></div>
       <div className="row"><button disabled={!ready} onClick={() => { saveAllowed.current = true; commit(newDraft(prefs), true); setSelected(null); setView("canvas"); setNotice("已新建方案，原方案可撤销恢复"); }}><Plus size={15} />新建</button>
         <button disabled={!undoStack.length} onClick={undo} title="撤销 Ctrl+Z"><ArrowCounterClockwise size={16} /></button><button disabled={!redoStack.length} onClick={redo} title="重做 Ctrl+Shift+Z"><ArrowClockwise size={16} /></button>
         <button onClick={() => setSettings(true)}><GearSix size={16} />设置</button></div>

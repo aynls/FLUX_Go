@@ -1,7 +1,8 @@
 # FLUX_Go
 
 专为 FLUX 3 Image 设计的桌面图像生成与编辑工作台，通过 BFL 或 OpenRouter 使用 FLUX.3 Image，支持多张参考图、包围盒编辑、图片导出和本地历史。
-![alt text](主界面截图.png)
+![alt text](image.png)
+
 ## 启动
 
 安装 Bun、Rust 及 [Tauri 系统依赖](https://v2.tauri.app/start/prerequisites/)，然后运行：

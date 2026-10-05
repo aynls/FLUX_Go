@@ -56,5 +56,5 @@ pub fn run() {
             commands::history_delete,
         ])
         .run(tauri::generate_context!())
-        .expect("Flux Studio 启动失败");
+        .expect("FLUX_Go 启动失败");
 }
