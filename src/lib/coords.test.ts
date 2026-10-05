@@ -29,12 +29,36 @@ test("pan follows configured range and retains visible canvas at every zoom", ()
     for (const scale of [MIN_SCALE, 1, MAX_SCALE]) for (const sign of [-1, 1]) {
       const v = clampCanvasView({ scale, tx: sign * 1e8, ty: sign * 1e8 }, iw, ih, vw, vh);
       for (const [offset, span, viewport] of [[v.tx, iw * v.scale, vw], [v.ty, ih * v.scale, vh]]) {
-        expect(Math.abs(offset - (viewport - span) / 2)).toBeLessThanOrEqual(span * Math.max(0, PAN_RANGE_MULTIPLIER - 1) / 2 + EPS);
+        expect(Math.abs(offset - (viewport - span) / 2)).toBeLessThanOrEqual(Math.max(0, span - viewport) / 2 + span * Math.max(0, PAN_RANGE_MULTIPLIER - 1) / 2 + EPS);
         expect(Math.min(viewport, offset + span) - Math.max(0, offset)).toBeGreaterThanOrEqual(Math.min(MIN_VISIBLE_CANVAS_PX, viewport / 4, span) - EPS);
       }
       expect(clampCanvasView(v, iw, ih, vw, vh)).toEqual(v);
     }
   }
+});
+
+test("zoom then pan can bring all four canvas edges into the viewport", () => {
+  const cases: [number, number, number, number][] = [[1024, 1024, 1000, 600], [4000, 200, 300, 600], [200, 4000, 600, 300]];
+  for (const dims of cases) {
+    const [iw, ih, vw, vh] = dims;
+    let v = fitView(...dims);
+    v = zoomCanvasAt(v, vw / 2, vh / 2, MAX_SCALE / v.scale, ...dims);
+    const near = clampCanvasView({ ...v, tx: 1e8, ty: 1e8 }, ...dims);
+    const far = clampCanvasView({ ...v, tx: -1e8, ty: -1e8 }, ...dims);
+    for (const [start, end, span, viewport] of [[near.tx, far.tx, iw * v.scale, vw], [near.ty, far.ty, ih * v.scale, vh]]) {
+      // 向右/下拖动可查看左/上边；向左/上拖动可查看右/下边。
+      expect(start).toBeGreaterThanOrEqual(-EPS);
+      expect(start).toBeLessThanOrEqual(viewport + EPS);
+      expect(end + span).toBeGreaterThanOrEqual(-EPS);
+      expect(end + span).toBeLessThanOrEqual(viewport + EPS);
+    }
+  }
+});
+
+test("small canvas keeps its original centered pan allowance", () => {
+  const dims = [400, 200, 1000, 600] as const;
+  expect(clampCanvasView({ scale: 1, tx: -1e8, ty: -1e8 }, ...dims)).toEqual({ scale: 1, tx: 260, ty: 180 });
+  expect(clampCanvasView({ scale: 1, tx: 1e8, ty: 1e8 }, ...dims)).toEqual({ scale: 1, tx: 340, ty: 220 });
 });
 
 test("repeated zoom clamps scale and does not drift when reaching limits", () => {
@@ -68,11 +92,11 @@ describe("视图变换", () => {
     expect(v.ty).toBeCloseTo(250);
   });
 
-  test("fitView 竖图在横视口", () => {
+  test("fitView 竖图居中并遵守缩放下限", () => {
     const v = fitView(500, 2000, 1000, 500, 0);
-    expect(v.scale).toBeCloseTo(0.25);
-    expect(v.tx).toBeCloseTo((1000 - 125) / 2);
-    expect(v.ty).toBeCloseTo(0);
+    expect(v.scale).toBe(MIN_SCALE);
+    expect(v.tx).toBeCloseTo((1000 - 500 * MIN_SCALE) / 2);
+    expect(v.ty).toBeCloseTo((500 - 2000 * MIN_SCALE) / 2);
   });
 
   test("fitView 边距生效", () => {
@@ -108,7 +132,7 @@ describe("视图变换", () => {
   });
 
   test("zoomAt 缩小同样保持锚点", () => {
-    const v0 = fitView(2000, 1500, 900, 700);
+    const v0: View = { scale: 1, tx: 40, ty: -20 };
     const v1 = zoomAt(v0, 10, 10, 0.5);
     expect(v1.scale).toBeCloseTo(v0.scale * 0.5);
     const b = screenToImg(v0, 10, 10);

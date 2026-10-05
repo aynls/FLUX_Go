@@ -17,7 +17,7 @@ export interface Rect {
 // 缩放倍率：1 = 100%。所有画布缩放入口统一使用这两个边界。
 export const MIN_SCALE = 0.5;
 export const MAX_SCALE = 1.5;
-// 可平移区域相对画布的宽高倍率：1 = 居中固定，1.5 = 每侧可移动画布尺寸的 25%。
+// 边缘可达范围之外的额外平移倍率：1 = 无额外留白，1.5 = 每侧增加画布尺寸的 25%。
 export const PAN_RANGE_MULTIPLIER = 1.2;
 // 到达平移边界时，仍保留的可见画布边缘（屏幕 px）。
 export const MIN_VISIBLE_CANVAS_PX = 64;
@@ -48,7 +48,7 @@ export function zoomAt(v: View, sx: number, sy: number, factor: number): View {
   return { scale, tx: sx - (sx - v.tx) * k, ty: sy - (sy - v.ty) * k };
 }
 
-/** 平移范围由 PAN_RANGE_MULTIPLIER 决定，同时保留可见画布边缘。 */
+/** 平移范围覆盖画布超出视口的部分，并允许额外留白，同时保留可见画布边缘。 */
 export function clampCanvasView(v: View, iw: number, ih: number, vw: number, vh: number): View {
   const scale = clampScale(v.scale);
   if (iw <= 0 || ih <= 0 || vw <= 0 || vh <= 0) return { ...v, scale };
@@ -56,7 +56,8 @@ export function clampCanvasView(v: View, iw: number, ih: number, vw: number, vh:
     const span = image * scale;
     const center = (viewport - span) / 2;
     const visible = Math.min(MIN_VISIBLE_CANVAS_PX, viewport / 4, span);
-    const travel = span * Math.max(0, PAN_RANGE_MULTIPLIER - 1) / 2;
+    const travel = Math.max(0, span - viewport) / 2
+      + span * Math.max(0, PAN_RANGE_MULTIPLIER - 1) / 2;
     return clamp(offset, Math.max(center - travel, visible - span), Math.min(center + travel, viewport - visible));
   };
   return { scale, tx: axis(v.tx, iw, vw), ty: axis(v.ty, ih, vh) };

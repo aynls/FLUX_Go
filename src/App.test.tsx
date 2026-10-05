@@ -38,13 +38,13 @@ afterEach(cleanup);
 
 test("chosen export directory persists across app restart", async () => {
   const ui = render(<App />);
-  await waitFor(() => expect(ui.getByRole("button", { name: "新建方案" }).hasAttribute("disabled")).toBe(false));
+  await waitFor(() => expect(ui.getByRole("button", { name: "新建" }).hasAttribute("disabled")).toBe(false));
   await act(async () => { fireEvent.click(ui.getAllByRole("button", { name: "设置" })[0]); });
   await act(async () => { fireEvent.click(ui.getByRole("button", { name: "选择文件夹" })); });
   await waitFor(() => expect(JSON.parse(dom.localStorage.getItem("flux-preferences-v2")!).saveDirectory).toBe("D:\\Pictures\\Flux"));
   ui.unmount();
   const restarted = render(<App />);
-  await waitFor(() => expect(restarted.getByRole("button", { name: "新建方案" }).hasAttribute("disabled")).toBe(false));
+  await waitFor(() => expect(restarted.getByRole("button", { name: "新建" }).hasAttribute("disabled")).toBe(false));
   await act(async () => { fireEvent.click(restarted.getAllByRole("button", { name: "设置" })[0]); });
   expect(restarted.getByText("D:\\Pictures\\Flux")).toBeTruthy();
 });
@@ -55,7 +55,7 @@ test("invalid saved draft is preserved until explicit new scheme", async () => {
   await waitFor(() => expect(ui.getByText(/已暂停保存以保留原文件/)).toBeTruthy());
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 550)); });
   expect(draftWrites).toHaveLength(0);
-  fireEvent.click(ui.getByRole("button", { name: "新建方案" }));
+  fireEvent.click(ui.getByRole("button", { name: "新建" }));
   await waitFor(() => expect(draftWrites.length).toBeGreaterThan(0));
 });
 
@@ -66,7 +66,7 @@ test("history restores all references, provider and compression; undo recovers c
   historyItems = [{ id: "saved", createdAt: 1, provider: "bfl", model: "flux-3-image", mode: "edit", prompt: recipe.prompt, finalPrompt: recipe.prompt, params: { ...recipe.params }, boxes: [], canvasWidth: 1024, canvasHeight: 1024, inputFiles: ["first.png", "second.png"], resultFiles: ["result.webp"], thumb: null, usage: {}, cost: null, status: "ok", recipe }];
   const ui = render(<App />);
   await waitFor(() => expect(ui.getByText("已恢复上次方案")).toBeTruthy());
-  fireEvent.click(ui.getByRole("button", { name: "历史 · 1" }));
+  fireEvent.click(ui.getByRole("button", { name: "历史" }));
   fireEvent.click(ui.getByText(recipe.prompt));
   fireEvent.click(ui.getByRole("button", { name: /另存为/ }));
   await waitFor(() => expect(exportPath).toBe("D:\\Pictures\\Flux\\flux-saved.webp"));
