@@ -1,0 +1,45 @@
+# Dependencies and build output
+node_modules/
+/dist/
+/build/
+/out/
+/release/
+/artifacts/
+target/
+/src-tauri/gen/
+*.tsbuildinfo
+*.exe
+*.msi
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+
+# Local configuration and caches
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local
+.vite/
+.cache/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local research
+/.research/
+
+# Local verification artifacts and one-off scripts
+/verification/
+/scripts/bfl-verification-fixtures.ts
+/scripts/refactor-verification-fixtures.ts
+/src-tauri/tests/live_bfl.rs
+/src-tauri/tests/live_generate.rs
+/src-tauri/tests/live_refactor.rs
