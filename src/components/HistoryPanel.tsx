@@ -155,7 +155,7 @@ function HistoryDetail({
     const path = await saveDialog({
       defaultPath: exportDefaultPath(
         saveDirectory,
-        `flux-${item.id.slice(0, 8)}${resultIndex ? "-" + (resultIndex + 1) : ""}.${ext}`,
+        `lutriui-${item.id.slice(0, 8)}${resultIndex ? "-" + (resultIndex + 1) : ""}.${ext}`,
       ),
       filters: [{ name: "图片", extensions: [ext] }],
     });

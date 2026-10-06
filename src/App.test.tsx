@@ -72,7 +72,7 @@ mock.module("@tauri-apps/api/window", () => ({
 }));
 mock.module("@tauri-apps/plugin-dialog", () => ({
   open: async (options: { directory?: boolean }) =>
-    options.directory ? "D:\\Pictures\\Flux" : ["first.png", "second.png"],
+    options.directory ? "D:\\Pictures\\LutriUI" : ["first.png", "second.png"],
   save: async (options: { defaultPath: string }) => {
     exportPath = options.defaultPath;
     return null;
@@ -376,9 +376,9 @@ test("chosen export directory persists across app restart", async () => {
   });
   await waitFor(() =>
     expect(
-      JSON.parse(dom.localStorage.getItem("flux-preferences-v2")!)
+      JSON.parse(dom.localStorage.getItem("lutriui-preferences-v2")!)
         .saveDirectory,
-    ).toBe("D:\\Pictures\\Flux"),
+    ).toBe("D:\\Pictures\\LutriUI"),
   );
   ui.unmount();
   const restarted = render(<App />);
@@ -391,7 +391,7 @@ test("chosen export directory persists across app restart", async () => {
     fireEvent.click(restarted.getAllByRole("button", { name: "设置" })[0]);
   });
   fireEvent.click(restarted.getByRole("button", { name: "存储" }));
-  expect(restarted.getByText("D:\\Pictures\\Flux")).toBeTruthy();
+  expect(restarted.getByText("D:\\Pictures\\LutriUI")).toBeTruthy();
 });
 
 test("invalid saved draft is preserved until explicit new scheme", async () => {
@@ -410,8 +410,8 @@ test("invalid saved draft is preserved until explicit new scheme", async () => {
 
 test("history restores all references, provider and compression; undo recovers current work", async () => {
   dom.localStorage.setItem(
-    "flux-preferences-v2",
-    JSON.stringify({ saveDirectory: "D:\\Pictures\\Flux" }),
+    "lutriui-preferences-v2",
+    JSON.stringify({ saveDirectory: "D:\\Pictures\\LutriUI" }),
   );
   initial = { ...newDraft(), prompt: "current work" };
   const recipe = {
@@ -456,7 +456,7 @@ test("history restores all references, provider and compression; undo recovers c
   fireEvent.click(ui.getByText(recipe.prompt));
   fireEvent.click(ui.getByRole("button", { name: /另存为/ }));
   await waitFor(() =>
-    expect(exportPath).toBe("D:\\Pictures\\Flux\\flux-saved.webp"),
+    expect(exportPath).toBe("D:\\Pictures\\LutriUI\\lutriui-saved.webp"),
   );
   fireEvent.click(ui.getByRole("button", { name: "恢复完整方案" }));
   await waitFor(() =>
@@ -515,8 +515,8 @@ test("multi-file import leaves output canvas and existing boxes intact", async (
 });
 test("in-flight snapshot is immutable; result does not overwrite newer draft or references", async () => {
   dom.localStorage.setItem(
-    "flux-preferences-v2",
-    JSON.stringify({ saveDirectory: "D:\\Pictures\\Flux\\" }),
+    "lutriui-preferences-v2",
+    JSON.stringify({ saveDirectory: "D:\\Pictures\\LutriUI\\" }),
   );
   initial = {
     ...newDraft(),
@@ -568,7 +568,7 @@ test("in-flight snapshot is immutable; result does not overwrite newer draft or 
   fireEvent.click(ui.getByRole("button", { name: "另存为" }));
   await waitFor(() =>
     expect(exportPath).toBe(
-      "D:\\Pictures\\Flux\\flux-" + savedItem!.id.slice(0, 8) + ".png",
+      "D:\\Pictures\\LutriUI\\lutriui-" + savedItem!.id.slice(0, 8) + ".png",
     ),
   );
 });

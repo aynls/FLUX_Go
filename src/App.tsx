@@ -529,7 +529,7 @@ export default function App() {
       const path = await save({
         defaultPath: exportDefaultPath(
           prefs.saveDirectory,
-          "flux-" +
+          "lutriui-" +
             result.item.id.slice(0, 8) +
             (result.selectedIndex ? "-" + (result.selectedIndex + 1) : "") +
             "." +
@@ -569,7 +569,7 @@ export default function App() {
       <header className="app-header">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true" />
-          <strong>FLUX_Go</strong>
+          <strong>LutriUI</strong>
         </div>
         <div className="family-tabs" role="tablist" aria-label="模型家族">
           {families.map((f) => (

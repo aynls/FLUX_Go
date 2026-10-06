@@ -1,6 +1,6 @@
 //! 离线契约检查，不访问供应商、不产生费用。
 use base64::Engine;
-use flux_go_lib::{
+use lutriui_lib::{
     models,
     provider::{comfy, openrouter, parse_data_url, runware, GenerateRequest},
 };
@@ -58,7 +58,7 @@ fn every_catalog_route_builds_a_provider_native_request() {
                 .unwrap_or_else(|e| panic!("{provider}/{}: {}", model["id"], e.message));
             let payload = match provider.as_str() {
                 "openrouter" => openrouter::build_payload(&request),
-                "bfl" => flux_go_lib::provider::bfl::build_payload(&request),
+                "bfl" => lutriui_lib::provider::bfl::build_payload(&request),
                 "comfy" => comfy::build_payload(&request),
                 "runware" => {
                     runware::build_payload(&request, "50836053-a0ee-4cf5-b9d6-ae7c5d140ada")

@@ -27,7 +27,7 @@ import type {
 function readPreferences(): Preferences {
   try {
     const raw = JSON.parse(
-      localStorage.getItem("flux-preferences-v2") ?? "null",
+      localStorage.getItem("lutriui-preferences-v2") ?? "null",
     );
     if (!raw) return DEFAULT_PREFERENCES;
     const p = {
@@ -258,7 +258,7 @@ export function useWorkspace(
   }, [persist, submitting, onNotice, onRequestClose]);
   useEffect(() => {
     try {
-      localStorage.setItem("flux-preferences-v2", JSON.stringify(prefs));
+      localStorage.setItem("lutriui-preferences-v2", JSON.stringify(prefs));
     } catch (e) {
       onNotice("偏好保存失败：" + String(e));
     }

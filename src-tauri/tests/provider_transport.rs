@@ -1,6 +1,6 @@
 //! Local HTTP simulations validate admission, auth, polling and single submission.
 use base64::Engine;
-use flux_go_lib::provider::{comfy, runware, GenerateRequest};
+use lutriui_lib::provider::{comfy, runware, GenerateRequest};
 use serde_json::{json, Value};
 use std::{
     io::{Read, Write},

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "FLUX_Go",
+  "productName": "LutriUI",
   "version": "0.1.0",
-  "identifier": "app.fluxgo.desktop",
+  "identifier": "app.lutriui.desktop",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "FLUX_Go — 图像工作台",
+        "title": "LutriUI — 图像工作台",
         "width": 1480,
         "height": 920,
         "minWidth": 1024,

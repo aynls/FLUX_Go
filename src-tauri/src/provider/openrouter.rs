@@ -98,7 +98,7 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
     let resp = client()
         .post(ENDPOINT)
         .bearer_auth(key)
-        .header("X-Title", "FLUX_Go")
+        .header("X-Title", "LutriUI")
         .json(&payload)
         .send()
         .await

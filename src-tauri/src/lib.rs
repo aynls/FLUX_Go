@@ -57,5 +57,5 @@ pub fn run() {
             commands::history_delete,
         ])
         .run(tauri::generate_context!())
-        .expect("FLUX_Go 启动失败");
+        .expect("LutriUI 启动失败");
 }

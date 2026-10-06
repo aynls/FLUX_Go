@@ -1,11 +1,11 @@
 [package]
-name = "flux_go"
+name = "lutriui"
 version = "0.1.0"
-description = "FLUX.3 图像生成与编辑工作台"
+description = "多模型图像生成与编辑工作台"
 edition = "2021"
 
 [lib]
-name = "flux_go_lib"
+name = "lutriui_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

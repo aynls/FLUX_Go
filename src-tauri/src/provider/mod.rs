@@ -184,7 +184,7 @@ mod tests {
     #[cfg(windows)]
     fn system_credential_roundtrip_in_isolated_namespace() {
         let entry = keyring::Entry::new(
-            "app.fluxgo.verification",
+            "app.lutriui.verification",
             &format!(
                 "test-{}-{}",
                 std::process::id(),

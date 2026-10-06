@@ -114,7 +114,7 @@ pub fn credential_entry(provider: &str) -> Result<keyring::Entry, String> {
     if !matches!(provider, "bfl" | "openrouter" | "comfy" | "runware") {
         return Err("未知提供商".into());
     }
-    keyring::Entry::new("app.fluxgo.desktop", provider).map_err(|_| "无法访问系统凭据存储".into())
+    keyring::Entry::new("app.lutriui.desktop", provider).map_err(|_| "无法访问系统凭据存储".into())
 }
 
 pub fn stored_key(provider: &str) -> Option<String> {
