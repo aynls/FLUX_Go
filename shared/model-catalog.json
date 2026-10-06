@@ -1,0 +1,731 @@
+{
+  "fluxDimensions": {
+    "768": {
+      "21:9": [1168, 496],
+      "2:1": [1088, 544],
+      "16:9": [1024, 576],
+      "3:2": [944, 624],
+      "7:5": [912, 656],
+      "4:3": [880, 672],
+      "5:4": [864, 688],
+      "1:1": [768, 768],
+      "4:5": [688, 864],
+      "3:4": [672, 880],
+      "5:7": [656, 912],
+      "2:3": [624, 944],
+      "9:16": [576, 1024],
+      "1:2": [544, 1088],
+      "9:21": [496, 1168]
+    },
+    "1K": {
+      "21:9": [1568, 672],
+      "2:1": [1440, 720],
+      "16:9": [1360, 768],
+      "3:2": [1248, 832],
+      "7:5": [1216, 864],
+      "4:3": [1184, 880],
+      "5:4": [1152, 912],
+      "1:1": [1024, 1024],
+      "4:5": [912, 1152],
+      "3:4": [880, 1184],
+      "5:7": [864, 1216],
+      "2:3": [832, 1248],
+      "9:16": [768, 1360],
+      "1:2": [720, 1440],
+      "9:21": [672, 1568]
+    },
+    "2K": {
+      "21:9": [3136, 1344],
+      "2:1": [2896, 1440],
+      "16:9": [2736, 1536],
+      "3:2": [2512, 1664],
+      "7:5": [2416, 1728],
+      "4:3": [2368, 1776],
+      "5:4": [2288, 1824],
+      "1:1": [2048, 2048],
+      "4:5": [1824, 2288],
+      "3:4": [1776, 2368],
+      "5:7": [1728, 2416],
+      "2:3": [1664, 2512],
+      "9:16": [1536, 2736],
+      "1:2": [1440, 2896],
+      "9:21": [1344, 3136]
+    },
+    "4K": {
+      "21:9": [6256, 2688],
+      "2:1": [5792, 2896],
+      "16:9": [5456, 3072],
+      "3:2": [5024, 3344],
+      "7:5": [4848, 3456],
+      "4:3": [4736, 3552],
+      "5:4": [4576, 3664],
+      "1:1": [4096, 4096],
+      "4:5": [3664, 4576],
+      "3:4": [3552, 4736],
+      "5:7": [3456, 4848],
+      "2:3": [3344, 5024],
+      "9:16": [3072, 5456],
+      "1:2": [2896, 5792],
+      "9:21": [2688, 6256]
+    }
+  },
+  "checkedAt": "2026-10-06",
+  "providers": [
+    {
+      "id": "openrouter",
+      "label": "OpenRouter",
+      "envName": "OPENROUTER_API_KEY",
+      "keyUrl": "https://openrouter.ai/settings/keys"
+    },
+    {
+      "id": "bfl",
+      "label": "BFL",
+      "envName": "BFL_API_KEY",
+      "keyUrl": "https://dashboard.bfl.ai/"
+    },
+    {
+      "id": "comfy",
+      "label": "Comfy",
+      "envName": "COMFY_API_KEY",
+      "keyUrl": "https://platform.comfy.org/profile/api-keys"
+    },
+    {
+      "id": "runware",
+      "label": "Runware",
+      "envName": "RUNWARE_API_KEY",
+      "keyUrl": "https://my.runware.ai/"
+    }
+  ],
+  "fields": {
+    "resolution": {
+      "label": "分辨率档位",
+      "kind": "enum"
+    },
+    "aspectRatio": {
+      "label": "宽高比",
+      "kind": "enum"
+    },
+    "safetyTolerance": {
+      "label": "内容安全严格程度",
+      "kind": "integer",
+      "min": 0,
+      "max": 4,
+      "nullable": true,
+      "help": "数值越小越严格；留空使用供应商默认值。"
+    },
+    "grounding": {
+      "label": "联网参考",
+      "kind": "boolean"
+    },
+    "version": {
+      "label": "模型版本",
+      "kind": "enum",
+      "values": ["latest"]
+    },
+    "quality": {
+      "label": "生成质量",
+      "kind": "enum",
+      "values": ["auto", "low", "medium", "high", "xhigh", "max"]
+    },
+    "size": {
+      "label": "输出尺寸",
+      "kind": "size",
+      "help": "宽×高，16 的倍数；655,360–8,294,400 像素、比例 1:3–3:1、每边最多 3840px。"
+    },
+    "background": {
+      "label": "背景",
+      "kind": "enum",
+      "values": ["auto", "opaque", "transparent"]
+    },
+    "outputFormat": {
+      "label": "输出格式",
+      "kind": "enum",
+      "values": ["png", "jpeg", "webp"]
+    },
+    "outputCompression": {
+      "label": "输出压缩质量",
+      "kind": "integer",
+      "min": 0,
+      "max": 100,
+      "help": "仅 JPEG / WebP 使用。"
+    },
+    "moderation": {
+      "label": "内容审核",
+      "kind": "enum",
+      "values": ["auto", "low"]
+    },
+    "count": {
+      "label": "生成张数",
+      "kind": "integer",
+      "min": 1,
+      "max": 10
+    },
+    "width": {
+      "label": "宽度（px）",
+      "kind": "integer",
+      "min": 1,
+      "max": 6553600
+    },
+    "height": {
+      "label": "高度（px）",
+      "kind": "integer",
+      "min": 1,
+      "max": 6553600
+    },
+    "seed": {
+      "label": "随机种子",
+      "kind": "integer",
+      "min": 0,
+      "max": 2147483647,
+      "nullable": true,
+      "help": "留空随机；相同种子不保证跨供应商得到相同结果。"
+    },
+    "negativePrompt": {
+      "label": "负面提示词",
+      "kind": "text",
+      "maxLength": 16000
+    },
+    "promptExtend": {
+      "label": "智能扩写提示词",
+      "kind": "boolean"
+    },
+    "promptExtendMode": {
+      "label": "扩写方式",
+      "kind": "enum",
+      "values": ["direct", "agent"]
+    },
+    "watermark": {
+      "label": "添加水印",
+      "kind": "boolean"
+    }
+  },
+  "families": [
+    {
+      "id": "flux",
+      "label": "FLUX.3 Image",
+      "description": "多参考图与区域编排",
+      "defaultModel": "flux-3-image",
+      "defaults": {
+        "resolution": "1K",
+        "aspectRatio": "1:1",
+        "safetyTolerance": null,
+        "grounding": true,
+        "version": "latest"
+      }
+    },
+    {
+      "id": "gpt",
+      "label": "GPT Image 2.5",
+      "description": "图像编辑与透明素材",
+      "defaultModel": "gpt-image-2.5-flare",
+      "defaults": {
+        "quality": "auto",
+        "size": "1024x1024",
+        "aspectRatio": "1:1",
+        "background": "auto",
+        "outputFormat": "png",
+        "outputCompression": 100,
+        "moderation": "auto",
+        "count": 1
+      }
+    },
+    {
+      "id": "qwen",
+      "label": "Qwen Image",
+      "description": "文字设计与参考图合成",
+      "defaultModel": "qwen-image-3",
+      "defaults": {
+        "resolution": "1K",
+        "aspectRatio": "1:1",
+        "width": 1024,
+        "height": 1024,
+        "seed": null,
+        "negativePrompt": "",
+        "count": 1,
+        "promptExtend": true,
+        "promptExtendMode": "direct",
+        "watermark": false
+      }
+    }
+  ],
+  "models": [
+    {
+      "id": "flux-3-image",
+      "family": "flux",
+      "label": "FLUX.3 Image",
+      "routes": {
+        "openrouter": {
+          "model": "black-forest-labs/flux-3-image",
+          "maxRefs": 10,
+          "mask": false,
+          "parameters": {
+            "resolution": {
+              "values": ["768", "1K", "1.5K", "2K", "4K"]
+            },
+            "aspectRatio": {
+              "values": [
+                "21:9",
+                "2:1",
+                "16:9",
+                "3:2",
+                "7:5",
+                "4:3",
+                "5:4",
+                "1:1",
+                "4:5",
+                "3:4",
+                "5:7",
+                "2:3",
+                "9:16",
+                "1:2",
+                "9:21",
+                "auto"
+              ]
+            },
+            "safetyTolerance": {
+              "max": 6
+            }
+          },
+          "docs": "https://openrouter.ai/api/v1/images/models/black-forest-labs/flux-3-image/endpoints"
+        },
+        "bfl": {
+          "model": "flux-3-image",
+          "maxRefs": 10,
+          "mask": false,
+          "parameters": {
+            "resolution": {
+              "values": ["768", "1K", "1.5K", "2K", "4K"]
+            },
+            "aspectRatio": {
+              "values": [
+                "21:9",
+                "2:1",
+                "16:9",
+                "3:2",
+                "7:5",
+                "4:3",
+                "5:4",
+                "1:1",
+                "4:5",
+                "3:4",
+                "5:7",
+                "2:3",
+                "9:16",
+                "1:2",
+                "9:21",
+                "auto"
+              ]
+            },
+            "safetyTolerance": {},
+            "grounding": {},
+            "version": {}
+          },
+          "docs": "https://docs.bfl.ai/flux_3/flux3_image_overview"
+        },
+        "comfy": {
+          "model": "bfl/flux-3-image",
+          "maxRefs": 10,
+          "mask": false,
+          "parameters": {
+            "resolution": {
+              "values": ["768", "1K", "1.5K", "2K", "4K"]
+            },
+            "aspectRatio": {
+              "values": [
+                "21:9",
+                "2:1",
+                "16:9",
+                "3:2",
+                "7:5",
+                "4:3",
+                "5:4",
+                "1:1",
+                "4:5",
+                "3:4",
+                "5:7",
+                "2:3",
+                "9:16",
+                "1:2",
+                "9:21",
+                "auto"
+              ]
+            },
+            "safetyTolerance": {},
+            "grounding": {},
+            "version": {}
+          },
+          "docs": "https://docs.comfy.org/router-schemas/bfl/flux-3-image.json"
+        },
+        "runware": {
+          "model": "bfl:flux@3-image",
+          "maxRefs": 10,
+          "mask": false,
+          "parameters": {
+            "resolution": {
+              "values": ["768", "1K", "2K", "4K"]
+            },
+            "aspectRatio": {
+              "values": [
+                "21:9",
+                "2:1",
+                "16:9",
+                "3:2",
+                "7:5",
+                "4:3",
+                "5:4",
+                "1:1",
+                "4:5",
+                "3:4",
+                "5:7",
+                "2:3",
+                "9:16",
+                "1:2",
+                "9:21",
+                "auto"
+              ]
+            },
+            "safetyTolerance": {},
+            "grounding": {},
+            "count": {
+              "max": 20
+            }
+          },
+          "docs": "https://runware.ai/docs/models/bfl-flux-3-image",
+          "notes": "文生图需至少一个放置区域；自动比例仅在有参考图时使用。",
+          "defaults": {
+            "count": 1
+          },
+          "minPrompt": 2
+        }
+      }
+    },
+    {
+      "id": "gpt-image-2.5-flare",
+      "family": "gpt",
+      "label": "Flare · 快速",
+      "routes": {
+        "openrouter": {
+          "model": "openai/gpt-image-2.5-flare",
+          "maxRefs": 16,
+          "mask": false,
+          "parameters": {
+            "quality": {},
+            "background": {},
+            "outputFormat": {},
+            "moderation": {},
+            "count": {
+              "max": 10
+            },
+            "aspectRatio": {
+              "values": [
+                "1:1",
+                "3:2",
+                "2:3",
+                "4:3",
+                "3:4",
+                "16:9",
+                "9:16",
+                "21:9",
+                "auto"
+              ]
+            },
+            "outputCompression": {}
+          },
+          "docs": "https://openrouter.ai/api/v1/images/models/openai/gpt-image-2.5-flare/endpoints",
+          "notes": "此路由使用宽高比，暂不开放自定义尺寸和编辑蒙版。"
+        },
+        "comfy": {
+          "model": "openai/gpt-image-2.5-flare",
+          "maxRefs": 16,
+          "mask": true,
+          "parameters": {
+            "quality": {},
+            "background": {},
+            "outputFormat": {},
+            "moderation": {},
+            "count": {
+              "max": 10
+            },
+            "size": {
+              "allowAuto": true
+            },
+            "outputCompression": {}
+          },
+          "docs": "https://docs.comfy.org/router-schemas/openai/gpt-image-2.5-flare.json"
+        },
+        "runware": {
+          "model": "openai:gpt-image@2.5-flare",
+          "maxRefs": 16,
+          "mask": true,
+          "parameters": {
+            "quality": {},
+            "background": {},
+            "outputFormat": {},
+            "moderation": {},
+            "count": {
+              "max": 20
+            },
+            "size": {
+              "allowAuto": false
+            },
+            "outputCompression": {
+              "min": 20,
+              "max": 99
+            }
+          },
+          "defaults": {
+            "outputCompression": 95,
+            "count": 1
+          },
+          "docs": "https://runware.ai/docs/models/openai-gpt-image-2-5-flare",
+          "minPrompt": 2
+        }
+      }
+    },
+    {
+      "id": "gpt-image-2.5-sunburst",
+      "family": "gpt",
+      "label": "Sunburst · 精细",
+      "routes": {
+        "openrouter": {
+          "model": "openai/gpt-image-2.5-sunburst",
+          "maxRefs": 16,
+          "mask": false,
+          "parameters": {
+            "quality": {},
+            "background": {},
+            "outputFormat": {},
+            "moderation": {},
+            "count": {
+              "max": 10
+            },
+            "aspectRatio": {
+              "values": [
+                "1:1",
+                "3:2",
+                "2:3",
+                "4:3",
+                "3:4",
+                "16:9",
+                "9:16",
+                "21:9",
+                "auto"
+              ]
+            },
+            "outputCompression": {}
+          },
+          "docs": "https://openrouter.ai/api/v1/images/models/openai/gpt-image-2.5-sunburst/endpoints",
+          "notes": "此路由使用宽高比，暂不开放自定义尺寸和编辑蒙版。"
+        },
+        "comfy": {
+          "model": "openai/gpt-image-2.5-sunburst",
+          "maxRefs": 16,
+          "mask": true,
+          "parameters": {
+            "quality": {},
+            "background": {},
+            "outputFormat": {},
+            "moderation": {},
+            "count": {
+              "max": 10
+            },
+            "size": {
+              "allowAuto": true
+            },
+            "outputCompression": {}
+          },
+          "docs": "https://docs.comfy.org/router-schemas/openai/gpt-image-2.5-sunburst.json"
+        },
+        "runware": {
+          "model": "openai:gpt-image@2.5-sunburst",
+          "maxRefs": 16,
+          "mask": true,
+          "parameters": {
+            "quality": {},
+            "background": {},
+            "outputFormat": {},
+            "moderation": {},
+            "count": {
+              "max": 20
+            },
+            "size": {
+              "allowAuto": false
+            },
+            "outputCompression": {
+              "min": 20,
+              "max": 99
+            }
+          },
+          "defaults": {
+            "outputCompression": 95,
+            "count": 1
+          },
+          "docs": "https://runware.ai/docs/models/openai-gpt-image-2-5-sunburst",
+          "minPrompt": 2
+        }
+      }
+    },
+    {
+      "id": "qwen-image-3",
+      "family": "qwen",
+      "label": "Qwen Image 3.0",
+      "routes": {
+        "openrouter": {
+          "model": "qwen/qwen-image-3",
+          "maxRefs": 4,
+          "mask": false,
+          "parameters": {
+            "resolution": {
+              "values": ["1K", "2K"]
+            },
+            "aspectRatio": {
+              "values": [
+                "1:1",
+                "1:2",
+                "1:4",
+                "2:1",
+                "2:3",
+                "3:2",
+                "3:4",
+                "4:1",
+                "4:3",
+                "4:5",
+                "5:4",
+                "9:16",
+                "16:9"
+              ]
+            },
+            "seed": {},
+            "count": {
+              "max": 6
+            }
+          },
+          "docs": "https://openrouter.ai/api/v1/images/models/qwen/qwen-image-3/endpoints"
+        },
+        "comfy": {
+          "model": "qwen/qwen-image-3.0",
+          "maxRefs": 3,
+          "mask": false,
+          "parameters": {
+            "width": {},
+            "height": {},
+            "seed": {},
+            "negativePrompt": {},
+            "count": {
+              "max": 6
+            },
+            "promptExtend": {},
+            "promptExtendMode": {},
+            "watermark": {}
+          },
+          "maxPixels": 6553600,
+          "docs": "https://docs.comfy.org/router-schemas/qwen/qwen-image-3.0.json"
+        },
+        "runware": {
+          "model": "alibaba:qwen-image@3.0",
+          "maxRefs": 3,
+          "mask": false,
+          "parameters": {
+            "width": {},
+            "height": {},
+            "seed": {},
+            "negativePrompt": {
+              "minLength": 2
+            },
+            "count": {
+              "max": 20
+            },
+            "promptExtend": {},
+            "promptExtendMode": {}
+          },
+          "maxPixels": 4194304,
+          "docs": "https://runware.ai/docs/models/alibaba-qwen-image-3-0",
+          "defaults": {
+            "count": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "qwen-image-3-pro",
+      "family": "qwen",
+      "label": "Qwen Image 3.0 Pro",
+      "routes": {
+        "openrouter": {
+          "model": "qwen/qwen-image-3-pro",
+          "maxRefs": 4,
+          "mask": false,
+          "parameters": {
+            "resolution": {
+              "values": ["1K", "2K"]
+            },
+            "aspectRatio": {
+              "values": [
+                "1:1",
+                "1:2",
+                "1:4",
+                "2:1",
+                "2:3",
+                "3:2",
+                "3:4",
+                "4:1",
+                "4:3",
+                "4:5",
+                "5:4",
+                "9:16",
+                "16:9"
+              ]
+            },
+            "seed": {},
+            "count": {
+              "max": 6
+            }
+          },
+          "docs": "https://openrouter.ai/api/v1/images/models/qwen/qwen-image-3-pro/endpoints"
+        },
+        "comfy": {
+          "model": "qwen/qwen-image-3.0-pro",
+          "maxRefs": 3,
+          "mask": false,
+          "parameters": {
+            "width": {},
+            "height": {},
+            "seed": {},
+            "negativePrompt": {},
+            "count": {
+              "max": 6
+            },
+            "promptExtend": {},
+            "promptExtendMode": {},
+            "watermark": {}
+          },
+          "maxPixels": 6553600,
+          "docs": "https://docs.comfy.org/router-schemas/qwen/qwen-image-3.0-pro.json"
+        },
+        "runware": {
+          "model": "alibaba:qwen-image@3.0-pro",
+          "maxRefs": 3,
+          "mask": false,
+          "parameters": {
+            "width": {},
+            "height": {},
+            "seed": {},
+            "negativePrompt": {
+              "minLength": 2
+            },
+            "count": {
+              "max": 20
+            },
+            "promptExtend": {},
+            "promptExtendMode": {}
+          },
+          "maxPixels": 4194304,
+          "docs": "https://runware.ai/docs/models/alibaba-qwen-image-3-0-pro",
+          "defaults": {
+            "count": 1
+          }
+        }
+      }
+    }
+  ]
+}

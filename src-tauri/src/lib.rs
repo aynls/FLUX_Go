@@ -1,5 +1,6 @@
 mod commands;
 mod history;
+pub mod models;
 pub mod provider;
 
 use std::sync::atomic::AtomicBool;

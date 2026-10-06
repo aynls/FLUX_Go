@@ -24,6 +24,8 @@ pub struct HistoryItem {
     pub input_files: Vec<String>,
     #[serde(default)]
     pub result_files: Vec<String>,
+    #[serde(default)]
+    pub mask_file: Option<String>,
     /// 结果缩略图 data URL（内联，供列表展示）
     #[serde(default)]
     pub thumb: Option<String>,
@@ -88,6 +90,9 @@ impl HistoryStore {
             .iter()
             .map(|p| self.dir.join(p).to_string_lossy().to_string())
             .collect();
+        item.mask_file = item
+            .mask_file
+            .map(|p| self.dir.join(p).to_string_lossy().to_string());
         item
     }
 
@@ -119,6 +124,7 @@ impl HistoryStore {
             match f.kind.as_str() {
                 "input" => item.input_files.push(rel),
                 "result" => item.result_files.push(rel),
+                "mask" => item.mask_file = Some(rel),
                 _ => return Err(format!("未知历史文件类型: {}", f.kind)),
             }
         }

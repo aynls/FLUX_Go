@@ -15,6 +15,8 @@ use crate::AppState;
 pub struct ProviderStatus {
     pub openrouter: bool,
     pub bfl: bool,
+    pub comfy: bool,
+    pub runware: bool,
     pub sources: std::collections::HashMap<String, String>,
     pub settings: std::collections::HashMap<String, crate::provider::CredentialSettings>,
     pub stored_keys: std::collections::HashMap<String, bool>,
@@ -25,7 +27,7 @@ pub async fn provider_status() -> ProviderStatus {
     let mut sources = std::collections::HashMap::new();
     let mut settings = std::collections::HashMap::new();
     let mut stored_keys = std::collections::HashMap::new();
-    for p in ["openrouter", "bfl"] {
+    for p in ["openrouter", "bfl", "comfy", "runware"] {
         let config = crate::provider::key_settings(p);
         let source = if config.source == "manual" {
             "system"
@@ -39,6 +41,8 @@ pub async fn provider_status() -> ProviderStatus {
     ProviderStatus {
         openrouter: crate::provider::configured_key("openrouter").is_some(),
         bfl: crate::provider::configured_key("bfl").is_some(),
+        comfy: crate::provider::configured_key("comfy").is_some(),
+        runware: crate::provider::configured_key("runware").is_some(),
         sources,
         settings,
         stored_keys,
@@ -93,6 +97,10 @@ pub async fn credential_check(provider: String) -> Result<String, String> {
         "bfl" => client
             .get("https://api.bfl.ai/v1/credits")
             .header("x-key", &key),
+        "comfy" => client.get("https://cloud.comfy.org/api/user").header("X-API-Key", &key),
+        "runware" => client.post("https://api.runware.ai/v1").bearer_auth(&key).json(&serde_json::json!([{
+            "taskType":"accountManagement", "taskUUID":uuid::Uuid::new_v4().to_string(), "operation":"getDetails"
+        }])),
         _ => return Err("未知提供商".into()),
     };
     let response = req.send().await.map_err(|_| "连接失败，请检查网络后重试")?;
@@ -101,6 +109,18 @@ pub async fn credential_check(provider: String) -> Result<String, String> {
             "密钥检查失败（HTTP {}）",
             response.status().as_u16()
         ));
+    }
+    if provider == "runware" {
+        let body: serde_json::Value = response.json().await.map_err(|_| "连接检查响应无效")?;
+        if body["errors"]
+            .as_array()
+            .is_some_and(|errors| !errors.is_empty())
+            || !body["data"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty())
+        {
+            return Err("Runware 连接检查失败，请检查密钥与账户权限".into());
+        }
     }
     Ok("已验证连接（未提交生成，不产生生图费用）".into())
 }

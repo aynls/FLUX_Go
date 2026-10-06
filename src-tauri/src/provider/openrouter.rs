@@ -11,17 +11,9 @@ use std::time::Duration;
 
 use serde_json::{json, Map, Value};
 
-use super::{
-    GenerateOutput, GenerateParams, GenerateRequest, OutputImage, ProviderError, ProviderResult,
-};
+use super::{GenerateOutput, GenerateRequest, OutputImage, ProviderError, ProviderResult};
 
 pub const ENDPOINT: &str = "https://openrouter.ai/api/v1/images";
-
-const RESOLUTIONS: [&str; 5] = ["768", "1K", "1.5K", "2K", "4K"];
-const ASPECT_RATIOS: [&str; 16] = [
-    "21:9", "2:1", "16:9", "3:2", "7:5", "4:3", "5:4", "1:1", "4:5", "3:4", "5:7", "2:3", "9:16",
-    "1:2", "9:21", "auto",
-];
 
 fn client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
@@ -41,18 +33,13 @@ fn read_key() -> Result<String, ProviderError> {
 }
 
 pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
-    validate_params(&req.params)?;
+    crate::models::validate(req)?;
+    let model = crate::models::resolve(req)?;
     if req.final_prompt.trim().is_empty() {
         return Err(ProviderError::msg("提示词不能为空"));
     }
-    if req.images.len() > 10 {
-        return Err(ProviderError::msg(format!(
-            "参考图最多 10 张（当前 {} 张）",
-            req.images.len()
-        )));
-    }
     let mut p = Map::new();
-    p.insert("model".into(), json!(req.model));
+    p.insert("model".into(), json!(model.wire_id()));
     p.insert("prompt".into(), json!(req.final_prompt));
     if let Some(r) = &req.params.resolution {
         p.insert("resolution".into(), json!(r));
@@ -63,6 +50,31 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
     if let Some(s) = req.params.safety_tolerance {
         // OpenRouter 官方透传白名单中的唯一 BFL 参数
         p.insert("safety_tolerance".into(), json!(s));
+    }
+    for (wire, value) in [
+        ("quality", req.params.quality.as_ref().map(|v| json!(v))),
+        (
+            "background",
+            req.params.background.as_ref().map(|v| json!(v)),
+        ),
+        (
+            "output_format",
+            req.params.output_format.as_ref().map(|v| json!(v)),
+        ),
+        (
+            "output_compression",
+            req.params.output_compression.map(|v| json!(v)),
+        ),
+        (
+            "moderation",
+            req.params.moderation.as_ref().map(|v| json!(v)),
+        ),
+        ("seed", req.params.seed.map(|v| json!(v))),
+        ("n", req.params.count.map(|v| json!(v))),
+    ] {
+        if let Some(v) = value {
+            p.insert(wire.into(), v);
+        }
     }
     if !req.images.is_empty() {
         for img in &req.images {
@@ -76,27 +88,6 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
         p.insert("input_references".into(), Value::Array(refs));
     }
     Ok(Value::Object(p))
-}
-
-fn validate_params(params: &GenerateParams) -> Result<(), ProviderError> {
-    if let Some(r) = &params.resolution {
-        if !RESOLUTIONS.contains(&r.as_str()) {
-            return Err(ProviderError::msg(format!(
-                "resolution 无效: {r}（允许 768/1K/1.5K/2K/4K）"
-            )));
-        }
-    }
-    if let Some(a) = &params.aspect_ratio {
-        if !ASPECT_RATIOS.contains(&a.as_str()) {
-            return Err(ProviderError::msg(format!("aspect_ratio 无效: {a}")));
-        }
-    }
-    if let Some(s) = params.safety_tolerance {
-        if s > 6 {
-            return Err(ProviderError::msg("safety_tolerance 取值范围 0–6"));
-        }
-    }
-    Ok(())
 }
 
 pub async fn generate(req: &GenerateRequest) -> ProviderResult {
@@ -193,6 +184,7 @@ fn truncate(s: &str, n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider::GenerateParams;
 
     fn req(images: Vec<&str>, params: GenerateParams) -> GenerateRequest {
         GenerateRequest {
@@ -201,6 +193,7 @@ mod tests {
             final_prompt: "In <ref_image_0>, add a star [{\"id\":\"star_1\"}]".into(),
             images: images.into_iter().map(String::from).collect(),
             params,
+            ..Default::default()
         }
     }
 
@@ -216,6 +209,7 @@ mod tests {
                 safety_tolerance: Some(2),
                 grounding: None,
                 version: None,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -247,6 +241,7 @@ mod tests {
                 safety_tolerance: None,
                 grounding: None,
                 version: None,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -278,7 +273,7 @@ mod tests {
         assert!(build_payload(&r).is_err());
     }
     #[test]
-    fn unsupported_native_fields_are_not_sent() {
+    fn unsupported_native_fields_are_rejected_before_request() {
         let p = build_payload(&req(
             vec![],
             GenerateParams {
@@ -287,10 +282,7 @@ mod tests {
                 version: Some("latest".into()),
                 ..Default::default()
             },
-        ))
-        .unwrap();
-        assert_eq!(p["aspect_ratio"], "auto");
-        assert!(p.get("version").is_none());
-        assert!(p.get("grounding").is_none());
+        ));
+        assert!(p.is_err());
     }
 }

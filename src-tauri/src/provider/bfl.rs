@@ -34,10 +34,8 @@ fn read_key() -> Result<String, ProviderError> {
 }
 
 pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
-    if !matches!(
-        req.model.as_str(),
-        "flux-3-image" | "black-forest-labs/flux-3-image"
-    ) {
+    crate::models::validate(req)?;
+    if crate::models::resolve(req)?.family != "flux" {
         return Err(ProviderError::msg("BFL 适配器仅支持 FLUX 3 Image"));
     }
     if req.params.safety_tolerance.is_some_and(|s| s > 4) {
@@ -260,6 +258,7 @@ mod tests {
             final_prompt: "edit instruction".into(),
             images,
             params,
+            ..Default::default()
         }
     }
     fn png(w: u32, h: u32) -> String {
