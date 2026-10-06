@@ -283,6 +283,43 @@ export function primaryImage(d: Draft) {
   if (taskIntent(d) !== "edit") return null;
   return d.refs.find((r) => r.uid === d.baseId) ?? d.refs[0] ?? null;
 }
+/** References belong to the editing task; an incoming main image must not be duplicated. */
+export function editReferences(d: Draft, incoming: WorkingImage) {
+  const main = primaryImage(d);
+  return d.refs.filter(
+    (r) =>
+      r.uid !== main?.uid &&
+      !(incoming.assetId && r.assetId === incoming.assetId) &&
+      r.dataUrl !== incoming.dataUrl,
+  );
+}
+export function beginImageEdit(
+  d: Draft,
+  image: WorkingImage,
+  keepReferences: boolean,
+): Draft {
+  const main = { ...image, uid: crypto.randomUUID() };
+  const refs = [main, ...(keepReferences ? editReferences(d, image) : [])];
+  const max = routeFor(d)?.maxRefs ?? 0;
+  if (refs.length > max)
+    throw new Error(`此模型最多接收 ${max} 张图片，请减少参考素材`);
+  return {
+    ...d,
+    intent: "edit",
+    refs,
+    baseId: main.uid,
+    prompt: "",
+    showBase: true,
+    boxes: [],
+    mask: null,
+    maskRects: [],
+    canvas: { w: image.width, h: image.height },
+    params: {
+      ...d.params,
+      ...(d.family === "flux" ? { aspectRatio: "auto" } : {}),
+    },
+  };
+}
 /** Changing the primary image changes API order and remaps exact image tags together. */
 export function setPrimaryImage(d: Draft, uid: string): Draft {
   const image = d.refs.find((r) => r.uid === uid);

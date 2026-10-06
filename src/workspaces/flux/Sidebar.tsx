@@ -15,15 +15,11 @@ import {
 } from "../shared/Controls";
 import { changeRole, taskIntent } from "../../lib/workspace";
 import { regionsEnabled, requiresLayout } from "../../models/flux/layout";
-import { rectToWire } from "../../lib/protocol";
+import { RectFields } from "./RectFields";
+export { RectFields } from "./RectFields";
+import SourceRegionEditor from "./SourceRegionEditor";
 import { ROLE_LABELS } from "../../models/flux/roles";
-import type {
-  Box,
-  Draft,
-  ProviderStatus,
-  Rect,
-  FamilyId,
-} from "../../lib/types";
+import type { Box, Draft, ProviderStatus, FamilyId } from "../../lib/types";
 import type { GenerationTask } from "../../lib/types";
 
 export interface SidebarProps {
@@ -49,6 +45,9 @@ export interface SidebarProps {
 
 export default function Sidebar(p: SidebarProps) {
   const d = p.draft;
+  const [sourceEditorUid, setSourceEditorUid] = useState<string | null>(null);
+  const sourceBox = d.boxes.find((b) => b.uid === sourceEditorUid);
+  const sourceImage = d.refs.find((r) => r.uid === sourceBox?.sourceId);
 
   const [renameError, setRenameError] = useState("");
   const [collapsedUid, setCollapsedUid] = useState<string | null>(null);
@@ -422,6 +421,31 @@ export default function Sidebar(p: SidebarProps) {
                               ))}
                             </select>
                           </label>
+                          <button
+                            disabled={!d.refs.some((r) => r.uid === b.sourceId)}
+                            onClick={() => setSourceEditorUid(b.uid!)}
+                          >
+                            在参考图上框选
+                          </button>
+                          {(() => {
+                            const source = d.refs.find(
+                              (r) => r.uid === b.sourceId,
+                            );
+                            return (
+                              source &&
+                              b.srcRect && (
+                                <RectFields
+                                  label="来源区域 · 0–1000"
+                                  rect={b.srcRect}
+                                  width={source.width}
+                                  height={source.height}
+                                  onChange={(srcRect) =>
+                                    updateBox({ ...b, srcRect })
+                                  }
+                                />
+                              )
+                            );
+                          })()}
                         </>
                       )}
                     </>
@@ -451,6 +475,24 @@ export default function Sidebar(p: SidebarProps) {
         <Validation errors={p.errors} />
       </div>
       <GenerateFooter {...p} />
+      {sourceBox && sourceImage && (
+        <SourceRegionEditor
+          key={sourceBox.uid + ":" + sourceImage.uid}
+          box={sourceBox}
+          image={sourceImage}
+          canvas={d.canvas}
+          onClose={() => setSourceEditorUid(null)}
+          onApply={(srcRect) => {
+            p.onChange({
+              ...d,
+              boxes: d.boxes.map((b) =>
+                b.uid === sourceBox.uid ? { ...b, srcRect } : b,
+              ),
+            });
+            setSourceEditorUid(null);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -478,118 +520,5 @@ function NameField({
         if (e.key === "Enter") e.currentTarget.blur();
       }}
     />
-  );
-}
-
-export function RectFields({
-  label,
-  showLabel = true,
-  rect,
-  width,
-  height,
-  onChange,
-}: {
-  label: string;
-  showLabel?: boolean;
-  rect: Rect;
-  width: number;
-  height: number;
-  onChange: (r: Rect) => void;
-}) {
-  const wire = rectToWire(rect, width, height);
-  const wireKey = wire.join(",");
-  const [values, setValues] = useState(() => wire.map(String));
-  const [error, setError] = useState("");
-  const editing = useRef(false);
-  useEffect(() => {
-    if (!editing.current) {
-      setValues(wireKey.split(","));
-      setError("");
-    }
-  }, [wireKey, width, height]);
-  const commit = () => {
-    const next = values.map((value) =>
-      value.trim() === "" ? NaN : Number(value),
-    );
-    if (
-      next.some(
-        (value) => !Number.isInteger(value) || value < 0 || value > 1000,
-      )
-    ) {
-      setError("请填完整四个坐标，使用 0–1000 的整数。");
-      return;
-    }
-    const [top, left, bottom, right] = next;
-    if (top >= bottom || left >= right) {
-      setError("上须小于下，左须小于右。");
-      return;
-    }
-    setError("");
-    setValues(next.map(String));
-    if (next.join(",") !== wireKey)
-      onChange({
-        x: (left / 1000) * width,
-        y: (top / 1000) * height,
-        w: ((right - left) / 1000) * width,
-        h: ((bottom - top) / 1000) * height,
-      });
-  };
-  return (
-    <div>
-      {showLabel && <p className="muted">{label}</p>}
-      <div
-        className="coords"
-        onFocusCapture={() => {
-          editing.current = true;
-        }}
-        onBlur={(e) => {
-          if (
-            e.relatedTarget instanceof Node &&
-            e.currentTarget.contains(e.relatedTarget)
-          )
-            return;
-          editing.current = false;
-          commit();
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            (e.target as HTMLInputElement).blur();
-          }
-          if (e.key === "Escape") {
-            e.preventDefault();
-            setValues(wire.map(String));
-            setError("");
-          }
-        }}
-      >
-        {(["上", "左", "下", "右"] as const).map((name, index) => (
-          <label key={name}>
-            {name}
-            <input
-              aria-label={label + " " + name}
-              type="number"
-              min={0}
-              max={1000}
-              step={1}
-              value={values[index]}
-              aria-invalid={!!error}
-              onChange={(e) => {
-                const value = e.target.value;
-                setValues((previous) =>
-                  previous.map((text, i) => (i === index ? value : text)),
-                );
-                setError("");
-              }}
-            />
-          </label>
-        ))}
-      </div>
-      {error && (
-        <p role="alert" className="error-text">
-          {error}
-        </p>
-      )}
-    </div>
   );
 }

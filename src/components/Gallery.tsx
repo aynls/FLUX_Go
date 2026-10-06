@@ -24,7 +24,7 @@ export default function Gallery(p: {
   onFiles: () => void;
   onPaste: () => void;
   onUse: (ids: string[]) => Promise<void>;
-  onEdit: (item: GalleryItem) => Promise<void>;
+  onEdit: (item: GalleryItem) => Promise<void | boolean>;
   picker?: { limit: number; usedIds: string[] };
 }) {
   const [filter, setFilter] = useState("all");
@@ -410,8 +410,8 @@ export default function Gallery(p: {
                   disabled={locked || preview.pendingDelete}
                   onClick={() =>
                     void run(async () => {
-                      await p.onEdit(preview);
-                      setPreviewId(null);
+                      if ((await p.onEdit(preview)) !== false)
+                        setPreviewId(null);
                     })
                   }
                 >

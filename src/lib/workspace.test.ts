@@ -7,6 +7,7 @@ import {
   sourceOnCanvas,
   canvasToSource,
   setPrimaryImage,
+  beginImageEdit,
 } from "./workspace";
 import { composePrompt } from "./protocol";
 import type { Draft } from "./types";
@@ -133,4 +134,21 @@ test("changing primary cannot silently move an existing mask to another image", 
   d.mask = { ...d.refs[0], name: "mask" };
   expect(() => setPrimaryImage(d, "b")).toThrow("蒙版");
   expect(d.refs[0].uid).toBe("a");
+});
+
+test("new edit rounds clear image-bound geometry and deduplicate a retained reference used as main", () => {
+  const d = fixture();
+  d.intent = "edit";
+  d.baseId = "a";
+  d.mask = { ...d.refs[0], name: "mask" };
+  d.maskRects = [{ x: 1, y: 1, w: 10, h: 10 }];
+  const next = beginImageEdit(d, d.refs[1], true);
+  expect(next.refs).toHaveLength(1);
+  expect(next.refs[0].dataUrl).toBe(d.refs[1].dataUrl);
+  expect(next.boxes).toEqual([]);
+  expect(next.mask).toBeNull();
+  expect(next.maskRects).toEqual([]);
+  expect(next.prompt).toBe("");
+  expect(d.boxes).toHaveLength(1);
+  expect(d.mask).not.toBeNull();
 });

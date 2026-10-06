@@ -118,7 +118,12 @@ export function useWorkspace(
       next.boxes.length !== previous.boxes.length ||
       next.boxes.some((box) => {
         const old = previous.boxes.find((b) => b.uid === box.uid);
-        return old && (old.role !== box.role || old.sourceId !== box.sourceId);
+        return (
+          old &&
+          (old.role !== box.role ||
+            old.sourceId !== box.sourceId ||
+            JSON.stringify(old.srcRect) !== JSON.stringify(box.srcRect))
+        );
       }) ||
       !!next.mask !== !!previous.mask ||
       next.compressEnabled !== previous.compressEnabled ||

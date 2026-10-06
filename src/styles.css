@@ -1875,3 +1875,56 @@ button {
     max-width: none;
   }
 }
+
+.edit-handoff-images {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.edit-handoff-images figure {
+  margin: 0;
+  min-width: 0;
+}
+.edit-handoff-images img,
+.edit-handoff-empty {
+  width: 100%;
+  height: 160px;
+  object-fit: contain;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.edit-handoff-empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.edit-handoff-images figcaption {
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.source-region-editor {
+  display: grid;
+  grid-template-rows: auto minmax(80px, 1fr) auto auto auto;
+  height: 100%;
+  min-height: 0;
+  gap: 10px;
+}
+.source-region-editor p {
+  margin: 0;
+}
+.source-region-canvas {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.modal:has(> .modal-body > .source-region-editor) {
+  height: min(850px, 90vh);
+}
+.modal:has(> .modal-body > .source-region-editor) > .modal-body {
+  flex: 1;
+  overflow: hidden;
+}

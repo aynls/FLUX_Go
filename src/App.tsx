@@ -18,6 +18,7 @@ import ResizableSidebar from "./components/ResizableSidebar";
 import HistoryPanel from "./components/HistoryPanel";
 import Gallery from "./components/Gallery";
 import GenerationGrid from "./components/GenerationGrid";
+import EditHandoff from "./components/EditHandoff";
 import { regionsEnabled } from "./models/flux/layout";
 import Settings from "./components/Settings";
 import Modal from "./components/Modal";
@@ -39,6 +40,7 @@ import {
   workspaceKey,
   primaryImage,
   setPrimaryImage,
+  beginImageEdit,
 } from "./lib/workspace";
 import { familyById, routeFor, singleImageDraft } from "./models/catalog";
 import { compileDraft } from "./models";
@@ -49,6 +51,7 @@ import type {
   ProviderStatus,
   WorkingImage,
   GalleryItem,
+  Draft,
 } from "./lib/types";
 
 import { getResultBase, type SavedResult } from "./app/generation";
@@ -95,6 +98,11 @@ export default function App() {
   const [tab, setTab] = useState<"params" | "history">("params");
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryPicker, setGalleryPicker] = useState(false);
+  const [editHandoff, setEditHandoff] = useState<{
+    draft: Draft;
+    image: WorkingImage;
+    decide: (keep: boolean | null) => void;
+  } | null>(null);
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [galleryError, setGalleryError] = useState("");
   const [galleryReady, setGalleryReady] = useState(false);
@@ -410,6 +418,18 @@ export default function App() {
   }, [importBatch]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      const dialogs = Array.from(document.querySelectorAll("dialog[open]"));
+      if (
+        dialogs.length &&
+        !(
+          dialogs.length === 1 &&
+          dialogs[0].getAttribute("aria-label") === "从图库选择" &&
+          (e.ctrlKey || e.metaKey) &&
+          e.key.toLowerCase() === "v"
+        )
+      )
+        return;
+
       if (
         !ready ||
         importing ||
@@ -524,47 +544,54 @@ export default function App() {
       setNotice("加入队列失败：" + String(e));
     }
   };
-  const useResult = (im: WorkingImage, edit: boolean) => {
-    const d = edit ? ws.draftForIntent("edit") : current.current,
-      max = routeFor(d)?.maxRefs ?? 0;
+  const useResult = async (
+    im: WorkingImage,
+    edit: boolean,
+    source?: Draft,
+  ): Promise<boolean> => {
+    const d = edit ? ws.draftForIntent("edit") : current.current;
+    const max = routeFor(d)?.maxRefs ?? 0;
     if (!edit && d.refs.length >= max) {
       setNotice(`参考图已达 ${max} 张，请先移除一张`);
       return false;
     }
-    const r = { ...im, uid: crypto.randomUUID() };
-    const retained =
-      taskIntent(d) === "edit"
-        ? d.refs.filter((ref) => ref.uid !== (d.baseId ?? d.refs[0]?.uid))
-        : d.refs;
-    if (edit && retained.length + 1 > max) {
-      setNotice(`保留参考素材后超过 ${max} 张，请先移除一张素材再继续编辑`);
+    let keepReferences = true;
+    const continuing =
+      taskIntent(current.current) === "edit" &&
+      source?.intent === "edit" &&
+      primaryImage(source)?.uid === primaryImage(d)?.uid &&
+      source.prompt === d.prompt;
+    if (
+      edit &&
+      !continuing &&
+      (d.refs.length || d.prompt.trim() || d.boxes.length || d.mask)
+    ) {
+      const decision = await new Promise<boolean | null>((decide) =>
+        setEditHandoff({ draft: d, image: im, decide }),
+      );
+      setEditHandoff(null);
+      if (decision == null) return false;
+      if (ws.draftForIntent("edit") !== d) {
+        setNotice("编辑草稿已变化，请重新选择主图");
+        return false;
+      }
+      keepReferences = decision;
+    }
+    try {
+      commit(
+        edit
+          ? beginImageEdit(d, im, keepReferences)
+          : { ...d, refs: [...d.refs, { ...im, uid: crypto.randomUUID() }] },
+        true,
+      );
+      setView("canvas");
+      setTab("params");
+      setSelected(null);
+      return true;
+    } catch (e) {
+      setNotice(String(e));
       return false;
     }
-    commit(
-      edit
-        ? {
-            ...d,
-            refs: [r, ...retained],
-            prompt: "",
-            baseId: r.uid,
-            intent: "edit",
-            showBase: true,
-            boxes: [],
-            mask: null,
-            maskRects: [],
-            canvas: { w: im.width, h: im.height },
-            params: {
-              ...d.params,
-              ...(d.family === "flux" ? { aspectRatio: "auto" } : {}),
-            },
-          }
-        : { ...d, refs: [...d.refs, r] },
-      true,
-    );
-    setView("canvas");
-    setTab("params");
-    setSelected(null);
-    return true;
   };
   const useGalleryRefs = async (ids: string[]) => {
     const target = current.current;
@@ -610,10 +637,12 @@ export default function App() {
     setImporting(true);
     try {
       const image = await api.galleryRead(item.id);
-      if (!useResult(image, true))
-        throw new Error("当前编辑任务的参考素材已满，请先移除一张");
-      setGalleryOpen(false);
-      setGalleryPicker(false);
+      const accepted = await useResult(image, true);
+      if (accepted) {
+        setGalleryOpen(false);
+        setGalleryPicker(false);
+      }
+      return accepted;
     } finally {
       setImporting(false);
     }
@@ -652,7 +681,7 @@ export default function App() {
   const historyAsInput = async (item: HistoryItem) => {
     try {
       if (!item.resultFiles[0]) throw new Error("记录没有结果图片");
-      useResult(await api.importImage(item.resultFiles[0]), true);
+      await useResult(await api.importImage(item.resultFiles[0]), true);
     } catch (e) {
       setNotice(String(e));
     }
@@ -738,8 +767,9 @@ export default function App() {
             .then(() => setNotice("图片已复制"))
             .catch((e) => setNotice(String(e)))
         }
-        onUse={(image, edit) => {
-          if (useResult(image, edit)) setResultPreview(false);
+        onUse={async (image, edit) => {
+          if ((await useResult(image, edit, result.snapshot)) && resultPreview)
+            setResultPreview(false);
         }}
         onRetry={() => void retryHistory(result)}
       />
@@ -1195,6 +1225,13 @@ export default function App() {
             <button onClick={() => void ws.closeApp()}>仍然关闭</button>
           </div>
         </Modal>
+      )}
+      {editHandoff && (
+        <EditHandoff
+          draft={editHandoff.draft}
+          image={editHandoff.image}
+          onDecision={editHandoff.decide}
+        />
       )}
       {reference && (
         <Modal

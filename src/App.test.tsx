@@ -23,6 +23,7 @@ Object.assign(globalThis, {
   document: dom.document,
   navigator: dom.navigator,
   localStorage: dom.localStorage,
+  Node: dom.Node,
   HTMLElement: dom.HTMLElement,
   HTMLInputElement: dom.HTMLInputElement,
   HTMLTextAreaElement: dom.HTMLTextAreaElement,
@@ -344,6 +345,140 @@ test("right drag redraws a source region and read-only canvases cannot create bo
     expect(change).not.toHaveBeenCalled();
     ui.unmount();
   }
+});
+
+test("a non-primary reference source region can be edited, cancelled, applied and undone independently of its target", async () => {
+  const d: Draft = {
+    ...newDraft(),
+    provider: "runware",
+    intent: "edit",
+    baseId: "main",
+    prompt: "Move <star>",
+    canvas: { w: 1000, h: 500 },
+    refs: [
+      {
+        uid: "main",
+        name: "main",
+        dataUrl: "data:image/png;base64,bWFpbg==",
+        width: 1000,
+        height: 500,
+      },
+      {
+        uid: "source",
+        name: "source portrait",
+        dataUrl: "data:image/png;base64,c291cmNl",
+        width: 500,
+        height: 1000,
+      },
+    ],
+    boxes: [
+      {
+        uid: "star-uid",
+        id: "star",
+        desc: "a star",
+        role: "move",
+        sourceId: "source",
+        rect: { x: 500, y: 0, w: 500, h: 250 },
+        srcRect: { x: 0, y: 500, w: 250, h: 500 },
+      },
+    ],
+  };
+  initial = d;
+  let ui!: ReturnType<typeof render>;
+  await act(async () => {
+    ui = render(<App />);
+  });
+  await waitFor(() =>
+    expect(ui.getByRole("button", { name: "展开 star" })).toBeTruthy(),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "展开 star" }));
+  fireEvent.click(ui.getByRole("button", { name: "在参考图上框选" }));
+  const dialog = ui.getByRole("dialog", { name: "来源区域 · star" });
+  expect(dialog.textContent).toContain("source portrait · 500×1000");
+  const sourceCanvas = dialog.querySelector(".canvas-surface")!;
+  Object.defineProperty(sourceCanvas, "setPointerCapture", { value: () => {} });
+  fireEvent.pointerDown(sourceCanvas, {
+    button: 2,
+    pointerId: 1,
+    clientX: 50,
+    clientY: 60,
+  });
+  fireEvent.pointerMove(sourceCanvas, {
+    pointerId: 1,
+    clientX: 150,
+    clientY: 260,
+  });
+  fireEvent.pointerUp(sourceCanvas, { button: 2, pointerId: 1 });
+  expect(
+    (
+      dialog.querySelector(
+        'input[aria-label="来源区域 · 0–1000 左"]',
+      ) as HTMLInputElement
+    ).value,
+  ).toBe("100");
+  expect(
+    (
+      dialog.querySelector(
+        'input[aria-label="来源区域 · 0–1000 下"]',
+      ) as HTMLInputElement
+    ).value,
+  ).toBe("260");
+  const left = dialog.querySelector(
+    'input[aria-label="来源区域 · 0–1000 左"]',
+  )!;
+  fireEvent.change(left, { target: { value: "600" } });
+  fireEvent.blur(left);
+  expect(
+    ui.getByRole("button", { name: "应用来源区域" }).hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.change(left, { target: { value: "200" } });
+  fireEvent.blur(left);
+  fireEvent.click(ui.getByRole("button", { name: "取消" }));
+  fireEvent.click(ui.getByRole("button", { name: "在参考图上框选" }));
+  const reopened = ui.getByRole("dialog", { name: "来源区域 · star" });
+  expect(
+    (
+      reopened.querySelector(
+        'input[aria-label="来源区域 · 0–1000 左"]',
+      ) as HTMLInputElement
+    ).value,
+  ).toBe("0");
+  for (const [name, value] of [
+    ["上", "100"],
+    ["左", "200"],
+    ["下", "500"],
+    ["右", "800"],
+  ]) {
+    fireEvent.change(
+      reopened.querySelector(`input[aria-label="来源区域 · 0–1000 ${name}"]`)!,
+      { target: { value } },
+    );
+  }
+  fireEvent.blur(
+    reopened.querySelector('input[aria-label="来源区域 · 0–1000 右"]')!,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "应用来源区域" }));
+  fireEvent.click(ui.getByRole("button", { name: /^应用编辑 ·/ }));
+  await waitFor(() => expect(submitted).not.toBeNull());
+  expect(submitted!.regions).toEqual([
+    {
+      id: "star",
+      description: "a star",
+      referenceIndex: 1,
+      sourceBox: [100, 200, 500, 800],
+      targetBox: [0, 500, 500, 1000],
+    },
+  ]);
+  fireEvent.click(ui.getByRole("button", { name: "撤销 Ctrl+Z" }));
+  fireEvent.click(ui.getByRole("button", { name: "展开 star" }));
+  expect(
+    (
+      ui.getByRole("spinbutton", {
+        name: "来源区域 · 0–1000 左",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("0");
+  await act(async () => finish(output));
 });
 
 test("history keeps multiple results and restores the GPT mask into its own workspace", async () => {
@@ -908,6 +1043,103 @@ test("continuing an edit replaces the primary, retains reference roles, and star
   ).toBe("old <ref_image_1> instruction");
 });
 
+for (const keep of [false, true])
+  test(`replacing existing editing work can cancel, choose references (${keep}), and undo`, async () => {
+    const main = {
+      uid: "old-main",
+      name: "old main",
+      dataUrl: "data:image/png;base64,b2xk",
+      width: 1024,
+      height: 1024,
+    };
+    const old: Draft = {
+      ...newDraft(undefined, "gpt"),
+      provider: "comfy",
+      intent: "edit",
+      baseId: main.uid,
+      prompt: "unfinished instruction",
+      refs: [
+        main,
+        {
+          ...main,
+          uid: "style-ref",
+          name: "style ref",
+          dataUrl: "data:image/png;base64,c3R5bGU=",
+          purpose: "style",
+        },
+      ],
+      mask: { ...main, name: "old mask" },
+    };
+    initial = {
+      schema: 2,
+      activeIntent: "create",
+      tasks: { create: { ...newDraft(), prompt: "new candidate" }, edit: old },
+    };
+    const ui = render(<App />);
+    await waitFor(() =>
+      expect(
+        ui
+          .getByRole("button", { name: /^生成图像 ·/ })
+          .hasAttribute("disabled"),
+      ).toBe(false),
+    );
+    fireEvent.click(ui.getByRole("button", { name: /^生成图像 ·/ }));
+    await waitFor(() => expect(submitted).not.toBeNull());
+    await act(async () => finish(output));
+    fireEvent.click(
+      await ui.findByRole("button", { name: "用这张图开始编辑" }),
+    );
+    expect(ui.getByRole("dialog", { name: "开始新的图片编辑" })).toBeTruthy();
+    expect(ui.getByAltText("当前编辑主图").getAttribute("src")).toBe(
+      main.dataUrl,
+    );
+    expect(
+      (
+        ui.getByRole("checkbox", {
+          name: /沿用其他参考素材/,
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(false);
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    await act(async () =>
+      fireEvent.click(ui.getByRole("button", { name: "取消" })),
+    );
+    expect(ui.queryByRole("dialog")).toBeNull();
+    fireEvent.click(ui.getByRole("button", { name: "编辑" }));
+    expect(
+      (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement)
+        .value,
+    ).toBe(old.prompt);
+    expect(ui.getByRole("img", { name: "主图与黑色编辑蒙版" })).toBeTruthy();
+    fireEvent.click(ui.getByRole("button", { name: "生成" }));
+    fireEvent.click(ui.getByRole("button", { name: "用这张图开始编辑" }));
+    if (keep)
+      fireEvent.click(ui.getByRole("checkbox", { name: /沿用其他参考素材/ }));
+    await act(async () =>
+      fireEvent.click(ui.getByRole("button", { name: "替换并开始编辑" })),
+    );
+    expect(
+      (ui.getByRole("combobox", { name: "提供商" }) as HTMLSelectElement).value,
+    ).toBe("comfy");
+    expect(
+      (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement)
+        .value,
+    ).toBe("");
+    expect(ui.queryByRole("button", { name: "移除蒙版" })).toBeNull();
+    expect(!!ui.queryByRole("combobox", { name: "素材用途 style ref" })).toBe(
+      keep,
+    );
+    fireEvent.click(ui.getByRole("button", { name: "撤销 Ctrl+Z" }));
+    expect(
+      (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement)
+        .value,
+    ).toBe(old.prompt);
+    expect(ui.getByRole("img", { name: "主图与黑色编辑蒙版" })).toBeTruthy();
+    expect(
+      ui.getByRole("combobox", { name: "素材用途 style ref" }),
+    ).toBeTruthy();
+  });
+
 test("cross-model editing keeps the main image, prompt and mask, and model changes undo", async () => {
   const image = {
     uid: "main",
@@ -1045,6 +1277,10 @@ test("a background generation stays in its task and starts editing without repla
   expect(ui.getByRole("button", { name: "用这张图开始编辑" })).toBeTruthy();
   expect(ui.queryByRole("button", { name: "对照" })).toBeNull();
   fireEvent.click(ui.getByRole("button", { name: "用这张图开始编辑" }));
+  await act(async () =>
+    fireEvent.click(ui.getByRole("button", { name: "替换并开始编辑" })),
+  );
+
   expect(
     ui.getByRole("button", { name: "编辑" }).getAttribute("aria-pressed"),
   ).toBe("true");
