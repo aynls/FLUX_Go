@@ -986,21 +986,6 @@ button {
   font-size: 12px;
   padding: 8px 0;
 }
-.route-feedback {
-  font-size: 11px;
-  padding: 8px 10px;
-  background: var(--surface-alt);
-  border-radius: 6px;
-  margin-top: 10px;
-  color: var(--muted);
-}
-.route-feedback {
-  border: 0;
-  margin-bottom: 0;
-}
-.route-feedback p {
-  margin-top: 7px;
-}
 .generation-reason {
   display: flex;
   align-items: center;

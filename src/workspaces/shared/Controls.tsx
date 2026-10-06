@@ -44,50 +44,8 @@ export function RouteControls({
 >) {
   const models = catalog.models.filter((m) => m.family === d.family);
   const selected = modelById(d.modelId)!;
-  const [routeMessage, setRouteMessage] = useState<{
-    key: string;
-    summary: string;
-    text: string;
-  } | null>(null);
   const switchRoute = (provider: ProviderId, modelId = d.modelId) => {
-    const next = changeRoute(d, provider, modelId);
-    const adjusted = Object.keys(fieldsFor(next)).filter(
-      (k) => d.params[k] !== undefined && d.params[k] !== next.params[k],
-    );
-    const omitted = Object.keys(fieldsFor(d)).filter(
-      (k) => !fieldsFor(next)[k] && d.params[k] != null,
-    );
-    const text = [
-      adjusted.length
-        ? "已调整：" +
-          adjusted
-            .map(
-              (k) =>
-                catalog.fields[k].label + " " + displayValue(k, next.params[k]),
-            )
-            .join("、")
-        : "",
-      omitted.length
-        ? "已保留但不发送：" +
-          omitted.map((k) => catalog.fields[k].label).join("、")
-        : "",
-    ]
-      .filter(Boolean)
-      .join("；");
-    setRouteMessage(
-      text
-        ? {
-            key: next.modelId + ":" + next.provider,
-            summary:
-              (d.routeSettings?.[next.modelId + ":" + next.provider]
-                ? "已恢复设置"
-                : "已切换供应商") +
-              (omitted.length ? ` · ${omitted.length} 项未发送` : ""),
-            text,
-          }
-        : null,
-    );
-    onChange(next);
+    onChange(changeRoute(d, provider, modelId));
   };
   return (
     <section>
@@ -151,12 +109,6 @@ export function RouteControls({
         </span>
         <button onClick={onSettings}>设置</button>
       </div>
-      {routeMessage?.key === d.modelId + ":" + d.provider && (
-        <details className="route-feedback">
-          <summary>{routeMessage.summary}</summary>
-          <p>{routeMessage.text}</p>
-        </details>
-      )}
       {!!d.mask && !routeFor(d)?.mask && (
         <p className="error-text">当前供应商不支持蒙版</p>
       )}
