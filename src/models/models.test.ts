@@ -9,6 +9,29 @@ import {
 import { buildRequest, compileDraft } from ".";
 import { changeRoute } from "./catalog";
 import { setPrimaryImage } from "../lib/workspace";
+test("disabled composition keeps draft regions but excludes them from FLUX requests", () => {
+  const d = {
+    ...newDraft(),
+    prompt: "a forest",
+    layoutEnabled: true,
+    boxes: [
+      {
+        id: "tree",
+        role: "place" as const,
+        desc: "oak tree",
+        rect: { x: 0, y: 0, w: 512, h: 512 },
+      },
+    ],
+  };
+  expect(buildRequest(d, []).regions).toHaveLength(1);
+  const disabled = { ...d, layoutEnabled: false };
+  expect(buildRequest(disabled, []).regions).toHaveLength(0);
+  expect(compileDraft(disabled).finalPrompt).not.toContain("bbox");
+  expect(disabled.boxes).toHaveLength(1);
+  expect(
+    buildRequest({ ...disabled, provider: "runware" }, []).regions,
+  ).toHaveLength(1);
+});
 test("FLUX keeps independent source and target coordinates for structured providers", () => {
   const d = {
     ...newDraft(),

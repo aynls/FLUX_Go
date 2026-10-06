@@ -2,6 +2,7 @@ import { generate } from "../lib/api";
 import { downscaleDataUrl, imageSize } from "../lib/image";
 import { buildRequest } from "../models";
 import { fieldsFor } from "../models/catalog";
+import { regionsEnabled } from "../models/flux/layout";
 import { primaryImage, taskIntent } from "../lib/workspace";
 import type {
   Draft,
@@ -44,7 +45,7 @@ export function queuedGeneration(snapshot: Draft) {
     prompt: snapshot.prompt,
     finalPrompt: request.finalPrompt,
     params: { ...request.params },
-    boxes: snapshot.boxes,
+    boxes: regionsEnabled(snapshot) ? snapshot.boxes : [],
     canvasWidth: snapshot.canvas.w,
     canvasHeight: snapshot.canvas.h,
     inputFiles: [],
@@ -116,7 +117,7 @@ export async function executeGeneration(
     prompt: snapshot.prompt,
     finalPrompt: out.finalPrompt,
     params: { ...request.params },
-    boxes: snapshot.boxes,
+    boxes: regionsEnabled(snapshot) ? snapshot.boxes : [],
     canvasWidth: snapshot.canvas.w,
     canvasHeight: snapshot.canvas.h,
     inputFiles: [],

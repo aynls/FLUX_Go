@@ -57,6 +57,7 @@ export function ResultStage({
   );
 }
 export function ResultActions(p: {
+  compact?: boolean;
   result: SavedResult;
   attempts?: SavedResult[];
   onAttempt?: (result: SavedResult) => void;
@@ -72,25 +73,30 @@ export function ResultActions(p: {
   const contentId = useId();
   const multipleAttempts = (p.attempts?.length ?? 0) > 1;
   return (
-    <section className="result-panel" aria-label="生成记录">
-      <button
-        className="result-panel-toggle"
-        aria-expanded={expanded}
-        aria-controls={contentId}
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <strong>生成记录</strong>
-        <span className="muted">
-          {p.attempts?.length || 1} 个批次 · 当前 {r.out.images.length} 张
-        </span>
-        <span className="result-panel-toggle-label">
-          {expanded ? "收起" : "展开"}
-          {expanded ? <CaretDown size={16} /> : <CaretUp size={16} />}
-        </span>
-      </button>
-      {expanded && (
+    <section
+      className={"result-panel" + (p.compact ? " result-panel-compact" : "")}
+      aria-label="生成记录"
+    >
+      {!p.compact && (
+        <button
+          className="result-panel-toggle"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <strong>生成记录</strong>
+          <span className="muted">
+            {p.attempts?.length || 1} 个批次 · 当前 {r.out.images.length} 张
+          </span>
+          <span className="result-panel-toggle-label">
+            {expanded ? "收起" : "展开"}
+            {expanded ? <CaretDown size={16} /> : <CaretUp size={16} />}
+          </span>
+        </button>
+      )}
+      {(p.compact || expanded) && (
         <div className="result-actions" id={contentId}>
-          {multipleAttempts && (
+          {!p.compact && multipleAttempts && (
             <div className="result-gallery-group">
               <h3>最近批次</h3>
               <div className="result-gallery" aria-label="本工作区的尝试">
@@ -101,7 +107,11 @@ export function ResultActions(p: {
                     aria-label={"查看尝试 " + (i + 1)}
                     aria-pressed={attempt.item.id === r.item.id}
                     title={
-                      "批次 " + (i + 1) + " · " + attempt.out.images.length + " 张"
+                      "批次 " +
+                      (i + 1) +
+                      " · " +
+                      attempt.out.images.length +
+                      " 张"
                     }
                     onClick={() => p.onAttempt?.(attempt)}
                   >
@@ -111,7 +121,8 @@ export function ResultActions(p: {
               </div>
             </div>
           )}
-          {r.out.images.length > 0 &&
+          {!p.compact &&
+            r.out.images.length > 0 &&
             (!multipleAttempts || r.out.images.length > 1) && (
               <div className="result-gallery-group">
                 <h3>当前批次 · {r.out.images.length} 张</h3>
@@ -133,7 +144,7 @@ export function ResultActions(p: {
           <div className="result-heading">
             <strong>{modelByAnyId(r.out.model)?.label ?? "最近生成"}</strong>
             <span className="result-save-state">
-              {r.saved ? "已存历史" : "历史尚未保存"}
+              {r.saved ? "已存图库" : "图片尚未保存"}
             </span>
           </div>
           <div className="result-meta">
@@ -158,10 +169,14 @@ export function ResultActions(p: {
             <div className="result-secondary">
               <button onClick={p.onSave}>另存为</button>
               <button onClick={p.onCopy}>复制图片</button>
-              <button onClick={() => p.onUse(r.image, false)}>添加为参考图</button>
+              <button onClick={() => p.onUse(r.image, false)}>
+                添加为参考图
+              </button>
             </div>
             <button className="primary" onClick={() => p.onUse(r.image, true)}>
-              {taskIntent(r.snapshot) === "edit" ? "继续编辑" : "用这张图开始编辑"}
+              {taskIntent(r.snapshot) === "edit"
+                ? "继续编辑"
+                : "用这张图开始编辑"}
             </button>
             {!r.saved && (
               <button disabled={p.saving} onClick={p.onRetry}>

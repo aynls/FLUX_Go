@@ -58,6 +58,8 @@ let closeHandler: (event: {
   preventDefault: () => void;
 }) => Promise<void> = async () => {};
 let destroyed = false;
+let blockedImage: string | null = null;
+let releaseImageSize: () => void = () => {};
 const output: GenerateOutput = {
   provider: "bfl",
   model: "flux-3-image",
@@ -91,7 +93,13 @@ mock.module("@tauri-apps/plugin-dialog", () => ({
   },
 }));
 mock.module("./lib/image", () => ({
-  imageSize: async () => ({ width: 768, height: 768 }),
+  imageSize: async (data: string) => {
+    if (data === blockedImage)
+      await new Promise<void>((resolve) => {
+        releaseImageSize = resolve;
+      });
+    return { width: 768, height: 768 };
+  },
   makeThumb: async () => "thumb",
   downscaleDataUrl: async (s: string) => s,
 }));
@@ -225,6 +233,7 @@ beforeEach(() => {
   exportPath = "";
   reportProgress = () => {};
   destroyed = false;
+  blockedImage = null;
   dom.localStorage.clear();
 });
 afterEach(cleanup);
@@ -541,6 +550,79 @@ test("invalid saved draft is preserved until explicit new scheme", async () => {
   await waitFor(() => expect(draftWrites.length).toBeGreaterThan(0));
 });
 
+test("ordinary generation has no canvas; composition is explicit, undoable, and repeat count survives navigation", async () => {
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  expect(ui.container.querySelector(".canvas-surface")).toBeNull();
+  fireEvent.click(ui.getByRole("checkbox", { name: "区域构图" }));
+  expect(ui.container.querySelector(".canvas-surface")).not.toBeNull();
+  fireEvent.click(ui.getByTitle("撤销 Ctrl+Z"));
+  expect(ui.container.querySelector(".canvas-surface")).toBeNull();
+  fireEvent.change(ui.getByRole("spinbutton", { name: "生成张数" }), {
+    target: { value: "8" },
+  });
+  fireEvent.click(ui.getByRole("button", { name: "历史" }));
+  fireEvent.click(ui.getByRole("button", { name: "方案" }));
+  expect(
+    (ui.getByRole("spinbutton", { name: "生成张数" }) as HTMLInputElement)
+      .value,
+  ).toBe("8");
+  fireEvent.click(ui.getByRole("button", { name: "编辑" }));
+  expect(
+    (ui.getByRole("spinbutton", { name: "生成张数" }) as HTMLInputElement)
+      .value,
+  ).toBe("1");
+  fireEvent.click(ui.getByRole("button", { name: "生成" }));
+  expect(
+    (ui.getByRole("spinbutton", { name: "生成张数" }) as HTMLInputElement)
+      .value,
+  ).toBe("8");
+});
+
+test("decoding a selected candidate cannot discard later batch outputs or reset the selection", async () => {
+  initial = { ...newDraft(), prompt: "three candidates", repeatCount: 3 };
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: /^生成图像/ }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(ui.getByRole("button", { name: /^生成图像/ }));
+  await waitFor(() => expect(submissions).toHaveLength(1));
+  await act(async () => finish(output));
+  await waitFor(() => expect(submissions).toHaveLength(2));
+  const second = "data:image/png;base64,c2Vjb25k";
+  await act(async () =>
+    finish({
+      ...output,
+      images: [{ dataUrl: second, mediaType: "image/png" }],
+    }),
+  );
+  await waitFor(() => expect(submissions).toHaveLength(3));
+  blockedImage = second;
+  fireEvent.click(ui.getByRole("button", { name: "查看结果 2" }));
+  await act(async () => finish(output));
+  await waitFor(() =>
+    expect(ui.getByRole("button", { name: "查看结果 3" })).toBeTruthy(),
+  );
+  await act(async () => {
+    blockedImage = null;
+    releaseImageSize();
+  });
+  await waitFor(() =>
+    expect(ui.getByAltText("生成结果").getAttribute("src")).toBe(second),
+  );
+  expect(
+    ui.getByRole("button", { name: "查看结果 2" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(ui.getByRole("button", { name: "查看结果 3" })).toBeTruthy();
+  expect(historyItems[0].resultFiles).toHaveLength(3);
+});
+
 test("history restores all references, provider and compression; undo recovers current work", async () => {
   dom.localStorage.setItem(
     "lutriui-preferences-v2",
@@ -662,7 +744,7 @@ test("in-flight snapshot is immutable; result does not overwrite newer draft or 
     finish(output);
   });
   await waitFor(() =>
-    expect(ui.getByText("已存历史", { exact: false })).toBeTruthy(),
+    expect(ui.getByText("已存图库", { exact: false })).toBeTruthy(),
   );
   expect(
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
@@ -909,12 +991,10 @@ test("a background generation stays in its task and starts editing without repla
   await act(async () =>
     finish({ ...output, model: "openai/gpt-image-2.5-flare" }),
   );
+  await waitFor(() => expect(ui.getAllByAltText("候选图片 1")).toHaveLength(2));
+  fireEvent.click(ui.getByRole("button", { name: /查看批次/ }));
   await waitFor(() =>
-    expect(ui.getByRole("button", { name: "查看尝试 2" })).toBeTruthy(),
-  );
-  fireEvent.click(ui.getByRole("button", { name: "查看尝试 1" }));
-  expect(ui.getByRole("button", { name: "查看尝试 1" }).className).toContain(
-    "active",
+    expect(ui.getByRole("dialog", { name: "生成结果" })).toBeTruthy(),
   );
   expect(ui.queryByRole("button", { name: "对照" })).toBeNull();
 });
@@ -1062,7 +1142,7 @@ test("Comfy result and history omit missing charge information", async () => {
     "Credits",
   );
   fireEvent.click(ui.getByRole("button", { name: "历史" }));
-  fireEvent.click(ui.getByText("a garden"));
+  fireEvent.click(ui.getAllByText("a garden")[0]);
   expect(ui.queryByText("成本")).toBeNull();
 });
 

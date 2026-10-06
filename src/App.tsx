@@ -17,6 +17,8 @@ import {
 import ResizableSidebar from "./components/ResizableSidebar";
 import HistoryPanel from "./components/HistoryPanel";
 import Gallery from "./components/Gallery";
+import GenerationGrid from "./components/GenerationGrid";
+import { regionsEnabled } from "./models/flux/layout";
 import Settings from "./components/Settings";
 import Modal from "./components/Modal";
 import References from "./workspaces/shared/References";
@@ -72,7 +74,7 @@ export default function App() {
   const [notice, setNotice] = useState("");
   useEffect(() => {
     if (
-      !/^(已添加 \d+ 张参考图|图片已复制|结果已保存到历史|已保存到 .+)$/.test(
+      !/^(已添加 \d+ 张参考图|已导入 \d+ 张图片到图库|图片已复制|结果已保存到图库|任务已完成，图片已保存在图库|已保存到 .+)$/.test(
         notice,
       )
     )
@@ -128,13 +130,19 @@ export default function App() {
   const [results, setResults] = useState<Partial<Record<string, SavedResult>>>(
     {},
   );
+  const currentResults = useRef(results);
+  currentResults.current = results;
   const intent = taskIntent(draft);
   const activeKey = workspaceKey(draft);
+  const activeLayout = regionsEnabled(draft);
+  const ordinaryGeneration = intent === "create" && !activeLayout;
   const result = results[activeKey] ?? null;
   const [attempts, setAttempts] = useState<
     Partial<Record<string, SavedResult[]>>
   >({});
   const [view, setView] = useState<"canvas" | "result" | "compare">("canvas");
+  const [resultPreview, setResultPreview] = useState(false);
+  const resultSelectionEpoch = useRef(0);
   const [original, setOriginal] = useState(false),
     [savingResult, setSavingResult] = useState(false);
   const storeResult = (r: SavedResult, preserveSelection = false) => {
@@ -156,7 +164,11 @@ export default function App() {
         },
       };
     };
-    setResults((s) => ({ ...s, [key]: selected(s[key]) }));
+    currentResults.current = {
+      ...currentResults.current,
+      [key]: selected(currentResults.current[key]),
+    };
+    setResults(currentResults.current);
     setAttempts((s) => ({
       ...s,
       [key]: s[key]?.some((v) => v.item.id === r.item.id)
@@ -168,13 +180,34 @@ export default function App() {
     const key = workspaceKey(r.snapshot);
     setResults((s) =>
       s[key]?.item.id === r.item.id
-        ? { ...s, [key]: { ...s[key]!, saved: true } }
+        ? {
+            ...s,
+            [key]: {
+              ...s[key]!,
+              item: r.item,
+              saved: true,
+              image: {
+                ...s[key]!.image,
+                assetId: r.item.resultAssetIds?.[s[key]!.selectedIndex],
+              },
+            },
+          }
         : s,
     );
     setAttempts((s) => ({
       ...s,
       [key]: (s[key] ?? []).map((v) =>
-        v.item.id === r.item.id ? { ...v, saved: true } : v,
+        v.item.id === r.item.id
+          ? {
+              ...v,
+              item: r.item,
+              saved: true,
+              image: {
+                ...v.image,
+                assetId: r.item.resultAssetIds?.[v.selectedIndex],
+              },
+            }
+          : v,
       ),
     }));
   };
@@ -229,7 +262,12 @@ export default function App() {
         : "canvas",
     );
     setRefPreview(null);
+    setResultPreview(false);
+    resultSelectionEpoch.current++;
   }, [activeKey]);
+  useEffect(() => {
+    if (activeLayout) setView("canvas");
+  }, [activeLayout]);
 
   const importBatch = useCallback(
     (
@@ -469,10 +507,10 @@ export default function App() {
   const retryHistory = async (r: SavedResult) => {
     setSavingResult(true);
     try {
-      await api.historySave(r.item, r.files);
-      markSaved(r);
+      const item = await api.historySave(r.item, r.files);
+      markSaved({ ...r, item });
       await refreshHistory();
-      setNotice("结果已保存到历史");
+      setNotice("结果已保存到图库");
     } catch (e) {
       setNotice("历史保存失败，可再次保存：" + String(e));
     } finally {
@@ -650,21 +688,32 @@ export default function App() {
       setNotice(String(e));
     }
   };
-  const chooseResult = async (index: number) => {
-    if (!result) return;
+  const chooseResult = async (
+    index: number,
+    target = result,
+    preview = false,
+  ) => {
+    if (!target) return;
+    const epoch = ++resultSelectionEpoch.current;
     try {
-      const im = result.out.images[index];
+      const im = target.out.images[index];
+      const size = await imageSize(im.dataUrl);
+      if (epoch !== resultSelectionEpoch.current) return;
+      // Decoding can finish after a later image in this batch arrives.
+      const latest = currentResults.current[workspaceKey(target.snapshot)];
+      if (latest?.item.id === target.item.id) target = latest;
       storeResult({
-        ...result,
+        ...target,
         selectedIndex: index,
         image: {
           uid: crypto.randomUUID(),
           dataUrl: im.dataUrl,
-          ...(await imageSize(im.dataUrl)),
+          ...size,
           name: "生成结果 " + (index + 1),
         },
       });
       setView("result");
+      setResultPreview(preview);
     } catch (e) {
       setNotice("结果读取失败：" + String(e));
     }
@@ -701,6 +750,31 @@ export default function App() {
     commit(updateFluxBoxes(current.current, boxes));
   const reference = draft.refs.find((r) => r.uid === refPreview);
   const resultBase = getResultBase(result);
+  const resultActions = (compact = false) =>
+    result && (
+      <ResultActions
+        compact={compact}
+        result={result}
+        attempts={attempts[activeKey] ?? []}
+        onAttempt={(r) => {
+          setResults((s) => ({ ...s, [activeKey]: r }));
+          setView("result");
+        }}
+        saving={savingResult}
+        onSelect={(i) => void chooseResult(i)}
+        onSave={() => void saveResult()}
+        onCopy={() =>
+          void api
+            .copyImage(result.image.dataUrl)
+            .then(() => setNotice("图片已复制"))
+            .catch((e) => setNotice(String(e)))
+        }
+        onUse={(image, edit) => {
+          if (useResult(image, edit)) setResultPreview(false);
+        }}
+        onRetry={() => void retryHistory(result)}
+      />
+    );
   const references = (
     <ResizableReferences
       width={prefs.referenceSidebarWidth}
@@ -962,12 +1036,12 @@ export default function App() {
             <div className="row">
               <strong>
                 {intent === "create"
-                  ? draft.family === "flux" && view === "canvas"
+                  ? activeLayout && view === "canvas"
                     ? "构图"
                     : "生成预览"
                   : "编辑图片"}
               </strong>
-              {intent === "create" && draft.family === "flux" && result && (
+              {intent === "create" && activeLayout && result && (
                 <button
                   onClick={() =>
                     setView(view === "canvas" ? "result" : "canvas")
@@ -1001,13 +1075,11 @@ export default function App() {
                 </>
               )}
             </div>
-            {view === "canvas" &&
-            draft.family === "flux" &&
-            intent === "create" ? (
+            {view === "canvas" && activeLayout && intent === "create" ? (
               <span className="muted">
                 {draft.canvas.w}×{draft.canvas.h}
               </span>
-            ) : result && view !== "canvas" ? (
+            ) : !ordinaryGeneration && result && view !== "canvas" ? (
               <label className="check">
                 <input
                   type="checkbox"
@@ -1018,9 +1090,18 @@ export default function App() {
               </label>
             ) : null}
           </div>
-          {view === "canvas" &&
-          ((intent === "edit" && !primaryImage(draft)) ||
-            (intent === "create" && draft.family !== "flux")) ? (
+          {ordinaryGeneration ? (
+            <div className="result-work-area">
+              <GenerationGrid
+                attempts={attempts[activeKey] ?? []}
+                selected={result}
+                onSelect={(r, i) => void chooseResult(i, r, true)}
+              />
+              {references}
+            </div>
+          ) : view === "canvas" &&
+            ((intent === "edit" && !primaryImage(draft)) ||
+              (intent === "create" && draft.family !== "flux")) ? (
             <div className="result-work-area">
               <div className="stage workspace-empty">
                 <strong>
@@ -1064,29 +1145,17 @@ export default function App() {
               {references}
             </div>
           )}
-          {result && (
-            <ResultActions
-              result={result}
-              attempts={attempts[activeKey] ?? []}
-              onAttempt={(r) => {
-                setResults((s) => ({ ...s, [activeKey]: r }));
-                setView("result");
-              }}
-              saving={savingResult}
-              onSelect={(i) => void chooseResult(i)}
-              onSave={() => void saveResult()}
-              onCopy={() =>
-                void api
-                  .copyImage(result.image.dataUrl)
-                  .then(() => setNotice("图片已复制"))
-                  .catch((e) => setNotice(String(e)))
-              }
-              onUse={useResult}
-              onRetry={() => void retryHistory(result)}
-            />
-          )}
+          {!resultPreview && resultActions(ordinaryGeneration)}
         </main>
       </div>
+      {resultPreview && result && (
+        <Modal title="生成结果" large onClose={() => setResultPreview(false)}>
+          <div className="gallery-preview">
+            <img src={result.image.dataUrl} alt="生成结果" />
+          </div>
+          {resultActions(true)}
+        </Modal>
+      )}
       {galleryPicker && (
         <Modal
           title="从图库选择"

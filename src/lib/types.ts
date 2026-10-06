@@ -204,6 +204,8 @@ export interface LayoutRegion {
 }
 
 export interface Draft {
+  layoutEnabled?: boolean;
+  repeatCount?: number;
   /** Older drafts infer intent from their inputs until migrated. */
   intent?: TaskIntent;
   showBase?: boolean;

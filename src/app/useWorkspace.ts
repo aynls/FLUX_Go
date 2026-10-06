@@ -115,6 +115,8 @@ export function useWorkspace(
       next.provider !== previous.provider ||
       next.modelId !== previous.modelId ||
       next.intent !== previous.intent ||
+      next.layoutEnabled !== previous.layoutEnabled ||
+      next.repeatCount !== previous.repeatCount ||
       next.boxes.length !== previous.boxes.length ||
       next.boxes.some((box) => {
         const old = previous.boxes.find((b) => b.uid === box.uid);

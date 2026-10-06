@@ -6,6 +6,7 @@ import { validateQwen } from "./qwen";
 import { validateImage } from "./image";
 import { referenceInstruction } from "./referenceInstructions";
 import { gptSize } from "./gpt";
+import { regionsEnabled } from "./flux/layout";
 
 export function compileDraft(d: Draft) {
   if (!d.prompt.trim())
@@ -15,7 +16,7 @@ export function compileDraft(d: Draft) {
     const result = composePrompt({
       mode: d.refs.length ? "edit" : "t2i",
       instruction,
-      boxes: d.boxes,
+      boxes: regionsEnabled(d) ? d.boxes : [],
       iw: d.canvas.w,
       ih: d.canvas.h,
       refs: d.refs,

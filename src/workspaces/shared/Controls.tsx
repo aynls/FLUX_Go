@@ -588,7 +588,7 @@ export function InputOptions({
 }
 export function GenerateFooter(p: WorkspaceControlsProps) {
   const d = p.draft;
-  const [repeatCount, setRepeatCount] = useState(1);
+  const repeatCount = d.repeatCount ?? 1;
   const [sent, setSent] = useState(false);
   const [labelVisible, setLabelVisible] = useState(true);
   const lastFeedback = useRef(p.sentRequestId);
@@ -636,7 +636,7 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
     generating: "生成中",
     waiting: "等待结果",
     downloading: "下载结果",
-    saving: "保存历史",
+    saving: "保存到图库",
   };
   const job = p.generationTask;
   const perRequestCredits = estimateComfyCredits(singleImageDraft(d));
@@ -728,7 +728,10 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
           disabled={p.busy}
           onChange={(e) => {
             const value = Number(e.target.value);
-            setRepeatCount(Math.max(1, Math.min(20, Math.trunc(value) || 1)));
+            p.onChange({
+              ...d,
+              repeatCount: Math.max(1, Math.min(20, Math.trunc(value) || 1)),
+            });
           }}
         />
       </div>

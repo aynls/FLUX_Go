@@ -803,17 +803,12 @@ pre {
   flex-shrink: 0;
 }
 .notice {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 30;
-  max-width: min(560px, calc(100vw - 32px));
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
   background: var(--surface);
-  box-shadow: 0 4px 20px #0003;
   display: flex;
+  justify-content: space-between;
   gap: 10px;
   align-items: center;
   color: var(--text);
@@ -1600,6 +1595,60 @@ button {
   flex: 1;
   min-height: 0;
   padding: 22px 28px 0;
+}
+.generation-grid-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
+}
+.generation-batch + .generation-batch {
+  margin-top: 28px;
+}
+.generation-batch-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.generation-batch-heading span,
+.generation-batch > p {
+  color: var(--muted);
+  font-size: 13px;
+}
+.generation-batch > p {
+  margin: 6px 0 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.generation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
+  gap: 10px;
+}
+.generation-grid button {
+  position: relative;
+  padding: 5px;
+  aspect-ratio: 1;
+  min-width: 0;
+  background: var(--surface-alt);
+}
+.generation-grid img {
+  height: 100%;
+  width: 100%;
+  object-fit: contain;
+}
+.generation-grid button > span {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  font-size: 12px;
+  padding: 2px 7px;
+  background: var(--glass);
+  border-radius: 4px;
+}
+.result-panel-compact .result-actions {
+  max-height: min(28vh, 230px);
 }
 .gallery-page[hidden] {
   display: none;
