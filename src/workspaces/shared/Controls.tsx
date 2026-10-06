@@ -47,6 +47,7 @@ export interface WorkspaceControlsProps {
   queueCount?: number;
   sentRequestId?: string;
   onShowTask?: () => void;
+  onStopRemaining?: () => void;
 }
 export function RouteControls({
   draft: d,
@@ -728,6 +729,13 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
               ? ` · ${job.completed}/${job.total} 张`
               : ""}
           </span>
+          {job.stopRequested ? (
+            <span className="help">后续请求已停止，等待当前结果。</span>
+          ) : (
+            (job.remainingRequests ?? 0) > 0 && (
+              <button onClick={p.onStopRemaining}>停止后续生成</button>
+            )
+          )}
           {(job.intent ?? "create") !== taskIntent(d) && (
             <button onClick={p.onShowTask}>返回任务工作区</button>
           )}

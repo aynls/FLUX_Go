@@ -114,6 +114,8 @@ export interface GenerationProgress {
   completed?: number | null;
 }
 export interface GenerationTask extends GenerationProgress {
+  remainingRequests?: number;
+  stopRequested?: boolean;
   intent?: TaskIntent;
   family: FamilyId;
   modelId: string;
@@ -132,7 +134,7 @@ export interface HistoryBatchRequest {
 export interface HistoryItem {
   resultAssetIds?: string[];
   thumbFile?: string | null;
-  batch?: { requests: HistoryBatchRequest[] } | null;
+  batch?: { requests: HistoryBatchRequest[]; stopped?: boolean } | null;
   error?: string | null;
   taskId?: string | null;
   phase?: string | null;

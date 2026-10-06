@@ -23,10 +23,14 @@ export default function GenerationGrid(p: {
             <span>
               {attempt.out.images.length} 张
               {attempt.item.status === "running"
-                ? " · 继续生成中"
-                : attempt.item.status === "partial"
-                  ? " · 部分完成"
-                  : ""}
+                ? attempt.item.batch?.stopped
+                  ? " · 等待当前结果"
+                  : " · 继续生成中"
+                : attempt.item.batch?.stopped
+                  ? " · 已停止后续生成"
+                  : attempt.item.status === "partial"
+                    ? " · 部分完成"
+                    : ""}
             </span>
           </div>
           <p title={attempt.snapshot.prompt}>{attempt.snapshot.prompt}</p>

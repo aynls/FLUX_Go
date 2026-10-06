@@ -1132,6 +1132,87 @@ test("queue saves requests immediately, cancels waiting work and runs FIFO snaps
   ).toBe("next unfinished draft");
 });
 
+test("stopping an eight-image batch preserves current outputs and releases a cross-model edit", async () => {
+  initial = {
+    ...newDraft(undefined, "gpt"),
+    prompt: "candidate batch",
+    repeatCount: 8,
+  };
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: /^生成图像 ·/ }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(ui.getByRole("button", { name: /^生成图像 ·/ }));
+  await waitFor(() => expect(submissions).toHaveLength(1));
+  await act(async () => finish(output));
+  await waitFor(() => expect(submissions).toHaveLength(2));
+  fireEvent.click(ui.getByRole("button", { name: "用这张图开始编辑" }));
+  fireEvent.change(ui.getByRole("combobox", { name: "模型系列" }), {
+    target: { value: "gemini" },
+  });
+  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
+    target: { value: "change the sky" },
+  });
+  fireEvent.click(ui.getByRole("button", { name: /^应用编辑 ·/ }));
+  await waitFor(() =>
+    expect(
+      historyItems.find((i) => i.prompt === "change the sky")?.status,
+    ).toBe("queued"),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "停止后续生成" }));
+  expect(ui.queryByRole("button", { name: "停止后续生成" })).toBeNull();
+  expect(submissions).toHaveLength(2);
+  await act(async () => finish(output));
+  await waitFor(() => expect(submissions).toHaveLength(3));
+  expect(submissions[2].model).toBe("gemini-3.1-flash-image");
+  expect(submissions[2].images).toHaveLength(1);
+  expect(submissions[2].finalPrompt).toContain("change the sky");
+  const batch = historyItems.find((i) => i.prompt === "candidate batch")!;
+  expect(batch.status).toBe("partial");
+  expect(batch.batch?.stopped).toBe(true);
+  expect(batch.batch?.requests.map((r) => r.status)).toEqual([
+    "ok",
+    "ok",
+    ...Array(6).fill("skipped"),
+  ]);
+  expect(batch.resultFiles).toHaveLength(2);
+  await act(async () => finish({ ...output, model: "gemini-3.1-flash-image" }));
+  await waitFor(() =>
+    expect(
+      historyItems.find((i) => i.prompt === "change the sky")?.status,
+    ).toBe("ok"),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "生成" }));
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("candidate batch");
+  expect(ui.getAllByAltText(/候选图片/)).toHaveLength(2);
+  expect(submissions).toHaveLength(3);
+});
+test("stopping subsequent requests does not hide failure of the active request", async () => {
+  initial = { ...newDraft(), prompt: "failed active request", repeatCount: 3 };
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: /^生成图像 ·/ }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(ui.getByRole("button", { name: /^生成图像 ·/ }));
+  await waitFor(() => expect(submissions).toHaveLength(1));
+  fireEvent.click(ui.getByRole("button", { name: "停止后续生成" }));
+  await act(async () => failGeneration(new Error("provider refused")));
+  await waitFor(() => expect(historyItems[0].status).toBe("failed"));
+  expect(historyItems[0].batch?.requests.map((r) => r.status)).toEqual([
+    "failed",
+    "skipped",
+    "skipped",
+  ]);
+  expect(historyItems[0].error).toContain("provider refused");
+  expect(submissions).toHaveLength(1);
+});
+
 test("a failed queue item does not retry and the next item still runs", async () => {
   initial = { ...newDraft(), prompt: "failed first" };
   const ui = render(<App />);

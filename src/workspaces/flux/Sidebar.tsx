@@ -44,6 +44,7 @@ export interface SidebarProps {
   queueCount?: number;
   sentRequestId?: string;
   onShowTask?: () => void;
+  onStopRemaining?: () => void;
 }
 
 export default function Sidebar(p: SidebarProps) {

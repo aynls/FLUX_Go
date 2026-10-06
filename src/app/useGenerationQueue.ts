@@ -11,7 +11,10 @@ import {
 } from "./generation";
 import type { Draft, GenerationTask, HistoryItem } from "../lib/types";
 
-type Job = ReturnType<typeof queuedGeneration> & { snapshots?: Draft[] };
+type Job = ReturnType<typeof queuedGeneration> & {
+  snapshots?: Draft[];
+  stopRequested?: boolean;
+};
 export function useGenerationQueue(
   active: RefObject<boolean>,
   onResult: (result: SavedResult) => void,
@@ -56,6 +59,7 @@ export function useGenerationQueue(
             ? (job.snapshot.params.count ?? 1)
             : 1),
         phase: "preparing",
+        remainingRequests: Math.max(0, (job.snapshots?.length ?? 1) - 1),
       });
       let combined: SavedResult | null = null;
       const snapshots = job.snapshots ?? [job.snapshot];
@@ -63,12 +67,19 @@ export function useGenerationQueue(
       try {
         job.item = { ...job.item, status: "running" };
         for (let i = 0; i < snapshots.length; i++) {
+          if (job.stopRequested) break;
           if (requests) requests[i].status = "running";
           job.item = { ...job.item, phase: "preparing", taskId: null };
           if (alive.current)
             setTask((t) =>
               t
-                ? { ...t, phase: "preparing", taskId: undefined, completed: i }
+                ? {
+                    ...t,
+                    phase: "preparing",
+                    taskId: undefined,
+                    completed: i,
+                    remainingRequests: snapshots.length - i - 1,
+                  }
                 : t,
             );
           await api.historySave(job.item, job.files);
@@ -146,11 +157,16 @@ export function useGenerationQueue(
         }
         job.item = {
           ...job.item,
-          status: combined ? (job.item.error ? "partial" : "ok") : "failed",
+          status: combined
+            ? job.item.error || job.stopRequested
+              ? "partial"
+              : "ok"
+            : "failed",
           phase: "completed",
         };
         if (combined) {
           combined.item = job.item;
+          combined.saved = false;
           try {
             await api.historySave(job.item, job.files);
             combined.saved = true;
@@ -164,6 +180,10 @@ export function useGenerationQueue(
           await api.historySave(job.item, job.files);
           callbacks.current.onNotice("任务失败：" + job.item.error);
         }
+        if (job.stopRequested)
+          callbacks.current.onNotice(
+            `已停止后续生成，完成 ${requests?.filter((r) => r.status === "ok").length ?? 0} 张，失败 ${requests?.filter((r) => r.status === "failed").length ?? 0} 次，未发送 ${requests?.filter((r) => r.status === "skipped").length ?? 0} 次请求${combined && !combined.saved ? "；结果尚未保存，请重新保存" : ""}`,
+          );
       } catch (e) {
         const message = "批次停止，未继续提交剩余请求：" + String(e);
         for (const request of requests ?? []) {
@@ -252,6 +272,27 @@ export function useGenerationQueue(
       );
     }
   };
+  const stopRemaining = () => {
+    const job = running.current;
+    if (
+      !job ||
+      job.stopRequested ||
+      !job.item.batch?.requests.some((r) => r.status === "queued")
+    )
+      return;
+    job.stopRequested = true;
+    job.item.batch.stopped = true;
+    for (const request of job.item.batch.requests) {
+      if (request.status === "queued") {
+        request.status = "skipped";
+        request.error = "用户停止后续生成，未发送此请求";
+      }
+    }
+    setTask((t) =>
+      t ? { ...t, remainingRequests: 0, stopRequested: true } : t,
+    );
+    callbacks.current.onNotice("已停止后续请求，当前请求仍会接收并保存结果");
+  };
   useEffect(() => {
     alive.current = true;
     const epoch = ++restoreEpoch.current;
@@ -320,5 +361,5 @@ export function useGenerationQueue(
       restoreEpoch.current++;
     };
   }, []);
-  return { task, pending, accepting, ready, enqueue, cancel };
+  return { task, pending, accepting, ready, enqueue, cancel, stopRemaining };
 }

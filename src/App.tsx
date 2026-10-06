@@ -921,6 +921,7 @@ export default function App() {
               providerStatus={pStatus}
               busy={queue.accepting || !queue.ready || !ready || importing}
               generationTask={generationTask}
+              onStopRemaining={queue.stopRemaining}
               queueCount={queue.pending.length}
               sentRequestId={
                 requestFeedback?.key === activeKey
@@ -1128,6 +1129,15 @@ export default function App() {
               <strong>
                 执行中 · {familyById(generationTask.family).label}
               </strong>
+              {generationTask.stopRequested ? (
+                <span>后续请求已停止，等待当前结果。</span>
+              ) : (
+                (generationTask.remainingRequests ?? 0) > 0 && (
+                  <button onClick={queue.stopRemaining}>
+                    停止此批次后续请求
+                  </button>
+                )
+              )}
               <button
                 onClick={() => {
                   ws.switchIntent(generationTask.intent ?? "create");
@@ -1150,7 +1160,7 @@ export default function App() {
             </div>
           ))}
           {!generationTask && !queue.pending.length && (
-            <p>队列已完成，结果保存在历史中。</p>
+            <p>队列已完成，图片已保存在图库中。</p>
           )}
         </Modal>
       )}
