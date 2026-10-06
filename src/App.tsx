@@ -40,12 +40,7 @@ import {
   primaryImage,
   setPrimaryImage,
 } from "./lib/workspace";
-import {
-  families,
-  familyById,
-  routeFor,
-  singleImageDraft,
-} from "./models/catalog";
+import { familyById, routeFor, singleImageDraft } from "./models/catalog";
 import { compileDraft } from "./models";
 import { maskFromRects } from "./workspaces/gpt/mask";
 import type {
@@ -59,14 +54,6 @@ import type {
 import { getResultBase, type SavedResult } from "./app/generation";
 import { ResultStage, ResultActions } from "./components/Results";
 import { updateFluxBoxes } from "./models/flux/regions";
-
-const FAMILY_ICONS = {
-  flux: "/flux.png",
-  gpt: "/openai.png",
-  qwen: "/qwen-color.png",
-  gemini: "/nano-banana.png",
-  seedream: "/seeddream.png",
-};
 
 export default function App() {
   const [notice, setNotice] = useState("");
@@ -833,38 +820,6 @@ export default function App() {
             </button>
           </div>
         </div>
-        {!galleryOpen && (
-          <div className="family-tabs" role="tablist" aria-label="模型家族">
-            {families.map((f) => (
-              <button
-                role="tab"
-                aria-selected={draft.family === f.id}
-                className={draft.family === f.id ? "active" : ""}
-                key={f.id}
-                title={f.description}
-                disabled={!ready || importing}
-                onClick={() => {
-                  ws.switchFamily(f.id);
-                  setTab("params");
-                }}
-              >
-                <img
-                  className={
-                    "family-icon" +
-                    (["flux", "gpt"].includes(f.id) ? " monochrome" : "")
-                  }
-                  src={FAMILY_ICONS[f.id]}
-                  width={20}
-                  height={20}
-                  alt=""
-                  aria-hidden="true"
-                  draggable={false}
-                />
-                {f.label}
-              </button>
-            ))}
-          </div>
-        )}
         <div className="row">
           {(generationTask || queue.pending.length > 0) && (
             <button onClick={() => setQueueOpen(true)}>
@@ -950,6 +905,7 @@ export default function App() {
           </div>
           {tab === "params" ? (
             <WorkspaceSidebar
+              onFamilyChange={ws.switchFamily}
               draft={draft}
               onChange={onChange}
               onReorder={(boxes) => commit({ ...current.current, boxes }, true)}

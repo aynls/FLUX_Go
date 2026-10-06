@@ -398,10 +398,9 @@ test("history keeps multiple results and restores the GPT mask into its own work
   fireEvent.click(ui.getByRole("button", { name: "恢复完整方案" }));
   await waitFor(() =>
     expect(
-      ui
-        .getByRole("tab", { name: "GPT Image 2.5" })
-        .getAttribute("aria-selected"),
-    ).toBe("true"),
+      (ui.getByRole("combobox", { name: "模型系列" }) as HTMLSelectElement)
+        .value,
+    ).toBe("gpt"),
   );
   expect(ui.getByRole("img", { name: "主图与黑色编辑蒙版" }).tagName).toBe(
     "CANVAS",
@@ -418,18 +417,27 @@ test("new image families expose official routes, color icons and independent rou
   const ui = render(<App />);
   await waitFor(() =>
     expect(
-      ui.getByRole("tab", { name: "Gemini Image" }).hasAttribute("disabled"),
+      ui.getByRole("combobox", { name: "模型系列" }).hasAttribute("disabled"),
     ).toBe(false),
   );
-  const geminiTab = ui.getByRole("tab", { name: "Gemini Image" });
-  expect(geminiTab.querySelector("img")?.getAttribute("src")).toBe(
-    "/nano-banana.png",
-  );
-  expect(geminiTab.querySelector("img")?.className).not.toContain("monochrome");
-  fireEvent.click(geminiTab);
+  fireEvent.change(ui.getByRole("combobox", { name: "模型系列" }), {
+    target: { value: "gemini" },
+  });
+  expect(
+    ui.container
+      .querySelector(".model-family-control img")
+      ?.getAttribute("src"),
+  ).toBe("/nano-banana.png");
+  expect(
+    ui.container.querySelector(".model-family-control img")?.className,
+  ).not.toContain("monochrome");
+  fireEvent.change(ui.getByRole("combobox", { name: "分辨率档位" }), {
+    target: { value: "512" },
+  });
   fireEvent.change(ui.getByRole("combobox", { name: "模型版本" }), {
     target: { value: "gemini-nano-banana-2.1" },
   });
+  expect(ui.getByRole("status").textContent).toContain("512 → 1K");
   expect(
     Array.from(
       ui.getByRole("combobox", { name: "提供商" }).querySelectorAll("option"),
@@ -447,11 +455,14 @@ test("new image families expose official routes, color icons and independent rou
     target: { value: "Google image" },
   });
   expect(ui.queryByRole("combobox", { name: "输出格式" })).toBeNull();
-  const seedTab = ui.getByRole("tab", { name: "Seedream" });
-  expect(seedTab.querySelector("img")?.getAttribute("src")).toBe(
-    "/seeddream.png",
-  );
-  fireEvent.click(seedTab);
+  fireEvent.change(ui.getByRole("combobox", { name: "模型系列" }), {
+    target: { value: "seedream" },
+  });
+  expect(
+    ui.container
+      .querySelector(".model-family-control img")
+      ?.getAttribute("src"),
+  ).toBe("/seeddream.png");
   const provider = ui.getByRole("combobox", { name: "提供商" });
   expect(provider.querySelector('option[value="ark"]')).not.toBeNull();
   expect(provider.querySelector('option[value="byteplus"]')).not.toBeNull();
@@ -477,7 +488,9 @@ test("new image families expose official routes, color icons and independent rou
     (restarted.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement)
       .value,
   ).toBe("BytePlus image");
-  fireEvent.click(restarted.getByRole("tab", { name: "Gemini Image" }));
+  fireEvent.change(restarted.getByRole("combobox", { name: "模型系列" }), {
+    target: { value: "gemini" },
+  });
   expect(
     (restarted.getByRole("combobox", { name: "模型版本" }) as HTMLSelectElement)
       .value,
@@ -830,7 +843,9 @@ test("family default model and parameters apply only to new work", async () => {
   expect(
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
   ).toBe("keep this draft");
-  fireEvent.click(ui.getByRole("tab", { name: "GPT Image 2.5" }));
+  fireEvent.change(ui.getByRole("combobox", { name: "模型系列" }), {
+    target: { value: "gpt" },
+  });
   expect(
     (ui.getByRole("combobox", { name: "模型版本" }) as HTMLSelectElement).value,
   ).toBe("gpt-image-2.5-sunburst");
@@ -917,7 +932,9 @@ test("cross-model editing keeps the main image, prompt and mask, and model chang
         .value,
     ).toBe("make it snow"),
   );
-  fireEvent.click(ui.getByRole("tab", { name: "Gemini Image" }));
+  fireEvent.change(ui.getByRole("combobox", { name: "模型系列" }), {
+    target: { value: "gemini" },
+  });
   expect(
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
   ).toBe("make it snow");
@@ -933,10 +950,8 @@ test("cross-model editing keeps the main image, prompt and mask, and model chang
   expect(ui.getByRole("button", { name: "移除蒙版" })).toBeTruthy();
   fireEvent.click(ui.getByRole("button", { name: "撤销 Ctrl+Z" }));
   expect(
-    ui
-      .getByRole("tab", { name: "GPT Image 2.5" })
-      .getAttribute("aria-selected"),
-  ).toBe("true");
+    (ui.getByRole("combobox", { name: "模型系列" }) as HTMLSelectElement).value,
+  ).toBe("gpt");
   expect(ui.getByRole("img", { name: "主图与黑色编辑蒙版" })).toBeTruthy();
   expect(
     (ui.getByRole("combobox", { name: "提供商" }) as HTMLSelectElement).value,

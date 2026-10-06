@@ -19,7 +19,8 @@ import {
   taskIntent,
   workspaceKey,
 } from "../lib/workspace";
-import { families, fieldsFor, providers } from "../models/catalog";
+import { families, fieldsFor, providers, modelById } from "../models/catalog";
+import { displayValue } from "../models/parameterLabels";
 import { referenceWidth } from "../components/ResizableReferences";
 import type {
   Draft,
@@ -147,6 +148,26 @@ export function useWorkspace(
       if (size.w > 0 && size.h > 0) d = resizeCanvas(next, size);
     }
     commit(d, discrete);
+    if (
+      next.modelId !== previous.modelId ||
+      next.provider !== previous.provider
+    ) {
+      const restored =
+        previous.routeSettings?.[next.modelId + ":" + next.provider];
+      const changes = Object.entries(fields).flatMap(([key, field]) =>
+        key !== "count" &&
+        previous.params[key] !== undefined &&
+        previous.params[key] !== d.params[key]
+          ? [
+              `${field.label} ${displayValue(key, previous.params[key])} → ${displayValue(key, d.params[key])}`,
+            ]
+          : [],
+      );
+      const route = `${modelById(d.modelId)?.label} · ${providers.find((p) => p.id === d.provider)?.label}`;
+      onNotice(
+        `${restored ? "已恢复" : "已切换至"} ${route}${restored ? " 的参数" : ""}${changes.length ? "；" + changes.join("，") : ""}`,
+      );
+    }
   };
   const undo = () => {
     if (gesture.current) return;
@@ -156,6 +177,7 @@ export function useWorkspace(
     setRedo((s) => [...s, previous]);
     setUndo((s) => s.slice(0, -1));
     replace(prior);
+    onNotice("");
     lastEdit.current = 0;
   };
   const redo = () => {
@@ -166,6 +188,7 @@ export function useWorkspace(
     setUndo((s) => [...s, previous]);
     setRedo((s) => s.slice(0, -1));
     replace(next);
+    onNotice("");
     lastEdit.current = 0;
   };
   const draftForIntent = (intent: TaskIntent) => {

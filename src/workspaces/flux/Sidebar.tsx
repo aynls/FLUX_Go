@@ -17,12 +17,19 @@ import { changeRole, taskIntent } from "../../lib/workspace";
 import { regionsEnabled, requiresLayout } from "../../models/flux/layout";
 import { rectToWire } from "../../lib/protocol";
 import { ROLE_LABELS } from "../../models/flux/roles";
-import type { Box, Draft, ProviderStatus, Rect } from "../../lib/types";
+import type {
+  Box,
+  Draft,
+  ProviderStatus,
+  Rect,
+  FamilyId,
+} from "../../lib/types";
 import type { GenerationTask } from "../../lib/types";
 
 export interface SidebarProps {
   draft: Draft;
   onChange: (draft: Draft) => void;
+  onFamilyChange?: (family: FamilyId) => void;
   onReorder: (boxes: Box[]) => void;
   selectedId: string | null;
   onSelect: (id: string | null) => void;

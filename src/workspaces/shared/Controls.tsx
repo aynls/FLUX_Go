@@ -1,3 +1,5 @@
+import { displayValue } from "../../models/parameterLabels";
+export { displayValue } from "../../models/parameterLabels";
 import {
   defaultsFor,
   fieldsFor,
@@ -8,6 +10,7 @@ import {
   changeRoute,
   routeFor,
   singleImageDraft,
+  families,
 } from "../../models/catalog";
 import { estimateCost } from "../../lib/params";
 import { estimateComfyCredits, formatCredits } from "../../models/pricing";
@@ -20,11 +23,20 @@ import type {
   ProviderId,
   ProviderStatus,
   GenerationTask,
+  FamilyId,
 } from "../../lib/types";
+const FAMILY_ICONS: Record<FamilyId, string> = {
+  flux: "/flux.png",
+  gpt: "/openai.png",
+  qwen: "/qwen-color.png",
+  gemini: "/nano-banana.png",
+  seedream: "/seeddream.png",
+};
 
 export interface WorkspaceControlsProps {
   draft: Draft;
   onChange: (draft: Draft) => void;
+  onFamilyChange?: (family: FamilyId) => void;
   providerStatus: ProviderStatus | null;
   busy: boolean;
   errors: string[];
@@ -41,9 +53,16 @@ export function RouteControls({
   onChange,
   providerStatus,
   onSettings,
+  onFamilyChange,
+  busy,
 }: Pick<
   WorkspaceControlsProps,
-  "draft" | "onChange" | "providerStatus" | "onSettings"
+  | "draft"
+  | "onChange"
+  | "providerStatus"
+  | "onSettings"
+  | "onFamilyChange"
+  | "busy"
 >) {
   const models = catalog.models.filter((m) => m.family === d.family);
   const selected = modelById(d.modelId)!;
@@ -55,6 +74,34 @@ export function RouteControls({
       <div className="section-heading">
         <h2>模型与供应商</h2>
       </div>
+      {onFamilyChange && (
+        <label>
+          模型系列
+          <div className="model-family-control">
+            <img
+              className={
+                "family-icon" +
+                (["flux", "gpt"].includes(d.family) ? " monochrome" : "")
+              }
+              src={FAMILY_ICONS[d.family]}
+              alt=""
+              aria-hidden="true"
+            />
+            <select
+              aria-label="模型系列"
+              value={d.family}
+              disabled={busy}
+              onChange={(e) => onFamilyChange(e.target.value as FamilyId)}
+            >
+              {families.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </label>
+      )}
       {models.length > 1 && (
         <label>
           模型版本
@@ -121,27 +168,6 @@ export function RouteControls({
       )}
     </section>
   );
-}
-const VALUE_LABELS: Record<string, string> = {
-  auto: "自动",
-  low: "低",
-  medium: "中",
-  high: "高",
-  xhigh: "超高",
-  max: "最高",
-  opaque: "不透明",
-  transparent: "透明",
-  direct: "直接扩写",
-  agent: "推理扩写",
-  latest: "最新版本",
-  png: "PNG",
-  jpeg: "JPEG",
-  webp: "WebP",
-};
-export function displayValue(key: string, value: GenerateParams[string]) {
-  if (value == null) return key === "seed" ? "随机" : "供应商默认";
-  if (typeof value === "boolean") return value ? "开启" : "关闭";
-  return VALUE_LABELS[String(value)] ?? String(value);
 }
 export function ParameterFields({
   draft: d,
@@ -702,8 +728,7 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
               ? ` · ${job.completed}/${job.total} 张`
               : ""}
           </span>
-          {(job.family !== d.family ||
-            (job.intent ?? "create") !== taskIntent(d)) && (
+          {(job.intent ?? "create") !== taskIntent(d) && (
             <button onClick={p.onShowTask}>返回任务工作区</button>
           )}
           {job.taskId && (
