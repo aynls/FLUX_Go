@@ -1,6 +1,7 @@
 import Canvas from "./Canvas";
 import { getResultBase, type SavedResult } from "../app/generation";
 import type { WorkingImage } from "../lib/types";
+import { modelByAnyId, providers } from "../models/catalog";
 
 export function ResultStage({
   result,
@@ -79,9 +80,11 @@ export function ResultActions(p: {
         </div>
       )}
       <div>
-        <strong>最近生成</strong>
+        <strong>{modelByAnyId(r.out.model)?.label ?? "最近生成"}</strong>
         <span className="muted">
-          {r.image.width}×{r.image.height} ·{" "}
+          {providers.find((p) => p.id === r.out.provider)?.label ??
+            r.out.provider}{" "}
+          · {r.image.width}×{r.image.height} ·{" "}
           {r.out.provider === "comfy"
             ? r.out.usage?.credits != null
               ? "实际 " + r.out.usage.credits + " Credits"

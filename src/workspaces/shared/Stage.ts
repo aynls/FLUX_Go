@@ -11,4 +11,5 @@ export interface StageProps {
   onGestureStart: () => void;
   onGestureEnd: () => void;
   onImportMask: () => void;
+  onSource?: (box: Box) => void;
 }

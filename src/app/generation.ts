@@ -1,11 +1,13 @@
 import { generate } from "../lib/api";
 import { downscaleDataUrl, imageSize } from "../lib/image";
 import { buildRequest } from "../models";
+import { primaryImage, taskIntent } from "../lib/workspace";
 import type {
   Draft,
   GenerateOutput,
   HistoryItem,
   WorkingImage,
+  GenerationProgress,
 } from "../lib/types";
 
 export interface SavedResult {
@@ -18,13 +20,14 @@ export interface SavedResult {
   saved: boolean;
 }
 export function getResultBase(result: SavedResult | null) {
-  return (
-    result?.snapshot.refs.find((r) => r.uid === result.snapshot.baseId) ??
-    result?.snapshot.refs[0]
-  );
+  return result ? primaryImage(result.snapshot) : null;
 }
 /** One immutable snapshot, one paid submission, all output images retained. */
-export async function executeGeneration(snapshot: Draft): Promise<SavedResult> {
+export async function executeGeneration(
+  snapshot: Draft,
+  onProgress?: (progress: GenerationProgress) => void,
+): Promise<SavedResult> {
+  onProgress?.({ phase: "preparing" });
   const images = await Promise.all(
     snapshot.refs.map((r) =>
       snapshot.compressEnabled
@@ -37,7 +40,9 @@ export async function executeGeneration(snapshot: Draft): Promise<SavedResult> {
       ? await downscaleDataUrl(snapshot.mask.dataUrl, snapshot.maxInputEdge)
       : snapshot.mask.dataUrl
     : undefined;
-  const out = await generate(buildRequest(snapshot, images, mask));
+  onProgress?.({ phase: "waiting" });
+  const request = buildRequest(snapshot, images, mask);
+  const out = await generate(request, onProgress);
   if (!out.images[0]) throw new Error("服务返回成功，但没有图片");
   const image: WorkingImage = {
     uid: crypto.randomUUID(),
@@ -51,10 +56,10 @@ export async function executeGeneration(snapshot: Draft): Promise<SavedResult> {
     createdAt: Date.now(),
     provider: out.provider,
     model: out.model,
-    mode: refs.length ? "edit" : "t2i",
+    mode: taskIntent(snapshot) === "edit" ? "edit" : "t2i",
     prompt: snapshot.prompt,
     finalPrompt: out.finalPrompt,
-    params: { ...snapshot.params },
+    params: { ...request.params },
     boxes: snapshot.boxes,
     canvasWidth: snapshot.canvas.w,
     canvasHeight: snapshot.canvas.h,
@@ -69,6 +74,8 @@ export async function executeGeneration(snapshot: Draft): Promise<SavedResult> {
       ...recipe,
       refNames: refs.map((r) => r.name),
       refIds: refs.map((r) => r.uid!),
+      refPurposes: refs.map((r) => r.purpose),
+      refNotes: refs.map((r) => r.note),
       maskName: originalMask?.name,
     },
   };

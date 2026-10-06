@@ -17,6 +17,7 @@ import { changeRole } from "../../lib/workspace";
 import { rectToWire } from "../../lib/protocol";
 import { ROLE_LABELS } from "../../models/flux/roles";
 import type { Box, Draft, ProviderStatus, Rect } from "../../lib/types";
+import type { GenerationTask } from "../../lib/types";
 
 export interface SidebarProps {
   draft: Draft;
@@ -32,6 +33,8 @@ export interface SidebarProps {
   errors: string[];
   onGenerate: () => void;
   onSettings: () => void;
+  generationTask?: GenerationTask | null;
+  onShowTask?: () => void;
 }
 
 export default function Sidebar(p: SidebarProps) {
@@ -41,6 +44,19 @@ export default function Sidebar(p: SidebarProps) {
   const [collapsedUid, setCollapsedUid] = useState<string | null>(null);
   useEffect(() => {
     setCollapsedUid(null);
+    const element = Array.from(
+      listRef.current?.querySelectorAll<HTMLElement>("[data-box-uid]") ?? [],
+    ).find(
+      (el) =>
+        el.dataset.boxUid ===
+        p.draft.boxes.find((b) => b.id === p.selectedId)?.uid,
+    );
+    element?.scrollIntoView?.({
+      block: "nearest",
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
   }, [p.selectedId]);
   const bodyRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -377,7 +393,7 @@ export default function Sidebar(p: SidebarProps) {
                           </select>
                         </label>
                         <button className="wide" onClick={() => p.onSource(b)}>
-                          在来源图上画选 / 调整源区域
+                          调整来源区域
                         </button>
                         {(() => {
                           const r = d.refs.find((r) => r.uid === b.sourceId);
@@ -404,9 +420,6 @@ export default function Sidebar(p: SidebarProps) {
                             保留来源区域的相对位置，源与目标使用相同归一化坐标。
                           </p>
                         )}
-                        {b.role === "remove" && (
-                          <p className="help">移除图中物体，模型补全背景。</p>
-                        )}
                       </>
                     )}
                   </>
@@ -423,6 +436,15 @@ export default function Sidebar(p: SidebarProps) {
           />
         </details>
         <InputOptions {...p} />
+        {d.provider === "runware" && (
+          <details>
+            <summary>输出文件</summary>
+            <ParameterFields
+              {...p}
+              keys={["outputFormat", "outputCompression"]}
+            />
+          </details>
+        )}
         <Validation errors={p.errors} />
       </div>
       <GenerateFooter {...p} />
@@ -511,7 +533,7 @@ export function RectFields({
   };
   return (
     <div>
-      {showLabel && <p className="help">{label} · 顺序与发送数组一致</p>}
+      {showLabel && <p className="muted">{label}</p>}
       <div
         className="coords"
         onFocusCapture={() => {

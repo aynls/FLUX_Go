@@ -5,6 +5,7 @@ import {
   InputOptions,
   GenerateFooter,
   Validation,
+  QwenSizeFields,
   type WorkspaceControlsProps,
 } from "../shared/Controls";
 export default function QwenSidebar(p: WorkspaceControlsProps) {
@@ -15,10 +16,7 @@ export default function QwenSidebar(p: WorkspaceControlsProps) {
         <PromptEditor {...p} />
         <section>
           <h2>画面尺寸</h2>
-          <ParameterFields
-            {...p}
-            keys={["resolution", "aspectRatio", "width", "height", "count"]}
-          />
+          <QwenSizeFields {...p} />
         </section>
         <section>
           <h2>生成控制</h2>
@@ -27,13 +25,21 @@ export default function QwenSidebar(p: WorkspaceControlsProps) {
             keys={["seed", "promptExtend", "promptExtendMode", "watermark"]}
           />
         </section>
-        <section>
-          <h2>避免出现的内容</h2>
-          <ParameterFields {...p} keys={["negativePrompt"]} />
-          {p.draft.provider === "openrouter" && (
-            <p className="help">此路由暂不开放负面提示词和扩写参数。</p>
-          )}
-        </section>
+        {p.draft.provider !== "openrouter" && (
+          <details>
+            <summary>负面提示词</summary>
+            <ParameterFields {...p} keys={["negativePrompt"]} />
+          </details>
+        )}
+        {p.draft.provider === "runware" && (
+          <details>
+            <summary>输出文件</summary>
+            <ParameterFields
+              {...p}
+              keys={["outputFormat", "outputCompression"]}
+            />
+          </details>
+        )}
         <InputOptions {...p} />
         <Validation errors={p.errors} />
       </div>

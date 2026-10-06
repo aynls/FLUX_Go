@@ -7,7 +7,7 @@ import {
 } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import * as api from "../lib/api";
-import { DEFAULT_PARAMS, phantomSize } from "../lib/params";
+import { DEFAULT_PARAMS } from "../lib/params";
 import {
   DEFAULT_PREFERENCES,
   newDraft,
@@ -51,6 +51,7 @@ function readPreferences(): Preferences {
 export function useWorkspace(
   submitting: RefObject<boolean>,
   onNotice: (s: string) => void,
+  onRequestClose?: () => void,
 ) {
   const [prefs, setPrefs] = useState<Preferences>(readPreferences);
   const [draft, setDraft] = useState<Draft>(() => newDraft(prefs));
@@ -75,8 +76,9 @@ export function useWorkspace(
   }, []);
   const commit = useCallback(
     (d: Draft, discrete = false) => {
+      const previous = current.current;
       if (!gesture.current && (discrete || Date.now() - lastEdit.current > 600))
-        setUndo((s) => [...s.slice(-39), current.current]);
+        setUndo((s) => [...s.slice(-39), previous]);
       lastEdit.current = Date.now();
       setRedo([]);
       replace(withIds(d));
@@ -84,14 +86,35 @@ export function useWorkspace(
     [replace],
   );
   const onChange = (next: Draft) => {
+    const previous = current.current;
     const fields = fieldsFor(next);
+    const discrete =
+      next.provider !== previous.provider ||
+      next.modelId !== previous.modelId ||
+      next.intent !== previous.intent ||
+      next.boxes.length !== previous.boxes.length ||
+      next.boxes.some((box) => {
+        const old = previous.boxes.find((b) => b.uid === box.uid);
+        return old && (old.role !== box.role || old.sourceId !== box.sourceId);
+      }) ||
+      !!next.mask !== !!previous.mask ||
+      next.compressEnabled !== previous.compressEnabled ||
+      Object.entries(fields).some(
+        ([key, field]) =>
+          next.params[key] !== previous.params[key] &&
+          (field.kind === "enum" ||
+            field.kind === "boolean" ||
+            (field.nullable &&
+              (next.params[key] == null) !== (previous.params[key] == null))),
+      );
     let d = next;
     if (
       fields.aspectRatio &&
-      next.params.aspectRatio !== current.current.params.aspectRatio &&
-      next.params.aspectRatio !== "auto"
+      (next.params.aspectRatio !== current.current.params.aspectRatio ||
+        next.params.resolution !== current.current.params.resolution ||
+        next.provider !== current.current.provider)
     )
-      d = resizeCanvas(next, phantomSize(next.params.aspectRatio ?? "1:1"));
+      d = resizeCanvas(next, outputEstimate(next));
     if (
       (fields.size && next.params.size !== current.current.params.size) ||
       (fields.width &&
@@ -101,13 +124,14 @@ export function useWorkspace(
       const size = outputEstimate(next);
       if (size.w > 0 && size.h > 0) d = resizeCanvas(next, size);
     }
-    commit(d);
+    commit(d, discrete);
   };
   const undo = () => {
     if (gesture.current) return;
     const prior = undoStack.at(-1);
     if (!prior) return;
-    setRedo((s) => [...s, current.current]);
+    const previous = current.current;
+    setRedo((s) => [...s, previous]);
     setUndo((s) => s.slice(0, -1));
     replace(prior);
     lastEdit.current = 0;
@@ -116,7 +140,8 @@ export function useWorkspace(
     if (gesture.current) return;
     const next = redoStack.at(-1);
     if (!next) return;
-    setUndo((s) => [...s, current.current]);
+    const previous = current.current;
+    setUndo((s) => [...s, previous]);
     setRedo((s) => s.slice(0, -1));
     replace(next);
     lastEdit.current = 0;
@@ -152,6 +177,14 @@ export function useWorkspace(
   const reset = () => {
     saveAllowed.current = true;
     commit(newDraft(prefs, current.current.family), true);
+  };
+  const closeApp = async () => {
+    try {
+      await persist();
+      await getCurrentWindow().destroy();
+    } catch (e) {
+      onNotice("关闭前保存失败：" + String(e));
+    }
   };
   useEffect(() => {
     if (!api.isDesktop()) {
@@ -203,7 +236,7 @@ export function useWorkspace(
       .onCloseRequested(async (event) => {
         event.preventDefault();
         if (submitting.current) {
-          onNotice("生成任务进行中，请等结果返回并保存后关闭");
+          onRequestClose?.();
           return;
         }
         try {
@@ -222,7 +255,7 @@ export function useWorkspace(
       disposed = true;
       off?.();
     };
-  }, [persist, submitting, onNotice]);
+  }, [persist, submitting, onNotice, onRequestClose]);
   useEffect(() => {
     try {
       localStorage.setItem("flux-preferences-v2", JSON.stringify(prefs));
@@ -243,7 +276,8 @@ export function useWorkspace(
     return () => media.removeEventListener("change", update);
   }, [prefs, onNotice]);
   const beginGesture = () => {
-    if (!gesture.current) setUndo((s) => [...s.slice(-39), current.current]);
+    const previous = current.current;
+    if (!gesture.current) setUndo((s) => [...s.slice(-39), previous]);
     gesture.current = true;
     setRedo([]);
   };
@@ -265,6 +299,7 @@ export function useWorkspace(
     redoStack,
     switchFamily,
     reset,
+    closeApp,
     persist,
     beginGesture,
     endGesture,

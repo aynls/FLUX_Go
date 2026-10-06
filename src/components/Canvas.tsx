@@ -25,6 +25,8 @@ import { BOX_COLORS } from "../lib/boxColors";
 interface CanvasProps {
   /** 画布展示图片；发送顺序由工作区管理。 */
   image: WorkingImage | null;
+  imageFit?: "fill" | "contain";
+  dimensionLabel?: string;
   /** 文生图模式的幻影画布尺寸 */
   phantom: { w: number; h: number } | null;
   boxes: Box[];
@@ -140,11 +142,7 @@ export default function Canvas(props: CanvasProps) {
     const erase = props.tool === "eraser";
     for (const [target, operation, color] of [
       [ctx, erase ? "source-over" : "destination-out", "#000"],
-      [
-        display,
-        erase ? "destination-out" : "source-over",
-        "#000",
-      ],
+      [display, erase ? "destination-out" : "source-over", "#000"],
     ] as const) {
       target.globalCompositeOperation = operation;
       target.strokeStyle = color;
@@ -573,7 +571,10 @@ export default function Canvas(props: CanvasProps) {
               alt=""
               draggable={false}
               className="absolute inset-0 h-full w-full object-fill"
-              style={{ imageRendering: s >= 3 ? "pixelated" : "auto" }}
+              style={{
+                imageRendering: s >= 3 ? "pixelated" : "auto",
+                objectFit: props.imageFit ?? "fill",
+              }}
             />
           )}
           {props.phantom && !props.image && (
@@ -585,7 +586,7 @@ export default function Canvas(props: CanvasProps) {
                 输出画布
               </span>
               <span className="text-zinc-600" style={{ fontSize: 11 / s }}>
-                {iw}×{ih}
+                {props.dimensionLabel ?? `${iw}×${ih}`}
                 {!props.readOnly && props.coordinateMode !== "pixels"
                   ? " · 拖拽安排区域"
                   : ""}
@@ -691,9 +692,10 @@ export default function Canvas(props: CanvasProps) {
 
       {/* 坐标读数 */}
       <div className="overlay-glass absolute bottom-3 right-3 rounded-md px-2.5 py-1 text-xs tabular-nums text-zinc-400">
-        {cursorImg && iw > 0
-          ? `${Math.round(clampCoord(cursorImg.x, iw, 0))}, ${Math.round(clampCoord(cursorImg.y, ih, 0))} px`
-          : `${iw}×${ih}`}
+        {props.dimensionLabel ??
+          (cursorImg && iw > 0
+            ? `${Math.round(clampCoord(cursorImg.x, iw, 0))}, ${Math.round(clampCoord(cursorImg.y, ih, 0))} px`
+            : `${iw}×${ih}`)}
       </div>
     </div>
   );
@@ -773,7 +775,7 @@ function BoxView({
           top: box.rect.y,
           width: box.rect.w,
           height: box.rect.h,
-          border: `${bw}px solid ${color}`,
+          border: `${bw}px ${box.role === "remove" ? "dashed" : "solid"} ${color}`,
           opacity: draft ? 0.9 : 1,
           boxShadow: selected
             ? `0 0 0 ${1 / scale}px rgba(255,255,255,0.35)`
@@ -797,10 +799,17 @@ function BoxView({
             fontFamily: "ui-monospace, monospace",
           }}
         >
+          {box.role === "remove"
+            ? "移除 · "
+            : box.role === "move"
+              ? "目标 · "
+              : ""}
           {box.id || "…"}{" "}
-          <span>
-            [{wire[0]}, {wire[1]}, {wire[2]}, {wire[3]}]
-          </span>
+          {selected && (
+            <span>
+              [{wire[0]}, {wire[1]}, {wire[2]}, {wire[3]}]
+            </span>
+          )}
         </span>
         {/* 区域描述：直接显示在盒内 */}
         {box.desc && (

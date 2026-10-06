@@ -1,16 +1,16 @@
 import { useState } from "react";
 import Canvas from "../../components/Canvas";
 import { routeFor } from "../../models/catalog";
-import { outputEstimate } from "../../lib/workspace";
+import { outputEstimate, primaryImage } from "../../lib/workspace";
 import type { StageProps } from "../shared/Stage";
 export default function GptStage(p: StageProps) {
   const d = p.draft,
-    first = d.refs[0] ?? null;
+    first = primaryImage(d);
   const [tool, setTool] = useState<"pan" | "brush" | "eraser" | "mask-box">(
     "pan",
   );
   const [radius, setRadius] = useState(32);
-  const supported = routeFor(d)?.mask;
+  const supported = routeFor(d)?.mask && d.intent !== "create";
   return (
     <div className="gpt-work-area">
       <div className="gpt-editor">
@@ -42,12 +42,14 @@ export default function GptStage(p: StageProps) {
                 </button>
               </>
             )}
-            <button
-              disabled={!d.mask}
-              onClick={() => p.onChange({ ...d, mask: null, maskRects: [] })}
-            >
-              移除蒙版
-            </button>
+            {d.mask && (
+              <button
+                disabled={!d.mask}
+                onClick={() => p.onChange({ ...d, mask: null, maskRects: [] })}
+              >
+                移除蒙版
+              </button>
+            )}
           </div>
         </div>
         {supported && (
@@ -80,6 +82,11 @@ export default function GptStage(p: StageProps) {
           <Canvas
             image={first}
             phantom={first ? null : outputEstimate(d)}
+            dimensionLabel={
+              !first && d.params.size === "auto"
+                ? "模型自动决定尺寸"
+                : undefined
+            }
             boxes={[]}
             selectedId={null}
             onSelect={() => {}}
@@ -99,14 +106,14 @@ export default function GptStage(p: StageProps) {
             onGestureEnd={p.onGestureEnd}
           />
         </div>
-        <div className="mask-summary">
-          {d.mask && <img src={d.mask.dataUrl} alt="编辑蒙版" />}
-          <p className="help">
-            {supported
-              ? "黑色区域用于编辑。画笔添加编辑区，橡皮恢复保留区；半径按原图像素计算，空格或中键拖动画面。也可导入带透明区域的 PNG。"
-              : "此路由支持参考图编辑；使用蒙版时请切换 Comfy 或 Runware。"}
-          </p>
-        </div>
+        {first && supported && (
+          <div className="mask-summary">
+            {d.mask && <img src={d.mask.dataUrl} alt="编辑蒙版" />}
+            <span className="muted">
+              {d.mask ? "黑色为编辑区域" : "使用画笔或矩形标记编辑区域"}
+            </span>
+          </div>
+        )}
       </div>
       {p.references}
     </div>

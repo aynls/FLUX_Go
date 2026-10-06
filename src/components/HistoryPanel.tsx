@@ -4,6 +4,10 @@ import { ArrowClockwise, ArrowLeft, Trash } from "@phosphor-icons/react";
 import { assetUrl, historyDelete, importImage, saveDataUrl } from "../lib/api";
 import type { HistoryItem } from "../lib/types";
 import { exportDefaultPath } from "../lib/export";
+import { modelByAnyId, providers } from "../models/catalog";
+import Modal from "./Modal";
+import { displayValue } from "../workspaces/shared/Controls";
+import { catalog } from "../models/catalog";
 
 interface Props {
   saveDirectory: string;
@@ -105,6 +109,9 @@ export default function HistoryPanel({
                   <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-zinc-300">
                     {it.prompt || "（无提示词）"}
                   </p>
+                  <span className="muted">
+                    {modelByAnyId(it.model)?.label ?? it.model}
+                  </span>
                 </div>
               </button>
             ))}
@@ -135,6 +142,9 @@ function HistoryDetail({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [resultIndex, setResultIndex] = useState(0);
+  const [preview, setPreview] = useState<{ src: string; title: string } | null>(
+    null,
+  );
   const resultFile = item.resultFiles[resultIndex];
   const resultSrc = resultFile ? assetUrl(resultFile) : null;
   const inputSrc = item.inputFiles[0] ? assetUrl(item.inputFiles[0]) : null;
@@ -162,20 +172,26 @@ function HistoryDetail({
   };
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto p-3">
+    <div className="history-detail flex h-full flex-col overflow-y-auto p-3">
       <button
-        className="mb-2 self-start text-xs text-zinc-400 hover:text-zinc-200"
+        className="history-back mb-2 self-start text-xs text-zinc-400 hover:text-zinc-200"
         onClick={onBack}
       >
         <ArrowLeft size={12} /> 返回列表
       </button>
 
       {resultSrc && (
-        <img
-          src={resultSrc}
-          alt="结果"
-          className="w-full rounded-md border border-zinc-800"
-        />
+        <button
+          className="history-image-button"
+          aria-label="放大查看历史结果"
+          onClick={() => setPreview({ src: resultSrc, title: "历史生成结果" })}
+        >
+          <img
+            src={resultSrc}
+            alt="结果"
+            className="w-full rounded-md border border-zinc-800"
+          />
+        </button>
       )}
       {item.resultFiles.length > 1 && (
         <div className="result-gallery mt-2" aria-label="历史生成结果">
@@ -198,8 +214,17 @@ function HistoryDetail({
           value={item.mode === "edit" ? "图像编辑" : "文生图"}
         />
         <Meta label="时间" value={new Date(item.createdAt).toLocaleString()} />
-        <Meta label="提供商" value={item.provider} />
-        <Meta label="模型" value={item.model} />
+        <Meta
+          label="提供商"
+          value={
+            providers.find((p) => p.id === item.provider)?.label ??
+            item.provider
+          }
+        />
+        <Meta
+          label="模型"
+          value={modelByAnyId(item.model)?.label ?? item.model}
+        />
         <Meta
           label="成本"
           value={
@@ -257,6 +282,19 @@ function HistoryDetail({
           </div>
         </div>
       )}
+      <details className="mt-3">
+        <summary>生成参数</summary>
+        <dl className="request-parameters">
+          {Object.entries(item.params)
+            .filter(([key, value]) => catalog.fields[key] && value != null)
+            .map(([key, value]) => (
+              <div key={key}>
+                <dt>{catalog.fields[key].label}</dt>
+                <dd>{displayValue(key, value as string | number | boolean)}</dd>
+              </div>
+            ))}
+        </dl>
+      </details>
 
       <details className="mt-3">
         <summary className="cursor-pointer text-xs text-zinc-500">
@@ -269,12 +307,28 @@ function HistoryDetail({
 
       {inputSrc && (
         <div className="mt-3">
-          <p className="mb-1 text-xs text-zinc-500">当时的输入图</p>
-          <img
-            src={inputSrc}
-            alt="输入"
-            className="max-h-48 rounded border border-zinc-800"
-          />
+          <p className="mb-1 text-xs text-zinc-500">
+            当时的素材 · {item.inputFiles.length}
+          </p>
+          <div className="result-gallery">
+            {item.inputFiles.map((path, i) => (
+              <button
+                key={path}
+                aria-label={"查看历史素材 " + (i + 1)}
+                onClick={() =>
+                  setPreview({
+                    src: assetUrl(path),
+                    title: item.recipe?.refNames[i] ?? "素材 " + (i + 1),
+                  })
+                }
+              >
+                <img
+                  src={assetUrl(path)}
+                  alt={item.recipe?.refNames[i] ?? "素材 " + (i + 1)}
+                />
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -311,6 +365,13 @@ function HistoryDetail({
           <Trash size={12} /> 删除记录
         </button>
       </div>
+      {preview && (
+        <Modal title={preview.title} onClose={() => setPreview(null)} large>
+          <div className="image-preview">
+            <img src={preview.src} alt={preview.title} />
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

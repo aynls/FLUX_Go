@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "FLUX_Go — FLUX.3 图像工作台",
+        "title": "FLUX_Go — 图像工作台",
         "width": 1480,
         "height": 920,
         "minWidth": 1024,
@@ -29,6 +29,12 @@
   },
   "bundle": {
     "active": true,
-    "icon": ["icons/icon.ico", "icons/icon.icns", "icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png"]
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.icns",
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png"
+    ]
   }
 }

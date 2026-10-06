@@ -26,8 +26,10 @@ import {
   withIds,
   validateDraft,
   migrateDraft,
+  taskIntent,
+  setPrimaryImage,
 } from "./lib/workspace";
-import { families, familyById, modelById, routeFor } from "./models/catalog";
+import { families, familyById, modelByAnyId, routeFor } from "./models/catalog";
 import { compileDraft } from "./models";
 import { maskFromRects } from "./workspaces/gpt/mask";
 import type {
@@ -36,6 +38,7 @@ import type {
   HistoryItem,
   ProviderStatus,
   WorkingImage,
+  GenerationTask,
 } from "./lib/types";
 
 import {
@@ -48,8 +51,26 @@ import { updateFluxBoxes } from "./models/flux/regions";
 
 export default function App() {
   const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (
+      !/^(已添加 \d+ 张参考图|图片已复制|结果已保存到历史|已保存到 .+)$/.test(
+        notice,
+      )
+    )
+      return;
+    const timer = window.setTimeout(
+      () => setNotice((current) => (current === notice ? "" : current)),
+      4000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+  const [closeRequested, setCloseRequested] = useState(false);
+  const requestClose = useCallback(() => setCloseRequested(true), []);
   const submitting = useRef(false);
-  const ws = useWorkspace(submitting, setNotice);
+  const ws = useWorkspace(submitting, setNotice, requestClose);
+  const [generationTask, setGenerationTask] = useState<GenerationTask | null>(
+    null,
+  );
   const {
     prefs,
     setPrefs,
@@ -151,11 +172,14 @@ export default function App() {
             );
             if (accepted.length > room)
               errors.push("导入期间方案变化，超过上限的文件未导入");
+            const next = {
+              ...current.current,
+              refs: [...current.current.refs, ...accepted.slice(0, room)],
+            };
             commit(
-              {
-                ...current.current,
-                refs: [...current.current.refs, ...accepted.slice(0, room)],
-              },
+              taskIntent(next) === "edit" && !next.baseId && next.refs.length
+                ? setPrimaryImage(next, next.refs[0].uid!)
+                : next,
               true,
             );
           }
@@ -325,9 +349,21 @@ export default function App() {
     }
     submitting.current = true;
     setBusy(true);
+    setGenerationTask({
+      family: snapshot.family,
+      modelId: snapshot.modelId,
+      provider: snapshot.provider,
+      startedAt: Date.now(),
+      total: routeFor(snapshot)?.parameters.count
+        ? (snapshot.params.count ?? 1)
+        : 1,
+      phase: "preparing",
+    });
     try {
       await ws.persist(snapshot);
-      const r = await executeGeneration(snapshot);
+      const r = await executeGeneration(snapshot, (progress) =>
+        setGenerationTask((task) => (task ? { ...task, ...progress } : null)),
+      );
       const { item, files } = r;
       storeResult(r);
       if (current.current.family === snapshot.family) {
@@ -335,6 +371,9 @@ export default function App() {
         setOriginal(false);
       }
       try {
+        setGenerationTask((task) =>
+          task ? { ...task, phase: "saving" } : null,
+        );
         item.thumb = await makeThumb(r.image.dataUrl);
         await api.historySave(item, files);
         markSaved(r);
@@ -355,6 +394,7 @@ export default function App() {
     } finally {
       submitting.current = false;
       setBusy(false);
+      setGenerationTask(null);
     }
   };
   const useResult = (im: WorkingImage, edit: boolean) => {
@@ -365,12 +405,23 @@ export default function App() {
       return;
     }
     const r = { ...im, uid: crypto.randomUUID() };
+    const retained =
+      taskIntent(d) === "edit"
+        ? d.refs.filter((ref) => ref.uid !== (d.baseId ?? d.refs[0]?.uid))
+        : d.refs;
+    if (edit && retained.length + 1 > max) {
+      setNotice(`保留参考素材后超过 ${max} 张，请先移除一张素材再继续编辑`);
+      return;
+    }
     commit(
       edit
         ? {
             ...d,
-            refs: [r],
+            refs: [r, ...retained],
+            prompt: "",
             baseId: r.uid,
+            intent: "edit",
+            showBase: true,
             boxes: [],
             mask: null,
             maskRects: [],
@@ -398,6 +449,8 @@ export default function App() {
           ...(await api.importImage(path)),
           name: item.recipe?.refNames[i] ?? "参考图 " + (i + 1),
           uid: item.recipe?.refIds[i] ?? crypto.randomUUID(),
+          purpose: item.recipe?.refPurposes?.[i],
+          note: item.recipe?.refNotes?.[i],
         })),
       );
       const mask = item.maskFile
@@ -406,7 +459,7 @@ export default function App() {
             name: item.recipe?.maskName ?? "编辑蒙版",
           }
         : null;
-      const inferred = modelById(item.model) ?? undefined;
+      const inferred = modelByAnyId(item.model) ?? undefined;
       const legacy = newDraft(prefs, inferred?.family ?? "flux");
       const raw = item.recipe
         ? { ...item.recipe, refs, mask }
@@ -497,7 +550,7 @@ export default function App() {
       draft={draft}
       ready={ready}
       importing={importing}
-      onChange={(d) => commit(d, true)}
+      onChange={(d, discrete = true) => commit(d, discrete)}
       onPreview={setRefPreview}
       onFiles={() => void openFiles()}
       onPaste={() => importBatch([api.clipboardImage])}
@@ -531,6 +584,17 @@ export default function App() {
           ))}
         </div>
         <div className="row">
+          {generationTask && tab === "history" && (
+            <button
+              onClick={() => {
+                ws.switchFamily(generationTask.family);
+                setTab("params");
+              }}
+            >
+              <span className="activity-dot" aria-hidden="true" />
+              查看任务
+            </button>
+          )}
           <button
             disabled={!ready || importing}
             onClick={() => {
@@ -606,6 +670,10 @@ export default function App() {
               onSource={(b) => setSourceBox(b.uid!)}
               providerStatus={pStatus}
               busy={busy || !ready || importing}
+              generationTask={generationTask}
+              onShowTask={() =>
+                generationTask && ws.switchFamily(generationTask.family)
+              }
               finalPreview={preview.finalPrompt}
               errors={errors}
               onGenerate={() => void generate()}
@@ -673,7 +741,7 @@ export default function App() {
                   平移
                 </button>
                 <span className="muted">
-                  {draft.canvas.w}×{draft.canvas.h}
+                  构图 {draft.canvas.w}×{draft.canvas.h}
                 </span>
               </div>
             ) : (
@@ -701,6 +769,7 @@ export default function App() {
               onGestureStart={ws.beginGesture}
               onGestureEnd={ws.endGesture}
               onImportMask={() => void importMask()}
+              onSource={(b) => setSourceBox(b.uid!)}
             />
           ) : (
             <div className="result-work-area">
@@ -737,6 +806,7 @@ export default function App() {
       {settings && (
         <Settings
           prefs={prefs}
+          initialProvider={draft.provider}
           onChange={setPrefs}
           status={pStatus}
           refresh={refreshProviders}
@@ -746,6 +816,24 @@ export default function App() {
           }}
           onClose={() => setSettings(false)}
         />
+      )}
+      {closeRequested && (
+        <Modal title="关闭应用" onClose={() => setCloseRequested(false)}>
+          <p>
+            {busy
+              ? "生成任务尚未结束。关闭后远程任务可能继续计费，尚未下载的结果可能无法恢复。"
+              : "任务已结束。请确认需要保留的结果已保存。"}
+          </p>
+          <div className="row close-actions">
+            <button
+              className="primary"
+              onClick={() => setCloseRequested(false)}
+            >
+              {busy ? "继续等待" : "返回应用"}
+            </button>
+            <button onClick={() => void ws.closeApp()}>仍然关闭</button>
+          </div>
+        </Modal>
       )}
       {reference && (
         <Modal
@@ -757,7 +845,7 @@ export default function App() {
             <img src={reference.dataUrl} alt={reference.name} />
           </div>
           <p className="help">
-            {reference.width}×{reference.height} px · 预览不会改变方案
+            {reference.width}×{reference.height} px
           </p>
         </Modal>
       )}
