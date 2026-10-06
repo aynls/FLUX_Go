@@ -61,6 +61,10 @@ export interface GenerateParams {
   promptExtend?: boolean;
   promptExtendMode?: string;
   watermark?: boolean;
+  thinkingLevel?: string;
+  includeThoughts?: boolean;
+  searchMode?: string;
+  responseText?: boolean;
 }
 
 export interface ProviderStatus {
@@ -81,7 +85,16 @@ export interface CredentialSettings {
   envName: string;
 }
 
+export interface GenerationDetails {
+  text: string;
+  thoughts: string;
+  sources: { title: string; url: string; kind: "web" | "image" }[];
+  searchQueries: string[];
+  searchHtml: string | null;
+}
+
 export interface OutputImage {
+  details?: GenerationDetails;
   dataUrl: string;
   mediaType: string;
 }
@@ -132,6 +145,7 @@ export interface HistoryBatchRequest {
   error?: string | null;
 }
 export interface HistoryItem {
+  resultDetails?: Record<string, GenerationDetails>;
   resultAssetIds?: string[];
   thumbFile?: string | null;
   batch?: { requests: HistoryBatchRequest[]; stopped?: boolean } | null;
@@ -178,6 +192,7 @@ export interface WorkingImage {
 }
 
 export interface GalleryItem {
+  details?: GenerationDetails | null;
   id: string;
   name: string;
   createdAt: number;

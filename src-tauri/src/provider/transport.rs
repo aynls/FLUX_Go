@@ -76,6 +76,7 @@ pub fn base64_image(b64: &str, mime: &str) -> Result<OutputImage, ProviderError>
     let data_url = format!("data:{mime};base64,{b64}");
     super::parse_data_url(&data_url)?;
     Ok(OutputImage {
+        details: None,
         data_url,
         media_type: mime.into(),
     })
@@ -84,6 +85,7 @@ pub async fn download_image(url: &str) -> Result<OutputImage, ProviderError> {
     if url.starts_with("data:") {
         let (mime, _) = super::parse_data_url(url)?;
         return Ok(OutputImage {
+            details: None,
             data_url: url.into(),
             media_type: mime,
         });

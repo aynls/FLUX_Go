@@ -5,6 +5,8 @@ use std::{collections::BTreeMap, path::PathBuf};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GalleryItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<crate::provider::GenerationDetails>,
     pub id: String,
     pub name: String,
     pub created_at: u64,
@@ -93,7 +95,7 @@ impl GalleryStore {
         if !["file", "clipboard", "url"].contains(&source) {
             return Err("导入来源无效".into());
         }
-        self.add(data, name, source, None)
+        self.add(data, name, source, None, None)
             .map(|(_, item)| item.unwrap())
     }
     pub fn generated(
@@ -107,6 +109,7 @@ impl GalleryStore {
             "生成图片",
             "generated",
             Some((format!("{}/{}", history.id, name), history)),
+            history.result_details.get(name).cloned(),
         )
         .map(|(id, _)| id)
     }
@@ -116,6 +119,7 @@ impl GalleryStore {
         name: &str,
         source: &str,
         generated: Option<(String, &crate::history::HistoryItem)>,
+        details: Option<crate::provider::GenerationDetails>,
     ) -> Result<(String, Option<GalleryItem>), String> {
         let mut index = self.read()?;
         if let Some((key, _)) = &generated {
@@ -153,6 +157,7 @@ impl GalleryStore {
         }
         let image = image::load_from_memory(&bytes).map_err(|e| format!("无法解码图片：{e}"))?;
         let item = GalleryItem {
+            details,
             id: uuid::Uuid::new_v4().to_string(),
             name: name.chars().take(240).collect(),
             created_at: std::time::SystemTime::now()

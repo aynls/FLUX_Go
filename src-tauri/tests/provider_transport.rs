@@ -261,3 +261,41 @@ async fn admission_error_does_not_resubmit_paid_generation() {
     assert_eq!(error.status, Some(402));
     assert_eq!(handle.join().unwrap().len(), 1);
 }
+#[tokio::test]
+async fn google_keeps_candidate_sources_and_summaries_without_saving_thought_images() {
+    let image = png();
+    let body = json!({"candidates":[{"content":{"parts":[
+        {"thought":true,"text":"Provider summary"},
+        {"thought":true,"inlineData":{"mimeType":"image/png","data":image.split_once(',').unwrap().1}},
+        {"text":"Image explanation"},
+        {"inlineData":{"mimeType":"image/png","data":image.split_once(',').unwrap().1}}
+    ]},"groundingMetadata":{
+        "webSearchQueries":["flowers"],"imageSearchQueries":["flower composition"],
+        "searchEntryPoint":{"renderedContent":"<div>Google Search</div>"},
+        "groundingChunks":[{"web":{"uri":"https://example.org/article","title":"Article"}},{"image":{"uri":"https://example.org/photo-page","image_uri":"https://example.org/raw.png"}},{"web":{"uri":"javascript:bad()","title":"Invalid"}}]
+    }},{"content":{"parts":[{"text":"Second candidate"},{"inlineData":{"mimeType":"image/png","data":image.split_once(',').unwrap().1}}]}}]});
+    let (url, handle) = server(vec![(200, body)]);
+    let request = req_google_details();
+    let out = google::generate_at(&request, "test-only-key", &url)
+        .await
+        .unwrap();
+    assert_eq!(handle.join().unwrap().len(), 1);
+    assert_eq!(out.images.len(), 2);
+    let first = out.images[0].details.as_ref().unwrap();
+    assert_eq!(first.text, "Image explanation");
+    assert_eq!(first.thoughts, "Provider summary");
+    assert_eq!(first.sources.len(), 2);
+    assert_eq!(first.sources[1].url, "https://example.org/photo-page");
+    assert_eq!(first.sources[1].kind, "image");
+    assert_eq!(first.search_queries, vec!["flowers", "flower composition"]);
+    assert_eq!(
+        first.search_html.as_deref(),
+        Some("<div>Google Search</div>")
+    );
+    let second = out.images[1].details.as_ref().unwrap();
+    assert_eq!(second.text, "Second candidate");
+    assert!(second.sources.is_empty());
+}
+fn req_google_details() -> GenerateRequest {
+    serde_json::from_value(json!({"provider":"google","model":"gemini-nano-banana-2.1","finalPrompt":"a flower","params":{"thinkingLevel":"medium","includeThoughts":true,"searchMode":"web_images","responseText":true}})).unwrap()
+}

@@ -1,6 +1,7 @@
 //! Google Gemini 官方 API；密钥放在请求头，付费请求不重试。
 use super::{
-    transport, GenerateOutput, GenerateRequest, OutputImage, ProviderError, ProviderResult,
+    transport, GenerateOutput, GenerateRequest, GenerationDetails, GenerationSource, OutputImage,
+    ProviderError, ProviderResult,
 };
 use base64::Engine;
 use serde_json::{json, Value};
@@ -34,7 +35,35 @@ pub fn native_payload(req: &GenerateRequest, vertex: bool) -> Result<Value, Prov
     } else {
         config["responseFormat"] = json!({"image":image});
     }
-    Ok(json!({"contents":[{"role":"user","parts":parts}],"generationConfig":config}))
+    if p.response_text == Some(true) {
+        config["responseModalities"] = json!(["TEXT", "IMAGE"]);
+    }
+    let mut thinking = json!({});
+    if let Some(level) = &p.thinking_level {
+        thinking["thinkingLevel"] = json!(level.to_uppercase());
+    }
+    if let Some(include) = p.include_thoughts {
+        thinking["includeThoughts"] = json!(include);
+    }
+    if thinking.as_object().is_some_and(|v| !v.is_empty()) {
+        config["thinkingConfig"] = thinking;
+    }
+    let mut body = json!({"contents":[{"role":"user","parts":parts}],"generationConfig":config});
+    if let Some(mode) = p.search_mode.as_deref().filter(|m| *m != "none") {
+        let mut search = json!({});
+        if crate::models::resolve(req)?.id != "gemini-3-pro-image" {
+            let mut types = json!({});
+            if matches!(mode, "web" | "web_images") {
+                types["webSearch"] = json!({});
+            }
+            if matches!(mode, "images" | "web_images") {
+                types["imageSearch"] = json!({});
+            }
+            search["searchTypes"] = types;
+        }
+        body["tools"] = json!([{"google_search":search}]);
+    }
+    Ok(body)
 }
 
 pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
@@ -49,6 +78,7 @@ pub async fn images(body: &Value) -> Result<Vec<OutputImage>, ProviderError> {
     let mut images = Vec::new();
     if let Some(candidates) = body["candidates"].as_array() {
         for candidate in candidates {
+            let start = images.len();
             if let Some(parts) = candidate
                 .pointer("/content/parts")
                 .and_then(Value::as_array)
@@ -78,14 +108,109 @@ pub async fn images(body: &Value) -> Result<Vec<OutputImage>, ProviderError> {
                     }
                 }
             }
+            let details = response_details(candidate);
+            for image in &mut images[start..] {
+                image.details = details.clone();
+            }
         }
     }
     if images.is_empty() {
-        return Err(ProviderError::msg(
-            "Gemini 没有返回图片，请检查内容限制或提示词",
-        ));
+        let mut error = ProviderError::msg("Gemini 没有返回图片，请检查内容限制或提示词");
+        let explanation = body
+            .pointer("/candidates/0")
+            .and_then(response_details)
+            .map(|d| d.text)
+            .filter(|s| !s.is_empty());
+        if let Some(text) = explanation {
+            error.hint = Some(text.chars().take(1000).collect());
+        } else if let Some(reason) = body
+            .pointer("/promptFeedback/blockReason")
+            .and_then(Value::as_str)
+        {
+            error.hint = Some(format!("供应商原因：{reason}"));
+        }
+        return Err(error);
     }
     Ok(images)
+}
+
+/// Preserve public response text, optional provider summaries and source attribution per candidate.
+fn response_details(candidate: &Value) -> Option<GenerationDetails> {
+    let mut details = GenerationDetails::default();
+    if let Some(parts) = candidate
+        .pointer("/content/parts")
+        .and_then(Value::as_array)
+    {
+        for part in parts {
+            if let Some(text) = part["text"].as_str() {
+                let target = if part["thought"].as_bool() == Some(true) {
+                    &mut details.thoughts
+                } else {
+                    &mut details.text
+                };
+                if !target.is_empty() {
+                    target.push_str("\n\n");
+                }
+                target.push_str(text);
+            }
+        }
+    }
+    let grounding = &candidate["groundingMetadata"];
+    details.search_html = grounding
+        .pointer("/searchEntryPoint/renderedContent")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    for field in ["webSearchQueries", "imageSearchQueries"] {
+        if let Some(queries) = grounding[field].as_array() {
+            for query in queries.iter().filter_map(Value::as_str) {
+                if !details.search_queries.iter().any(|q| q == query) {
+                    details.search_queries.push(query.into());
+                }
+            }
+        }
+    }
+    if let Some(chunks) = grounding["groundingChunks"].as_array() {
+        for chunk in chunks {
+            for (key, kind) in [("web", "web"), ("image", "image")] {
+                let source = &chunk[key];
+                let Some(uri) = source["uri"].as_str() else {
+                    continue;
+                };
+                let Ok(url) = reqwest::Url::parse(uri) else {
+                    continue;
+                };
+                if !matches!(url.scheme(), "http" | "https")
+                    || !url.username().is_empty()
+                    || url.password().is_some()
+                {
+                    continue;
+                }
+                if details.sources.iter().any(|s| s.url == uri) {
+                    continue;
+                }
+                details.sources.push(GenerationSource {
+                    title: source["title"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(url.host_str().unwrap_or(uri))
+                        .into(),
+                    url: uri.into(),
+                    kind: kind.into(),
+                });
+            }
+        }
+    }
+    if details.text.is_empty()
+        && details.thoughts.is_empty()
+        && details.sources.is_empty()
+        && details.search_html.is_none()
+        && details.search_queries.is_empty()
+    {
+        None
+    } else {
+        Some(details)
+    }
 }
 
 pub async fn generate(req: &GenerateRequest) -> ProviderResult {

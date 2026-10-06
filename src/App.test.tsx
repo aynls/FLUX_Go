@@ -14,6 +14,8 @@ import { newDraft } from "./lib/workspace";
 import Canvas from "./components/Canvas";
 import HistoryPanel from "./components/HistoryPanel";
 import Gallery from "./components/Gallery";
+import GenerationInfo, { searchDocument } from "./components/GenerationInfo";
+import { webUrl } from "./lib/links";
 import { StrictMode } from "react";
 import { queuedGeneration } from "./app/generation";
 
@@ -24,6 +26,7 @@ Object.assign(globalThis, {
   navigator: dom.navigator,
   localStorage: dom.localStorage,
   Node: dom.Node,
+  DOMParser: dom.DOMParser,
   HTMLElement: dom.HTMLElement,
   HTMLInputElement: dom.HTMLInputElement,
   HTMLTextAreaElement: dom.HTMLTextAreaElement,
@@ -1975,4 +1978,143 @@ test("prompt limits follow the compiled route without truncating creative input"
   expect(ui.container.querySelector(".prompt-limit")?.textContent).toContain(
     "3,000 / 32,000",
   );
+});
+test("Google creative controls follow route capabilities and retain per-route values", async () => {
+  initial = {
+    ...newDraft(undefined, "gemini"),
+    modelId: "gemini-nano-banana-2.1",
+    provider: "google",
+    prompt: "a paper flower",
+    repeatCount: 2,
+  };
+  let ui!: ReturnType<typeof render>;
+  await act(async () => {
+    ui = render(<App />);
+  });
+  fireEvent.change(ui.getByRole("combobox", { name: "思考级别" }), {
+    target: { value: "medium" },
+  });
+  fireEvent.change(ui.getByRole("combobox", { name: "联网搜索" }), {
+    target: { value: "web_images" },
+  });
+  fireEvent.click(ui.getByRole("checkbox", { name: "返回思考摘要" }));
+  fireEvent.click(ui.getByRole("checkbox", { name: "返回文字说明" }));
+  fireEvent.change(ui.getByRole("combobox", { name: "模型版本" }), {
+    target: { value: "gemini-3-pro-image" },
+  });
+  expect(ui.queryByRole("combobox", { name: "思考级别" })).toBeNull();
+  expect(
+    Array.from(
+      ui.getByRole("combobox", { name: "联网搜索" }).querySelectorAll("option"),
+    ).map((o) => o.value),
+  ).toEqual(["none", "web"]);
+  fireEvent.change(ui.getByRole("combobox", { name: "模型版本" }), {
+    target: { value: "gemini-nano-banana-2.1" },
+  });
+  expect(
+    (ui.getByRole("combobox", { name: "联网搜索" }) as HTMLSelectElement).value,
+  ).toBe("web_images");
+  fireEvent.click(ui.getByRole("button", { name: /^生成图像 ·/ }));
+  await waitFor(() => expect(submitted).not.toBeNull());
+  expect(submitted!.params).toMatchObject({
+    thinkingLevel: "medium",
+    includeThoughts: true,
+    searchMode: "web_images",
+    responseText: true,
+  });
+  const info = {
+    text: "a paper flower",
+    thoughts: "composition summary",
+    sources: [
+      {
+        title: "Flower source",
+        url: "https://example.org/flower",
+        kind: "image" as const,
+      },
+    ],
+    searchQueries: ["flower"],
+    searchHtml: null,
+  };
+  await act(async () =>
+    finish({
+      ...output,
+      provider: "google",
+      model: "gemini-nano-banana-2.1",
+      images: output.images.map((im) => ({ ...im, details: info })),
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      historyItems.find((item) => item.status === "running")?.resultDetails
+        ?.result_0,
+    ).toEqual(info),
+  );
+  expect(
+    ui.getByRole("link", { name: "Flower source" }).getAttribute("href"),
+  ).toBe("https://example.org/flower");
+  await waitFor(() => expect(submissions).toHaveLength(2));
+  const secondInfo = {
+    ...info,
+    text: "another flower",
+    sources: [
+      {
+        ...info.sources[0],
+        title: "Second source",
+        url: "https://example.org/second",
+      },
+    ],
+  };
+  await act(async () =>
+    finish({
+      ...output,
+      provider: "google",
+      model: "gemini-nano-banana-2.1",
+      images: output.images.map((im) => ({ ...im, details: secondInfo })),
+    }),
+  );
+  await waitFor(() =>
+    expect(savedItem?.resultDetails).toEqual({
+      result_0: info,
+      result_1: secondInfo,
+    }),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "查看结果 2" }));
+  await waitFor(() =>
+    expect(ui.queryByRole("link", { name: "Second source" })).not.toBeNull(),
+  );
+  expect(ui.queryByRole("link", { name: "Flower source" })).toBeNull();
+  fireEvent.change(ui.getByRole("combobox", { name: "提供商" }), {
+    target: { value: "openrouter" },
+  });
+  expect(ui.queryByRole("combobox", { name: "联网搜索" })).toBeNull();
+});
+
+test("source suggestions cannot execute provider HTML or open non-web URLs", () => {
+  const html = searchDocument(
+    `<style>.chip{color:blue}</style><script>parent.secret()</script><base href="file:///C:/"><meta http-equiv="refresh" content="0;url=https://bad.example"><form></form><a href="javascript:bad()" onclick="bad()">bad</a><a href="https://www.google.com/search?q=flowers" target="_top" ping="https://tracker.example" onmouseover="bad()">flowers</a>`,
+  );
+  expect(html).not.toContain("<script");
+  expect(html).not.toContain("onclick");
+  expect(html).not.toContain("javascript:");
+  expect(html).not.toContain("_top");
+  expect(html).not.toContain("<base");
+  expect(html).not.toContain("refresh");
+  expect(html).not.toContain("tracker.example");
+  expect(html).toContain("<style>.chip{color:blue}</style>");
+  expect(html).toContain("https://www.google.com/search?q=flowers");
+  expect(webUrl("file:///C:/secret.txt")).toBeNull();
+  expect(webUrl("https://user:password@example.org")).toBeNull();
+  const ui = render(
+    <GenerationInfo
+      details={{
+        text: "",
+        thoughts: "",
+        sources: [],
+        searchQueries: [],
+        searchHtml: html,
+      }}
+    />,
+  );
+  const frame = ui.getByTitle("Google 搜索建议");
+  expect(frame.getAttribute("sandbox")).toBe("allow-same-origin");
 });

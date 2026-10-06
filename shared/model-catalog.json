@@ -115,6 +115,11 @@
     }
   ],
   "fields": {
+    "thinkingLevel": {"label": "思考级别", "kind": "enum", "help": "较高级别用于复杂指令，通常需要更长时间；最低级别仍会思考。"},
+    "includeThoughts": {"label": "返回思考摘要", "kind": "boolean", "help": "摘要随结果保存；中间思考图片不会作为生成结果入库。"},
+    "searchMode": {"label": "联网搜索", "kind": "enum", "help": "按需参考网络信息，结果附来源与搜索建议；可能产生额外费用。"},
+    "responseText": {"label": "返回文字说明", "kind": "boolean"},
+
     "resolution": {
       "label": "分辨率档位",
       "kind": "enum"
@@ -893,17 +898,57 @@
           "mask": false,
           "parameters": {
             "resolution": {
-              "values": ["1K", "2K", "4K"]
+              "values": [
+                "1K",
+                "2K",
+                "4K"
+              ]
             },
             "aspectRatio": {
               "values": [
-                "1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1",
-                "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9", "auto"
+                "1:1",
+                "1:4",
+                "1:8",
+                "2:3",
+                "3:2",
+                "3:4",
+                "4:1",
+                "4:3",
+                "4:5",
+                "5:4",
+                "8:1",
+                "9:16",
+                "16:9",
+                "21:9",
+                "auto"
               ]
-            }
+            },
+            "thinkingLevel": {
+              "values": [
+                "minimal",
+                "medium",
+                "high"
+              ]
+            },
+            "includeThoughts": {},
+            "searchMode": {
+              "values": [
+                "none",
+                "web",
+                "images",
+                "web_images"
+              ]
+            },
+            "responseText": {}
           },
           "maxRequestBytes": 20971520,
-          "docs": "https://ai.google.dev/gemini-api/docs/generate-content/image-generation"
+          "docs": "https://ai.google.dev/gemini-api/docs/generate-content/image-generation",
+          "defaults": {
+            "thinkingLevel": "medium",
+            "includeThoughts": false,
+            "searchMode": "none",
+            "responseText": false
+          }
         }
       }
     },
@@ -1077,10 +1122,32 @@
                 "21:9",
                 "auto"
               ]
-            }
+            },
+            "thinkingLevel": {
+              "values": [
+                "minimal",
+                "high"
+              ]
+            },
+            "includeThoughts": {},
+            "searchMode": {
+              "values": [
+                "none",
+                "web",
+                "images",
+                "web_images"
+              ]
+            },
+            "responseText": {}
           },
           "maxRequestBytes": 20971520,
-          "docs": "https://ai.google.dev/gemini-api/docs/generate-content/image-generation"
+          "docs": "https://ai.google.dev/gemini-api/docs/generate-content/image-generation",
+          "defaults": {
+            "thinkingLevel": "minimal",
+            "includeThoughts": false,
+            "searchMode": "none",
+            "responseText": false
+          }
         }
       }
     },
@@ -1235,10 +1302,23 @@
                 "21:9",
                 "auto"
               ]
-            }
+            },
+            "includeThoughts": {},
+            "searchMode": {
+              "values": [
+                "none",
+                "web"
+              ]
+            },
+            "responseText": {}
           },
           "maxRequestBytes": 20971520,
-          "docs": "https://ai.google.dev/gemini-api/docs/generate-content/image-generation"
+          "docs": "https://ai.google.dev/gemini-api/docs/generate-content/image-generation",
+          "defaults": {
+            "includeThoughts": false,
+            "searchMode": "none",
+            "responseText": false
+          }
         }
       }
     },

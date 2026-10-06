@@ -877,7 +877,7 @@ pre {
   height: 55vh;
   min-height: 300px;
 }
-.parameter-fields > label {
+.parameter-field > label {
   margin: 10px 0;
 }
 .field-help {
@@ -1135,12 +1135,7 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: 10px;
 }
-.parameter-fields > .check,
-.parameter-fields > .seed-field,
-.parameter-fields > .size-field,
-.parameter-fields > .fixed-field,
-.parameter-fields > label:has(textarea),
-.parameter-fields > label:has(select[aria-label="内容审核容忍度"]) {
+.parameter-field-wide {
   grid-column: 1 / -1;
 }
 .fixed-field {
@@ -1941,4 +1936,52 @@ button {
 }
 .parameter-field > .help {
   margin: 5px 0 0;
+}
+.generation-info {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  min-width: 0;
+}
+.generation-info:empty {
+  display: none;
+}
+.generation-info h3 {
+  margin: 0 0 6px;
+}
+.response-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow-y: auto;
+  line-height: 1.6;
+}
+.generation-sources ul {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.generation-sources li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.generation-sources li > span {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.generation-sources a {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+}
+.search-suggestions {
+  border: 0;
+  border-radius: 8px;
+  width: 100%;
+  min-height: 90px;
+  background: #fff;
 }

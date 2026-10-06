@@ -92,11 +92,21 @@ pub struct GenerateParams {
     pub prompt_extend_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watermark: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_level: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_thoughts: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_text: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputImage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<GenerationDetails>,
     pub data_url: String,
     pub media_type: String,
 }
@@ -110,6 +120,22 @@ pub struct GenerateOutput {
     pub images: Vec<OutputImage>,
     pub usage: serde_json::Value,
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerationDetails {
+    pub text: String,
+    pub thoughts: String,
+    pub sources: Vec<GenerationSource>,
+    pub search_queries: Vec<String>,
+    pub search_html: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerationSource {
+    pub title: String,
+    pub url: String,
+    pub kind: String,
 }
 
 /// 结构化错误：前端按 JSON 解析展示。绝不包含密钥。

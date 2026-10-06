@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct HistoryItem {
     #[serde(default)]
+    pub result_details: std::collections::BTreeMap<String, crate::provider::GenerationDetails>,
+    #[serde(default)]
     pub batch: Option<serde_json::Value>,
     #[serde(default)]
     pub error: Option<String>,
@@ -334,6 +336,7 @@ mod tests {
         let dir = temp();
         let store = HistoryStore::new(dir.clone()).unwrap();
         let value = serde_json::json!({
+            "resultDetails":{"result_0":{"text":"description","thoughts":"summary","sources":[{"title":"Source","url":"https://example.org/source","kind":"web"}],"searchQueries":["source"],"searchHtml":"<div>Google Search</div>"}},
             "id":"recipe_test", "createdAt":1,"provider":"bfl","model":"flux-3-image","mode":"edit",
             "prompt":"test","finalPrompt":"test","params":{"resolution":"768","grounding":false,"version":"latest"},
             "boxes":[],"canvasWidth":1024,"canvasHeight":768,"status":"ok",
@@ -371,6 +374,22 @@ mod tests {
         let listed = store.list().unwrap();
         assert_eq!(listed[0].input_files, saved.input_files);
         assert_eq!(
+            listed[0].result_details["result_0"].sources[0].title,
+            "Source"
+        );
+        let asset_id = &saved.result_asset_ids[0];
+        assert_eq!(
+            store
+                .gallery
+                .get(asset_id)
+                .unwrap()
+                .details
+                .unwrap()
+                .sources[0]
+                .url,
+            "https://example.org/source"
+        );
+        assert_eq!(
             listed[0].recipe.as_ref().unwrap()["refIds"],
             serde_json::json!(["a", "b"])
         );
@@ -383,6 +402,14 @@ mod tests {
             .map(|path| (path.clone(), std::fs::read(path).unwrap()))
             .collect();
         store.delete("recipe_test").unwrap();
+        let restarted = HistoryStore::new(dir.clone()).unwrap();
+        let details = restarted.gallery.get(asset_id).unwrap().details.unwrap();
+        assert_eq!(details.text, "description");
+        assert_eq!(details.thoughts, "summary");
+        assert_eq!(
+            details.search_html.as_deref(),
+            Some("<div>Google Search</div>")
+        );
         assert!(store.list().unwrap().is_empty());
         for (path, bytes) in files {
             assert_eq!(std::fs::read(path).unwrap(), bytes);

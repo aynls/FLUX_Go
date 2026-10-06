@@ -375,7 +375,15 @@ export function ParameterFields({
           return (
             <div
               key={key}
-              className="parameter-field"
+              className={
+                "parameter-field" +
+                (field.help ||
+                ["boolean", "text", "size"].includes(field.kind) ||
+                key === "seed" ||
+                field.values?.length === 1
+                  ? " parameter-field-wide"
+                  : "")
+              }
               role="group"
               aria-label={field.label}
               aria-describedby={field.help ? `${helpId}-${key}` : undefined}

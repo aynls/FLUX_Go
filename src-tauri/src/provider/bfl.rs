@@ -250,6 +250,7 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
         model: "flux-3-image".into(),
         final_prompt: req.final_prompt.clone(),
         images: vec![OutputImage {
+            details: None,
             data_url,
             media_type,
         }],

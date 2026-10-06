@@ -348,3 +348,77 @@ fn masks_apply_to_first_image_and_convert_alpha_to_runware_white_edit_regions() 
     request.images.clear();
     assert!(models::validate(&request).is_err());
 }
+#[test]
+fn google_thinking_and_search_are_model_specific_and_never_leak_to_other_routes() {
+    for (model, levels) in [
+        ("gemini-nano-banana-2.1", vec!["minimal", "medium", "high"]),
+        ("gemini-3.1-flash-image", vec!["minimal", "high"]),
+    ] {
+        for level in levels {
+            let request = req(
+                "google",
+                model,
+                json!({"thinkingLevel":level,"includeThoughts":true,"responseText":true,"searchMode":"web_images"}),
+            );
+            let body = google::build_payload(&request).unwrap();
+            assert_eq!(
+                body["generationConfig"]["thinkingConfig"],
+                json!({"thinkingLevel":level.to_uppercase(),"includeThoughts":true})
+            );
+            assert_eq!(
+                body["generationConfig"]["responseModalities"],
+                json!(["TEXT", "IMAGE"])
+            );
+            assert_eq!(
+                body["tools"][0]["google_search"]["searchTypes"],
+                json!({"webSearch":{},"imageSearch":{}})
+            );
+        }
+        for mode in ["none", "web", "images"] {
+            let body =
+                google::build_payload(&req("google", model, json!({"searchMode":mode}))).unwrap();
+            assert_eq!(body.get("tools").is_some(), mode != "none");
+            if mode == "web" {
+                assert!(body["tools"][0]["google_search"]["searchTypes"]
+                    .get("imageSearch")
+                    .is_none());
+            }
+            if mode == "images" {
+                assert!(body["tools"][0]["google_search"]["searchTypes"]
+                    .get("webSearch")
+                    .is_none());
+            }
+        }
+    }
+    assert!(google::build_payload(&req(
+        "google",
+        "gemini-3.1-flash-image",
+        json!({"thinkingLevel":"medium"})
+    ))
+    .is_err());
+    assert!(google::build_payload(&req(
+        "google",
+        "gemini-3-pro-image",
+        json!({"thinkingLevel":"high"})
+    ))
+    .is_err());
+    assert!(google::build_payload(&req(
+        "google",
+        "gemini-3-pro-image",
+        json!({"searchMode":"images"})
+    ))
+    .is_err());
+    let pro = google::build_payload(&req(
+        "google",
+        "gemini-3-pro-image",
+        json!({"searchMode":"web"}),
+    ))
+    .unwrap();
+    assert_eq!(pro["tools"], json!([{"google_search":{}}]));
+    assert!(models::validate(&req(
+        "openrouter",
+        "gemini-nano-banana-2.1",
+        json!({"searchMode":"web"})
+    ))
+    .is_err());
+}

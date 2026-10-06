@@ -14,6 +14,7 @@ import * as api from "../lib/api";
 import { modelByAnyId } from "../models/catalog";
 import { exportDefaultPath } from "../lib/export";
 import Modal from "./Modal";
+import GenerationInfo from "./GenerationInfo";
 
 export default function Gallery(p: {
   items: GalleryItem[];
@@ -361,6 +362,7 @@ export default function Gallery(p: {
             </span>
             <span>{new Date(preview.createdAt).toLocaleString()}</span>
           </div>
+          <GenerationInfo details={preview.details} />
           {error && (
             <p className="error-text" role="alert">
               {error}

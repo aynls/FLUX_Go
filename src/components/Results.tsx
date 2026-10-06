@@ -1,4 +1,5 @@
 import Canvas from "./Canvas";
+import GenerationInfo from "./GenerationInfo";
 import { getResultBase, type SavedResult } from "../app/generation";
 import type { WorkingImage } from "../lib/types";
 import { taskIntent } from "../lib/workspace";
@@ -184,6 +185,7 @@ export function ResultActions(p: {
               </button>
             )}
           </div>
+          <GenerationInfo details={r.out.images[r.selectedIndex]?.details} />
           {r.out.notes.length > 0 && (
             <details>
               <summary>提供商说明</summary>

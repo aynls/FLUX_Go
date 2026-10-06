@@ -2,6 +2,11 @@ import type { GenerateParams } from "../lib/types";
 
 const VALUE_LABELS: Record<string, string> = {
   auto: "自动",
+  minimal: "最低",
+  none: "关闭",
+  web: "网页",
+  images: "图片",
+  web_images: "网页与图片",
   low: "低",
   medium: "中",
   high: "高",

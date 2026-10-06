@@ -155,6 +155,7 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
             .unwrap_or("image/png")
             .to_string();
         images.push(OutputImage {
+            details: None,
             data_url: format!(
                 "data:{media_type};base64,{}",
                 base64::engine::general_purpose::STANDARD.encode(bytes)

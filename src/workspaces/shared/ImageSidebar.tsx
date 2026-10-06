@@ -45,6 +45,20 @@ export default function ImageSidebar(p: WorkspaceControlsProps) {
             />
           </details>
         )}
+        {(fields.thinkingLevel || fields.searchMode) && (
+          <details>
+            <summary>思考与联网</summary>
+            <ParameterFields
+              {...p}
+              keys={[
+                "thinkingLevel",
+                "searchMode",
+                "includeThoughts",
+                "responseText",
+              ]}
+            />
+          </details>
+        )}
         <InputOptions {...p} />
         <Validation errors={p.errors} />
       </div>

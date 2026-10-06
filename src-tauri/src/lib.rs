@@ -25,6 +25,11 @@ impl Default for AppState {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_opener::Builder::default()
+                .open_js_links_on_click(false)
+                .build(),
+        )
         .manage(AppState::default())
         .setup(|app| {
             let dir = app.path().app_data_dir()?.join("workbench");

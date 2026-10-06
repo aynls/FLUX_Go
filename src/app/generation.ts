@@ -124,6 +124,7 @@ export async function executeGeneration(
     resultFiles: [],
     maskFile: null,
     thumb: null,
+    resultDetails: resultDetails(out.images),
     usage: out.usage,
     cost: out.usage?.cost ?? null,
     status: "ok",
@@ -176,7 +177,12 @@ export function mergeGenerationResults(
       usage,
       notes: [...new Set([...previous.out.notes, ...next.out.notes])],
     },
-    item: { ...previous.item, usage, cost: usage.cost ?? null },
+    item: {
+      ...previous.item,
+      resultDetails: resultDetails(images),
+      usage,
+      cost: usage.cost ?? null,
+    },
     files: [
       ...previous.files.filter((f) => f.kind !== "result"),
       ...images.map((im, i) => ({
@@ -187,4 +193,12 @@ export function mergeGenerationResults(
     ],
     saved: false,
   };
+}
+
+function resultDetails(images: GenerateOutput["images"]) {
+  return Object.fromEntries(
+    images.flatMap((image, i) =>
+      image.details ? [[`result_${i}`, image.details]] : [],
+    ),
+  );
 }

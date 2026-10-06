@@ -115,7 +115,14 @@ test("Nano Banana 2.1 switches without losing old model settings or edit inputs"
     expect(request.params).toEqual({
       resolution: "4K",
       aspectRatio: "8:1",
-      ...(provider === "openrouter" ? { count: 1 } : {}),
+      ...(provider === "openrouter"
+        ? { count: 1 }
+        : {
+            thinkingLevel: "medium",
+            includeThoughts: false,
+            responseText: false,
+            searchMode: "none",
+          }),
     });
     expect(readDraft(JSON.parse(JSON.stringify(draft)))).toMatchObject(draft);
     expect(
