@@ -1,4 +1,5 @@
 mod commands;
+mod gallery;
 mod history;
 pub mod models;
 pub mod provider;
@@ -26,7 +27,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
         .setup(|app| {
-            let dir = app.path().app_data_dir()?.join("history");
+            let dir = app.path().app_data_dir()?.join("workbench");
             let store =
                 history::HistoryStore::new(dir).map_err(|e| format!("初始化历史存储失败: {e}"))?;
             provider::init_key_settings(&app.path().app_data_dir()?)?;
@@ -51,6 +52,10 @@ pub fn run() {
             commands::history_list,
             commands::history_save,
             commands::history_delete,
+            commands::gallery_list,
+            commands::gallery_import,
+            commands::gallery_read,
+            commands::gallery_delete,
         ])
         .run(tauri::generate_context!())
         .expect("LutriUI 启动失败");

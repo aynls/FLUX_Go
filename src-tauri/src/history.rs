@@ -33,6 +33,10 @@ pub struct HistoryItem {
     #[serde(default)]
     pub result_files: Vec<String>,
     #[serde(default)]
+    pub result_asset_ids: Vec<String>,
+    #[serde(default)]
+    pub thumb_file: Option<String>,
+    #[serde(default)]
     pub mask_file: Option<String>,
     /// 结果缩略图 data URL（内联，供列表展示）
     #[serde(default)]
@@ -57,12 +61,14 @@ pub struct HistoryFileIn {
 
 pub struct HistoryStore {
     dir: PathBuf,
+    pub gallery: crate::gallery::GalleryStore,
 }
 
 impl HistoryStore {
     pub fn new(dir: PathBuf) -> std::io::Result<Self> {
         std::fs::create_dir_all(dir.join("images"))?;
-        let store = Self { dir };
+        let gallery = crate::gallery::GalleryStore::new(dir.join("gallery"))?;
+        let store = Self { dir, gallery };
         if let Ok(mut items) = store.read_index() {
             let mut changed = false;
             for item in &mut items {
@@ -118,17 +124,34 @@ impl HistoryStore {
     }
 
     /// 文件路径：磁盘存相对路径，返回给前端时转绝对路径
-    fn absolutize(&self, mut item: HistoryItem) -> HistoryItem {
+    fn absolutize(
+        &self,
+        mut item: HistoryItem,
+        assets: &[crate::gallery::GalleryItem],
+    ) -> HistoryItem {
         item.input_files = item
             .input_files
             .iter()
             .map(|p| self.dir.join(p).to_string_lossy().to_string())
             .collect();
         item.result_files = item
-            .result_files
+            .result_asset_ids
             .iter()
-            .map(|p| self.dir.join(p).to_string_lossy().to_string())
+            .map(|id| {
+                assets
+                    .iter()
+                    .find(|a| &a.id == id && !a.pending_delete)
+                    .map(|a| a.file_path.clone())
+                    .unwrap_or_default()
+            })
             .collect();
+        item.thumb_file = item.result_asset_ids.iter().find_map(|id| {
+            assets
+                .iter()
+                .find(|a| &a.id == id && !a.pending_delete)
+                .map(|a| a.thumb_path.clone())
+        });
+        item.thumb = None;
         item.mask_file = item
             .mask_file
             .map(|p| self.dir.join(p).to_string_lossy().to_string());
@@ -141,6 +164,13 @@ impl HistoryStore {
         files: Vec<HistoryFileIn>,
     ) -> Result<HistoryItem, String> {
         validate_id(&item.id)?;
+        let mut items = self.read_index()?;
+        if let Some(old) = items.iter().find(|old| old.id == item.id) {
+            item.result_asset_ids = old.result_asset_ids.clone();
+        }
+        item.result_files.clear();
+        item.thumb = None;
+        item.thumb_file = None;
         // Updates arrive with the absolute paths returned by list/save.
         for paths in [&mut item.input_files, &mut item.result_files] {
             for path in paths {
@@ -170,6 +200,13 @@ impl HistoryStore {
         let img_dir = self.dir.join("images").join(&item.id);
         std::fs::create_dir_all(&img_dir).map_err(|e| format!("创建历史目录失败: {e}"))?;
         for f in files {
+            if f.kind == "result" {
+                let id = self.gallery.generated(&f.data, &f.name, &item)?;
+                if !item.result_asset_ids.contains(&id) {
+                    item.result_asset_ids.push(id);
+                }
+                continue;
+            }
             let (mime, bytes) = crate::provider::parse_data_url(&f.data).map_err(|e| e.message)?;
             let ext = match mime.as_str() {
                 "image/png" => "png",
@@ -184,23 +221,29 @@ impl HistoryStore {
                 .map_err(|e| format!("写入历史图片失败: {e}"))?;
             let rel = format!("images/{}/{file_name}", item.id);
             match f.kind.as_str() {
-                "input" => item.input_files.push(rel),
-                "result" => item.result_files.push(rel),
+                "input" => {
+                    if !item.input_files.contains(&rel) {
+                        item.input_files.push(rel);
+                    }
+                }
                 "mask" => item.mask_file = Some(rel),
                 _ => return Err(format!("未知历史文件类型: {}", f.kind)),
             }
         }
-        let mut items = self.read_index()?;
         items.retain(|it| it.id != item.id);
         items.push(item.clone());
         self.write_index(&items)?;
-        Ok(self.absolutize(item))
+        Ok(self.absolutize(item, &self.gallery.list()?))
     }
 
     pub fn list(&self) -> Result<Vec<HistoryItem>, String> {
         let mut items = self.read_index()?;
         items.sort_by_key(|a| std::cmp::Reverse(a.created_at));
-        Ok(items.into_iter().map(|it| self.absolutize(it)).collect())
+        let assets = self.gallery.list()?;
+        Ok(items
+            .into_iter()
+            .map(|it| self.absolutize(it, &assets))
+            .collect())
     }
 
     pub fn delete(&self, id: &str) -> Result<(), String> {
@@ -314,7 +357,7 @@ mod tests {
                     HistoryFileIn {
                         kind: "result".into(),
                         name: "result_0".into(),
-                        data: "data:image/png;base64,aGVsbG8=".into(),
+                        data: crate::gallery::tests::png(),
                     },
                     HistoryFileIn {
                         kind: "mask".into(),
@@ -395,6 +438,40 @@ mod tests {
         assert_eq!(requests[1]["status"], "interrupted");
         assert_eq!(requests[2]["status"], "skipped");
         assert_eq!(requests[1]["seed"], 22);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn gallery_deletion_keeps_recipe_and_does_not_resurrect_on_batch_save() {
+        let dir = temp();
+        let store = HistoryStore::new(dir.clone()).unwrap();
+        let item: HistoryItem = serde_json::from_value(serde_json::json!({
+            "id":"gallery_batch", "createdAt":1, "provider":"google", "model":"gemini-nano-banana-2.1",
+            "mode":"t2i", "prompt":"snapshot", "finalPrompt":"snapshot", "params":{}, "boxes":[], "status":"ok"
+        })).unwrap();
+        let files = || {
+            (0..2)
+                .map(|i| HistoryFileIn {
+                    kind: "result".into(),
+                    name: format!("result_{i}"),
+                    data: crate::gallery::tests::png(),
+                })
+                .collect()
+        };
+        let saved = store.save(item, files()).unwrap();
+        assert_eq!(saved.result_asset_ids.len(), 2);
+        let removed = saved.result_files[0].clone();
+        store.gallery.delete(&saved.result_asset_ids[0]).unwrap();
+        let saved = store.save(saved, files()).unwrap();
+        assert_eq!(saved.prompt, "snapshot");
+        assert_eq!(saved.result_files[0], "");
+        assert!(!std::path::Path::new(&removed).exists());
+        assert!(std::path::Path::new(&saved.result_files[1]).exists());
+        assert_eq!(store.gallery.list().unwrap().len(), 1);
+        let store = HistoryStore::new(dir.clone()).unwrap();
+        assert_eq!(store.list().unwrap()[0].result_files[0], "");
+        store.delete("gallery_batch").unwrap();
+        assert_eq!(store.gallery.list().unwrap().len(), 1);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

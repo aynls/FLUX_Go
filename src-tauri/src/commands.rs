@@ -179,8 +179,8 @@ fn imported_bytes(bytes: Vec<u8>, name: String) -> Result<ImportedImage, String>
         .map_err(|_| "无法识别图片")?;
     let format = reader.format().ok_or("无法识别图片")?;
     let (width, height) = reader.into_dimensions().map_err(|_| "图片尺寸无法读取")?;
-    if u64::from(width) * u64::from(height) > 16_000_000 {
-        return Err("图片面积超过 16MP，请缩小后导入".into());
+    if u64::from(width) * u64::from(height) > 64_000_000 {
+        return Err("图片面积超过 64MP，请缩小后导入".into());
     }
     Ok(ImportedImage {
         data_url: format!(
@@ -274,7 +274,7 @@ pub fn history_storage(app: tauri::AppHandle) -> Result<String, String> {
         .path()
         .app_data_dir()
         .map_err(|e| e.to_string())?
-        .join("history")
+        .join("workbench")
         .to_string_lossy()
         .to_string())
 }
@@ -398,4 +398,36 @@ pub async fn history_save(
 #[tauri::command]
 pub async fn history_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
     with_store(&state, |s| s.delete(&id))
+}
+
+#[tauri::command]
+pub async fn gallery_list(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::gallery::GalleryItem>, String> {
+    with_store(&state, |s| s.gallery.list())
+}
+
+#[tauri::command]
+pub async fn gallery_import(
+    state: State<'_, AppState>,
+    data_url: String,
+    name: String,
+    source: String,
+) -> Result<crate::gallery::GalleryItem, String> {
+    with_store(&state, |s| s.gallery.import(&data_url, &name, &source))
+}
+
+#[tauri::command]
+pub async fn gallery_read(state: State<'_, AppState>, id: String) -> Result<ImportedImage, String> {
+    with_store(&state, |s| {
+        let asset = s.gallery.get(&id)?;
+        let bytes =
+            std::fs::read(&asset.file_path).map_err(|e| format!("图库图片无法读取：{e}"))?;
+        imported_bytes(bytes, asset.name)
+    })
+}
+
+#[tauri::command]
+pub async fn gallery_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    with_store(&state, |s| s.gallery.delete(&id))
 }
