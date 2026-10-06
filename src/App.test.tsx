@@ -7,8 +7,10 @@ import type {
   GenerateRequestPayload,
   HistoryItem,
   GenerationProgress,
+  Box,
 } from "./lib/types";
 import { newDraft } from "./lib/workspace";
+import Canvas from "./components/Canvas";
 
 const dom = new Window({ url: "http://localhost:5173" });
 Object.assign(globalThis, {
@@ -152,6 +154,83 @@ beforeEach(() => {
   dom.localStorage.clear();
 });
 afterEach(cleanup);
+
+test("right drag creates a FLUX box over existing boxes and handles; left drag only edits", () => {
+  const box: Box = {
+    uid: "existing",
+    id: "obj_1",
+    role: "place",
+    rect: { x: 100, y: 100, w: 200, h: 200 },
+    desc: "existing subject",
+  };
+  for (const [button, x, y, operation] of [
+    [2, 150, 150, "create"],
+    [2, 100, 100, "create"],
+    [2, 400, 400, "create"],
+    [0, 150, 150, "move"],
+    [0, 100, 100, "resize"],
+    [0, 400, 400, "none"],
+  ] as const) {
+    let changed: Box[] = [box];
+    const ui = render(
+      <Canvas
+        image={null}
+        phantom={{ w: 1024, h: 1024 }}
+        boxes={[box]}
+        selectedId={box.id}
+        tool="box"
+        onSelect={() => {}}
+        onChange={(boxes) => { changed = boxes; }}
+      />,
+    );
+    const surface = ui.container.querySelector(".canvas-surface")!;
+    Object.defineProperty(surface, "setPointerCapture", { value: () => {} });
+    fireEvent.pointerDown(surface, { button, pointerId: 1, clientX: x, clientY: y });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: x + 30, clientY: y + 40 });
+    fireEvent.pointerUp(surface, { button, pointerId: 1 });
+    if (operation === "create") {
+      expect(changed).toHaveLength(2);
+      expect(changed[0]).toEqual(box);
+      expect(changed[1].rect).toEqual({ x, y, w: 30, h: 40 });
+    } else if (operation === "move") {
+      expect(changed).toHaveLength(1);
+      expect(changed[0].rect).toEqual({ x: 130, y: 140, w: 200, h: 200 });
+    } else if (operation === "resize") {
+      expect(changed).toHaveLength(1);
+      expect(changed[0].rect).toEqual({ x: 130, y: 140, w: 170, h: 160 });
+    } else expect(changed).toEqual([box]);
+    ui.unmount();
+  }
+});
+
+test("right drag redraws a source region and read-only canvases cannot create boxes", () => {
+  for (const readOnly of [false, true]) {
+    const create = mock(() => {});
+    const change = mock(() => {});
+    const ui = render(
+      <Canvas
+        image={null}
+        phantom={{ w: 1024, h: 1024 }}
+        boxes={[]}
+        selectedId={null}
+        tool="box"
+        readOnly={readOnly}
+        onSelect={() => {}}
+        onChange={change}
+        onCreateRect={create}
+      />,
+    );
+    const surface = ui.container.querySelector(".canvas-surface")!;
+    Object.defineProperty(surface, "setPointerCapture", { value: () => {} });
+    fireEvent.pointerDown(surface, { button: 2, pointerId: 1, clientX: 50, clientY: 60 });
+    fireEvent.pointerMove(surface, { pointerId: 1, clientX: 90, clientY: 110 });
+    fireEvent.pointerUp(surface, { button: 2, pointerId: 1 });
+    if (readOnly) expect(create).not.toHaveBeenCalled();
+    else expect(create).toHaveBeenCalledWith({ x: 50, y: 60, w: 40, h: 50 });
+    expect(change).not.toHaveBeenCalled();
+    ui.unmount();
+  }
+});
 
 test("history keeps multiple results and restores the GPT mask into its own workspace", async () => {
   const draft = {

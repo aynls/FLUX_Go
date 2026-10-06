@@ -872,7 +872,7 @@ export default function App() {
           large
           onClose={() => setSourceBox(null)}
         >
-          <p className="help">拖拽画选替换源区域，或拖动 / 缩放当前框</p>
+          <p className="help">右键拖拽重画来源区域，左键拖动或缩放当前框</p>
           <div className="source-editor">
             <Canvas
               image={source}

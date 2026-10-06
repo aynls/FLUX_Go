@@ -290,12 +290,28 @@ export default function Canvas(props: CanvasProps) {
       return;
     }
     if (props.readOnly) return;
-    if (e.button !== 0) return;
+    const drawBox = e.button === 2 && props.tool === "box";
+    if (e.button !== 0 && !drawBox) return;
     if (props.onMaskChange && !maskReady) return;
     const p = toImg(e.clientX, e.clientY);
     if (props.onMaskChange && (p.x < 0 || p.y < 0 || p.x > iw || p.y > ih))
       return;
     props.onGestureStart?.();
+    // 右键画包围盒，优先于已有框体和缩放手柄；矩形蒙版仍使用左键。
+    if (drawBox || props.tool === "mask-box") {
+      e.preventDefault();
+      props.onSelect(null);
+      draftRef.current = { x: p.x, y: p.y, w: 0, h: 0 };
+      setDraft(draftRef.current);
+      dragRef.current = {
+        kind: "create",
+        pointerId: e.pointerId,
+        startImg: p,
+      };
+      setInteraction(dragRef.current);
+      el.setPointerCapture(e.pointerId);
+      return;
+    }
     if (props.tool === "brush" || props.tool === "eraser") {
       dragRef.current = { kind: "paint", pointerId: e.pointerId, lastPoint: p };
       setInteraction(dragRef.current);
@@ -340,17 +356,8 @@ export default function Canvas(props: CanvasProps) {
         return;
       }
     }
-    // 3. 空白处拖拽创建新框
+    // 左键点击空白处取消选择，不创建包围盒。
     props.onSelect(null);
-    draftRef.current = { x: p.x, y: p.y, w: 0, h: 0 };
-    setDraft(draftRef.current);
-    dragRef.current = {
-      kind: "create",
-      pointerId: e.pointerId,
-      startImg: p,
-    };
-    setInteraction(dragRef.current);
-    el.setPointerCapture(e.pointerId);
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -588,7 +595,7 @@ export default function Canvas(props: CanvasProps) {
               <span className="text-zinc-600" style={{ fontSize: 11 / s }}>
                 {props.dimensionLabel ?? `${iw}×${ih}`}
                 {!props.readOnly && props.coordinateMode !== "pixels"
-                  ? " · 拖拽安排区域"
+                  ? " · 右键拖拽画框"
                   : ""}
               </span>
             </div>

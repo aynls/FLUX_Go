@@ -144,7 +144,7 @@ export default function Sidebar(p: SidebarProps) {
         <section>
           <div className="section-heading">
             <h2>区域 · {d.boxes.length}</h2>
-            <span className="muted">在画布上拖拽画框</span>
+            <span className="muted">在画布上右键拖拽画框</span>
           </div>
           {renameError && (
             <p role="alert" className="error-text">
