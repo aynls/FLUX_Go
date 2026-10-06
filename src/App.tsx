@@ -6,8 +6,6 @@ import {
   ArrowClockwise,
   GearSix,
   Plus,
-  FrameCorners,
-  Hand,
 } from "@phosphor-icons/react";
 import Canvas from "./components/Canvas";
 import ResizableSidebar from "./components/ResizableSidebar";
@@ -91,7 +89,6 @@ export default function App() {
     redoStack,
   } = ws;
   const [selectedId, setSelected] = useState<string | null>(null);
-  const [tool, setTool] = useState<"box" | "pan">("box");
   const [pStatus, setPStatus] = useState<ProviderStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [historyError, setHistoryError] = useState("");
@@ -743,20 +740,6 @@ export default function App() {
             </div>
             {view === "canvas" && draft.family === "flux" ? (
               <div className="row">
-                <button
-                  className={tool === "box" ? "active" : ""}
-                  onClick={() => setTool("box")}
-                >
-                  <FrameCorners size={16} />
-                  画框
-                </button>
-                <button
-                  className={tool === "pan" ? "active" : ""}
-                  onClick={() => setTool("pan")}
-                >
-                  <Hand size={16} />
-                  平移
-                </button>
                 <span className="muted">
                   构图 {draft.canvas.w}×{draft.canvas.h}
                 </span>
@@ -778,7 +761,6 @@ export default function App() {
             <WorkspaceStage
               draft={draft}
               references={references}
-              tool={tool}
               selectedId={selectedId}
               onSelect={setSelected}
               onChange={onChange}

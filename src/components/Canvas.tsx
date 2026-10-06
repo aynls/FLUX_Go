@@ -277,7 +277,10 @@ export default function Canvas(props: CanvasProps) {
     if (iw <= 0) return;
     trackCursor(e.clientX, e.clientY);
     const el = containerRef.current!;
-    const wantPan = e.button === 1 || spaceDown || props.tool === "pan";
+    const wantPan =
+      (e.button === 0 && spaceDown) ||
+      (e.button === 1 && props.tool !== "box") ||
+      props.tool === "pan";
     if (wantPan && e.button !== 2) {
       dragRef.current = {
         kind: "pan",

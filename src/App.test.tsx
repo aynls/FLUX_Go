@@ -170,6 +170,8 @@ test("right drag creates a FLUX box over existing boxes and handles; left drag o
     [0, 150, 150, "move"],
     [0, 100, 100, "resize"],
     [0, 400, 400, "none"],
+    [1, 150, 150, "none"],
+    [0, 150, 150, "pan"],
   ] as const) {
     let changed: Box[] = [box];
     const ui = render(
@@ -185,9 +187,13 @@ test("right drag creates a FLUX box over existing boxes and handles; left drag o
     );
     const surface = ui.container.querySelector(".canvas-surface")!;
     Object.defineProperty(surface, "setPointerCapture", { value: () => {} });
+    if (operation === "pan") fireEvent.keyDown(window, { code: "Space" });
     fireEvent.pointerDown(surface, { button, pointerId: 1, clientX: x, clientY: y });
+    if (operation === "pan")
+      expect((surface as HTMLElement).style.cursor).toBe("grabbing");
     fireEvent.pointerMove(surface, { pointerId: 1, clientX: x + 30, clientY: y + 40 });
     fireEvent.pointerUp(surface, { button, pointerId: 1 });
+    if (operation === "pan") fireEvent.keyUp(window, { code: "Space" });
     if (operation === "create") {
       expect(changed).toHaveLength(2);
       expect(changed[0]).toEqual(box);
@@ -330,6 +336,8 @@ test("family workspaces keep independent drafts and persist across restart", asy
   ).not.toBeNull();
   expect(ui.queryByText("已恢复上次方案")).toBeNull();
   fireEvent.click(ui.getByRole("tab", { name: "FLUX.3 Image" }));
+  expect(ui.queryByRole("button", { name: "画框" })).toBeNull();
+  expect(ui.queryByRole("button", { name: "平移" })).toBeNull();
   expect(
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
   ).toBe("FLUX layout");

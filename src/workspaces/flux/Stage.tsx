@@ -53,7 +53,7 @@ export default function FluxStage(p: StageProps) {
             phantom={d.canvas}
             boxes={boxes}
             selectedId={p.selectedId}
-            tool={p.tool}
+            tool="box"
             editMode={!!d.refs.length}
             onSelect={p.onSelect}
             onChange={p.onBoxesChange}
