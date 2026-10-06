@@ -91,29 +91,39 @@ fn req(provider: &str, count: u32) -> GenerateRequest {
 }
 #[tokio::test]
 async fn google_official_authenticates_in_header_and_sends_one_native_request() {
-    let image = png();
-    let (url, handle) = server(vec![(
-        200,
-        json!({"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":image.split_once(',').unwrap().1}}]}}],"usageMetadata":{"totalTokenCount":99}}),
-    )]);
-    let request:GenerateRequest=serde_json::from_value(json!({"provider":"google","model":"gemini-3.1-flash-image","finalPrompt":"a simple icon","params":{"resolution":"512","aspectRatio":"1:1"}})).unwrap();
-    let out = google::generate_at(&request, "test-only-key", &format!("{url}/v1/models"))
-        .await
-        .unwrap();
-    let requests = handle.join().unwrap();
-    assert_eq!(requests.len(), 1);
-    assert!(requests[0]
-        .0
-        .starts_with("POST /v1/models/gemini-3.1-flash-image:generateContent "));
-    assert!(requests[0]
-        .0
-        .to_lowercase()
-        .contains("x-goog-api-key: test-only-key"));
-    assert!(!requests[0].0.lines().next().unwrap().contains("key"));
-    assert_eq!(out.provider, "google");
-    assert_eq!(out.images.len(), 1);
-    assert_eq!(out.usage["totalTokenCount"], 99);
-    assert!(out.usage.get("cost").is_none());
+    for (model, resolution) in [
+        ("gemini-3.1-flash-image", "512"),
+        ("gemini-nano-banana-2.1", "4K"),
+    ] {
+        let image = png();
+        let (url, handle) = server(vec![(
+            200,
+            json!({"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":image.split_once(',').unwrap().1}}]}}],"usageMetadata":{"totalTokenCount":99}}),
+        )]);
+        let request:GenerateRequest=serde_json::from_value(json!({"provider":"google","model":model,"finalPrompt":"a simple icon","params":{"resolution":resolution,"aspectRatio":"1:1"}})).unwrap();
+        let out = google::generate_at(&request, "test-only-key", &format!("{url}/v1/models"))
+            .await
+            .unwrap();
+        let requests = handle.join().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0]
+            .0
+            .starts_with(&format!("POST /v1/models/{model}:generateContent ")));
+        assert!(requests[0]
+            .0
+            .to_lowercase()
+            .contains("x-goog-api-key: test-only-key"));
+        assert!(!requests[0].0.lines().next().unwrap().contains("key"));
+        assert_eq!(out.provider, "google");
+        assert_eq!(out.images.len(), 1);
+        assert_eq!(out.usage["totalTokenCount"], 99);
+        assert!(out.usage.get("cost").is_none());
+        assert_eq!(out.model, model);
+        assert_eq!(
+            requests[0].1["generationConfig"]["responseFormat"]["image"]["imageSize"],
+            resolution
+        );
+    }
 }
 
 #[tokio::test]

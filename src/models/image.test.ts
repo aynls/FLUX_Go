@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { newDraft, outputEstimate } from "../lib/workspace";
+import { migrateDraft, newDraft, outputEstimate } from "../lib/workspace";
 import { catalog, changeRoute, defaultsFor } from "./catalog";
 import { buildRequest, validateModel } from ".";
 import { estimateComfyCredits } from "./pricing";
@@ -71,4 +71,56 @@ test("image dimensions and compiled prompt limits follow the selected route", ()
       params: { resolution: "512", aspectRatio: "1:1" },
     }),
   ).toEqual({ w: 512, h: 512 });
+});
+
+test("Nano Banana 2.1 switches without losing old model settings or edit inputs", () => {
+  const previous = {
+    ...newDraft(undefined, "gemini"),
+    prompt: "Preserve the subject and change the background",
+    params: { resolution: "512", aspectRatio: "8:1", count: 1 },
+  };
+  expect(previous.modelId).toBe("gemini-3.1-flash-image");
+  const selected = changeRoute(
+    previous, "openrouter", "gemini-nano-banana-2.1",
+  );
+  expect(selected.params.resolution).toBe("1K");
+  expect(selected.params.aspectRatio).toBe("8:1");
+  expect(changeRoute(selected, "openrouter", previous.modelId).params).toEqual(
+    previous.params,
+  );
+  const refs = Array.from({ length: 14 }, (_, i) => ({
+    uid: `ref-${i}`,
+    name: `Reference ${i}`,
+    width: 768,
+    height: 768,
+    dataUrl: `data:image/png;base64,${i}`,
+  }));
+  for (const provider of ["openrouter", "google"] as const) {
+    const draft = {
+      ...changeRoute(selected, provider),
+      intent: "edit" as const,
+      refs,
+      baseId: refs[0].uid,
+      params: { resolution: "4K", aspectRatio: "8:1" },
+    };
+    expect(validateModel(draft)).toEqual([]);
+    const request = buildRequest(draft, refs.map((r) => r.dataUrl));
+    expect(request.model).toBe("gemini-nano-banana-2.1");
+    expect(request.images).toEqual(refs.map((r) => r.dataUrl));
+    expect(request.params).toEqual({
+      resolution: "4K",
+      aspectRatio: "8:1",
+      ...(provider === "openrouter" ? { count: 1 } : {}),
+    });
+    expect(migrateDraft(JSON.parse(JSON.stringify(draft)))).toMatchObject(draft);
+    expect(
+      validateModel({ ...draft, refs: [...refs, refs[0]] }).join(),
+    ).toContain("14");
+    expect(
+      validateModel({
+        ...draft,
+        params: { ...draft.params, resolution: "512" },
+      }).join(),
+    ).toContain("512");
+  }
 });

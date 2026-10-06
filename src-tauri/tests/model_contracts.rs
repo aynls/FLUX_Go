@@ -90,6 +90,60 @@ fn every_catalog_route_builds_a_provider_native_request() {
 }
 
 #[test]
+fn nano_banana_21_enforces_its_own_routes_and_preserves_edit_references() {
+    for provider in ["openrouter", "google"] {
+        let mut request = req(
+            provider,
+            "gemini-nano-banana-2.1",
+            json!({"resolution":"4K","aspectRatio":"8:1"}),
+        );
+        request.images = vec![png(false), png(true)];
+        if provider == "openrouter" {
+            request.params.count = Some(1);
+            let payload = openrouter::build_payload(&request).unwrap();
+            assert_eq!(payload["model"], "google/gemini-nano-banana-2.1");
+            assert_eq!(payload["resolution"], "4K");
+            assert_eq!(payload["aspect_ratio"], "8:1");
+            assert_eq!(payload["n"], 1);
+            for (i, url) in request.images.iter().enumerate() {
+                assert_eq!(payload["input_references"][i]["image_url"]["url"], *url);
+            }
+        } else {
+            let payload = google::build_payload(&request).unwrap();
+            assert_eq!(
+                models::resolve(&request).unwrap().wire_id(),
+                "gemini-nano-banana-2.1"
+            );
+            assert_eq!(
+                payload["generationConfig"]["responseFormat"]["image"],
+                json!({"imageSize":"4K","aspectRatio":"8:1"})
+            );
+            for (i, url) in request.images.iter().enumerate() {
+                assert_eq!(
+                    payload["contents"][0]["parts"][i]["inlineData"]["data"],
+                    url.split_once(',').unwrap().1
+                );
+            }
+            request.params.aspect_ratio = Some("auto".into());
+            let payload = google::build_payload(&request).unwrap();
+            assert!(payload["generationConfig"]["responseFormat"]["image"]
+                .get("aspectRatio")
+                .is_none());
+        }
+        request.images = vec![png(false); 14];
+        models::validate(&request).unwrap();
+        request.images.push(png(false));
+        assert!(models::validate(&request).is_err());
+        request.images.clear();
+        request.params.resolution = Some("512".into());
+        assert!(models::validate(&request).is_err());
+    }
+    for provider in ["comfy", "runware"] {
+        assert!(models::validate(&req(provider, "gemini-nano-banana-2.1", json!({}))).is_err());
+    }
+}
+
+#[test]
 fn gemini_native_requests_preserve_reference_order_and_route_configuration() {
     let mut request = req(
         "google",

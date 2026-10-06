@@ -365,6 +365,18 @@ test("new image families expose official routes, color icons and independent per
   );
   expect(geminiTab.querySelector("img")?.className).not.toContain("monochrome");
   fireEvent.click(geminiTab);
+  fireEvent.change(ui.getByRole("combobox", { name: "模型版本" }), {
+    target: { value: "gemini-nano-banana-2.1" },
+  });
+  expect(
+    Array.from(
+      ui.getByRole("combobox", { name: "提供商" }).querySelectorAll("option"),
+    ).map((option) => option.value),
+  ).toEqual(["openrouter", "google"]);
+  expect(
+    ui.getByRole("combobox", { name: "分辨率档位" })
+      .querySelector('option[value="512"]'),
+  ).toBeNull();
   fireEvent.change(ui.getByRole("combobox", { name: "提供商" }), {
     target: { value: "google" },
   });
@@ -403,6 +415,10 @@ test("new image families expose official routes, color icons and independent per
       .value,
   ).toBe("BytePlus image");
   fireEvent.click(restarted.getByRole("tab", { name: "Gemini Image" }));
+  expect(
+    (restarted.getByRole("combobox", { name: "模型版本" }) as HTMLSelectElement)
+      .value,
+  ).toBe("gemini-nano-banana-2.1");
   expect(
     (restarted.getByRole("combobox", { name: "提供商" }) as HTMLSelectElement)
       .value,

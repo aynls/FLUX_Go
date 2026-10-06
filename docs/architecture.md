@@ -24,10 +24,11 @@ LutriUI 将模型契约、工作区和供应商传输分开。新增模型时，
 | FLUX.3 Image  | FLUX.3 Image    | OpenRouter、BFL、Comfy、Runware |
 | GPT Image 2.5 | Flare、Sunburst | OpenRouter、Comfy、Runware      |
 | Qwen Image    | 3.0、3.0 Pro    | OpenRouter、Comfy、Runware      |
+| Gemini Image  | Nano Banana 2.1 | OpenRouter、Google |
 | Gemini Image  | Nano Banana 2、Pro | OpenRouter、Comfy、Runware、Google |
 | Seedream      | 5.0 Pro、Lite、Flash | OpenRouter、Comfy、Runware、火山方舟、BytePlus |
 
-目录于 2026-10-06 根据公开 API 资料核对。账户权限、价格与供应商后续变更仍以供应商实际响应为准。
+目录于 2026-10-06 根据公开 API 资料核对，2026-10-07 补充核对 Nano Banana 2.1 的 OpenRouter 与 Google 路由。账户权限、价格与供应商后续变更仍以供应商实际响应为准。
 
 ## 工作区与 API 差异
 
@@ -39,7 +40,9 @@ Qwen 工作区使用有序参考图和文字指令，支持 3.0 与 3.0 Pro。Op
 
 ## 任务与参考素材
 
-Gemini Image 使用有序参考图、分辨率和宽高比，两个版本均至多 14 张参考图，不开放蒙版。Google 官方路由使用 `x-goog-api-key` 请求头与 `generateContent`，输出配置为 `generationConfig.responseFormat.image`，不发送 Vertex AI 专用的输出格式字段。Comfy 使用 Vertex AI 原生 `generationConfig.imageConfig`，开放 1K/2K/4K 与 PNG/JPEG。结果按内容字段提取，忽略文字与思考图片，兼容 inlineData 与 fileData。Runware 使用各模型独立的官方尺寸表；自动比例需要参考图并发送分辨率预设，其他比例发送精确宽高，另外开放种子与输出压缩。[Google API](https://ai.google.dev/gemini-api/docs/generate-content/image-generation)、[Comfy schema](https://docs.comfy.org/router-schemas/vertexai/gemini-3.1-flash-image.json)、[Runware](https://runware.ai/docs/models/google-nano-banana-2)。
+Gemini Image 使用有序参考图、分辨率和宽高比，三个版本均至多 14 张参考图，不开放蒙版。Nano Banana 2.1 的规范编号为 `gemini-nano-banana-2.1`，OpenRouter 编号为 `google/gemini-nano-banana-2.1`；两个路由均开放 1K/2K/4K 与 14 种比例，不支持 512，Google 另支持自动比例。OpenRouter 单次请求固定一张，多张生成由应用队列管理。默认模型仍为 Nano Banana 2，既有草稿和各路由参数继续保留。[Nano Banana 2.1](https://ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1)、[OpenRouter 路由](https://openrouter.ai/api/v1/images/models/google/gemini-nano-banana-2.1/endpoints)。
+
+Google 官方路由使用 `x-goog-api-key` 请求头与 `generateContent`，输出配置为 `generationConfig.responseFormat.image`，不发送 Vertex AI 专用的输出格式字段。Comfy 使用 Vertex AI 原生 `generationConfig.imageConfig`，开放 1K/2K/4K 与 PNG/JPEG。结果按内容字段提取，忽略文字与思考图片，兼容 inlineData 与 fileData。Runware 使用各模型独立的官方尺寸表；自动比例需要参考图并发送分辨率预设，其他比例发送精确宽高，另外开放种子与输出压缩。Google 的思考级别、搜索工具和多轮对话暂未接入；当前编辑以有序参考图和单次指令发起。[Google API](https://ai.google.dev/gemini-api/docs/generate-content/image-generation)、[Comfy schema](https://docs.comfy.org/router-schemas/vertexai/gemini-3.1-flash-image.json)、[Runware](https://runware.ai/docs/models/google-nano-banana-2)。
 
 Seedream 支持 5.0 Pro、Lite 与 Flash，不开放独立蒙版或图层拆分。OpenRouter 三个版本均至多 14 张参考图；Pro/Flash 开放 1K/2K，Lite 开放 2K/4K。Comfy 和官方路由使用原生图像请求，Pro/Flash 至多 10 张参考图，Lite 至多 14 张；支持分辨率预设或自定义像素尺寸、PNG/JPEG 与水印。预设模式的比例由提示词描述，自定义尺寸按版本校验面积。Lite 的 Comfy 路由开放 2K/3K，官方路由的尺寸差异见下文。Runware Pro/Flash 使用自定义宽高，Lite 使用官方 2K/3K 尺寸表，不发送未开放的种子；输出支持 PNG/JPEG/WebP。Comfy 与官方 Lite 禁用连续出图，Runware Lite 将 `maxSequentialImages` 固定为 1，由应用队列管理张数。[Comfy schema](https://docs.comfy.org/router-schemas/byteplus/seedream-5-0-pro-260628.json)、[Runware Pro](https://runware.ai/docs/models/bytedance-seedream-5-0-pro)、[Runware Lite](https://runware.ai/docs/models/bytedance-seedream-5-0-lite)。
 
