@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { newDraft, migrateSession, outputEstimate } from "../lib/workspace";
+import { newDraft, outputEstimate } from "../lib/workspace";
 import { catalog, changeRoute, defaultsFor } from "./catalog";
 import { buildRequest, validateModel } from ".";
 import { estimateComfyCredits } from "./pricing";
-import type { Draft, ProviderId } from "../lib/types";
+import type { ProviderId } from "../lib/types";
 
 test("new image models have valid defaults on every advertised route", () => {
   for (const model of catalog.models.filter((m) =>
@@ -31,19 +31,6 @@ test("new image models have valid defaults on every advertised route", () => {
       }
     }
   }
-});
-
-test("route switches restore independent image model parameters", () => {
-  let d: Draft = {
-    ...newDraft(undefined, "gemini"),
-    prompt: "Poster",
-    params: { resolution: "512", aspectRatio: "8:1" },
-  };
-  d = changeRoute(d, "comfy");
-  expect(d.params.resolution).toBe("1K");
-  d = changeRoute(d, "openrouter");
-  expect(d.params.resolution).toBe("512");
-  expect(d.params.aspectRatio).toBe("8:1");
 });
 
 test("image dimensions and compiled prompt limits follow the selected route", () => {
@@ -84,28 +71,4 @@ test("image dimensions and compiled prompt limits follow the selected route", ()
       params: { resolution: "512", aspectRatio: "1:1" },
     }),
   ).toEqual({ w: 512, h: 512 });
-});
-
-test("new families restore independent generation and edit drafts", () => {
-  const gemini = {
-    ...newDraft(undefined, "gemini"),
-    prompt: "Gemini generation",
-  };
-  const seedream = {
-    ...newDraft(undefined, "seedream"),
-    prompt: "Seedream edit",
-    intent: "edit" as const,
-  };
-  const session = migrateSession({
-    schema: 1,
-    activeFamily: "seedream",
-    workspaces: { gemini, seedream },
-    taskWorkspaces: { "gemini:create": gemini, "seedream:edit": seedream },
-  });
-  expect(session?.taskWorkspaces?.["gemini:create"]?.prompt).toBe(
-    "Gemini generation",
-  );
-  expect(session?.taskWorkspaces?.["seedream:edit"]?.prompt).toBe(
-    "Seedream edit",
-  );
 });

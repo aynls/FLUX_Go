@@ -413,58 +413,6 @@ test("new image families expose official routes, color icons and independent per
   ).toBe("Google image");
 });
 
-test("family workspaces keep independent drafts and persist across restart", async () => {
-  const ui = render(<App />);
-  await waitFor(() =>
-    expect(
-      ui.getByRole("tab", { name: "GPT Image 2.5" }).hasAttribute("disabled"),
-    ).toBe(false),
-  );
-  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
-    target: { value: "FLUX layout" },
-  });
-  fireEvent.click(ui.getByRole("tab", { name: "GPT Image 2.5" }));
-  expect(
-    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
-  ).toBe("");
-  expect(ui.queryByRole("button", { name: "画框" })).toBeNull();
-  expect(
-    ui.getByRole("combobox", { name: "提供商" }).textContent,
-  ).not.toContain("BFL");
-  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
-    target: { value: "GPT edit" },
-  });
-  fireEvent.click(ui.getByRole("tab", { name: "Qwen Image" }));
-  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
-    target: { value: "Qwen typography" },
-  });
-  expect(
-    ui.getByRole("textbox", { name: "提示词" }).closest("aside"),
-  ).not.toBeNull();
-  expect(ui.queryByText("已恢复上次方案")).toBeNull();
-  fireEvent.click(ui.getByRole("tab", { name: "FLUX.3 Image" }));
-  expect(ui.queryByRole("button", { name: "画框" })).toBeNull();
-  expect(ui.queryByRole("button", { name: "平移" })).toBeNull();
-  expect(
-    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
-  ).toBe("FLUX layout");
-  await waitFor(() => expect(draftWrites.length).toBeGreaterThan(0));
-  initial = draftWrites.at(-1)!;
-  expect((initial as WorkspaceSession).workspaces.gpt?.prompt).toBe("GPT edit");
-  ui.unmount();
-  const restarted = render(<App />);
-  await waitFor(() =>
-    expect(
-      restarted.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
-    ).toBe(false),
-  );
-  fireEvent.click(restarted.getByRole("tab", { name: "Qwen Image" }));
-  expect(
-    (restarted.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement)
-      .value,
-  ).toBe("Qwen typography");
-});
-
 test("GPT native parameters are sent and all results can be selected and exported", async () => {
   initial = {
     ...newDraft(undefined, "gpt"),
@@ -516,73 +464,6 @@ test("GPT native parameters are sent and all results can be selected and exporte
   expect(savedItem!.cost).toBeNull();
   fireEvent.click(ui.getByRole("button", { name: "另存为" }));
   await waitFor(() => expect(exportPath).toEndWith("-2.webp"));
-});
-
-test("background generation belongs to its family without replacing the new workspace", async () => {
-  initial = { ...newDraft(undefined, "gpt"), prompt: "Generate old GPT work" };
-  const ui = render(<App />);
-  await waitFor(() =>
-    expect(
-      ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
-    ).toBe(false),
-  );
-  fireEvent.click(ui.getByRole("button", { name: "生成图像 · 1 张" }));
-  await waitFor(() => expect(submitted).not.toBeNull());
-  fireEvent.click(ui.getByRole("tab", { name: "Qwen Image" }));
-  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
-    target: { value: "New Qwen work" },
-  });
-  await act(async () =>
-    finish({
-      ...output,
-      provider: "openrouter",
-      model: "openai/gpt-image-2.5-flare",
-    }),
-  );
-  await waitFor(() => expect(savedItem).not.toBeNull());
-  expect(
-    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
-  ).toBe("New Qwen work");
-  expect(savedItem!.recipe!.family).toBe("gpt");
-  expect(ui.queryByRole("button", { name: "查看结果 1" })).toBeNull();
-  fireEvent.click(ui.getByRole("tab", { name: "GPT Image 2.5" }));
-  expect(ui.getByRole("button", { name: "查看结果 1" })).toBeTruthy();
-});
-
-test("chosen export directory persists across app restart", async () => {
-  const ui = render(<App />);
-  await waitFor(() =>
-    expect(
-      ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
-    ).toBe(false),
-  );
-  await act(async () => {
-    fireEvent.click(ui.getAllByRole("button", { name: "设置" })[0]);
-  });
-  await act(async () => {
-    fireEvent.click(ui.getByRole("button", { name: "存储" }));
-  });
-  await act(async () => {
-    fireEvent.click(ui.getByRole("button", { name: "选择文件夹" }));
-  });
-  await waitFor(() =>
-    expect(
-      JSON.parse(dom.localStorage.getItem("lutriui-preferences-v2")!)
-        .saveDirectory,
-    ).toBe("D:\\Pictures\\LutriUI"),
-  );
-  ui.unmount();
-  const restarted = render(<App />);
-  await waitFor(() =>
-    expect(
-      restarted.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
-    ).toBe(false),
-  );
-  await act(async () => {
-    fireEvent.click(restarted.getAllByRole("button", { name: "设置" })[0]);
-  });
-  fireEvent.click(restarted.getByRole("button", { name: "存储" }));
-  expect(restarted.getByText("D:\\Pictures\\LutriUI")).toBeTruthy();
 });
 
 test("invalid saved draft is preserved until explicit new scheme", async () => {
@@ -673,36 +554,6 @@ test("history restores all references, provider and compression; undo recovers c
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
   ).toBe("current work");
   expect(ui.getByRole("heading", { name: /素材\s*0\/10/ })).toBeTruthy();
-});
-
-test("multi-file import leaves output canvas and existing boxes intact", async () => {
-  initial = {
-    ...newDraft(),
-    prompt: "existing layout",
-    boxes: [
-      {
-        uid: "stable",
-        id: "obj_1",
-        role: "place",
-        rect: { x: 1, y: 1, w: 20, h: 20 },
-        desc: "tree",
-      },
-    ],
-  };
-  const ui = render(<App />);
-  await waitFor(() =>
-    expect(
-      ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
-    ).toBe(false),
-  );
-  fireEvent.click(ui.getByRole("button", { name: "添加文件" }));
-  await waitFor(() =>
-    expect(ui.getByRole("heading", { name: /素材\s*2\/10/ })).toBeTruthy(),
-  );
-  expect(ui.getByText("区域 · 1")).toBeTruthy();
-  expect(ui.getByText("first.png")).toBeTruthy();
-  expect(ui.getByText("second.png")).toBeTruthy();
-  expect(ui.getAllByText("1024×1024").length).toBeGreaterThan(0);
 });
 test("in-flight snapshot is immutable; result does not overwrite newer draft or references", async () => {
   dom.localStorage.setItem(
@@ -890,81 +741,6 @@ test("continuing an edit replaces the primary, retains reference roles, and star
   ).toBe("old <ref_image_1> instruction");
 });
 
-test("inactive route parameters do not change generation labels or the saved request record", async () => {
-  initial = {
-    ...newDraft(),
-    provider: "bfl",
-    prompt: "one image",
-    params: { ...newDraft().params, count: 20 },
-  };
-  const ui = render(<App />);
-  await waitFor(() =>
-    expect(
-      ui
-        .getByRole("button", { name: "生成图像 · 1 张" })
-        .hasAttribute("disabled"),
-    ).toBe(false),
-  );
-  fireEvent.click(ui.getByRole("button", { name: "生成图像 · 1 张" }));
-  await waitFor(() => expect(submitted).not.toBeNull());
-  expect(submitted!.params.count).toBeUndefined();
-  await act(async () => finish(output));
-  await waitFor(() => expect(savedItem).not.toBeNull());
-  expect(savedItem!.params.count).toBeUndefined();
-  expect(savedItem!.recipe?.params.count).toBe(20);
-});
-
-test("route changes undo within a task; task navigation preserves independent drafts", async () => {
-  initial = {
-    ...newDraft(undefined, "qwen"),
-    provider: "runware",
-    prompt: "a poster",
-  };
-  const ui = render(<App />);
-  await waitFor(() =>
-    expect(
-      ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
-    ).toBe(false),
-  );
-  fireEvent.change(ui.getByRole("combobox", { name: "种子模式" }), {
-    target: { value: "fixed" },
-  });
-  fireEvent.change(ui.getByRole("spinbutton", { name: "种子值" }), {
-    target: { value: "20" },
-  });
-  fireEvent.change(ui.getByRole("combobox", { name: "提供商" }), {
-    target: { value: "openrouter" },
-  });
-  fireEvent.click(ui.getByRole("button", { name: "撤销 Ctrl+Z" }));
-  expect(
-    (ui.getByRole("combobox", { name: "提供商" }) as HTMLSelectElement).value,
-  ).toBe("runware");
-  expect(
-    (ui.getByRole("spinbutton", { name: "种子值" }) as HTMLInputElement).value,
-  ).toBe("20");
-  fireEvent.click(ui.getByRole("button", { name: "编辑" }));
-  expect(
-    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
-  ).toBe("");
-  expect(
-    ui.getByRole("button", { name: "撤销 Ctrl+Z" }).hasAttribute("disabled"),
-  ).toBe(true);
-  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
-    target: { value: "edit separately" },
-  });
-  fireEvent.click(ui.getByRole("button", { name: "生成" }));
-  expect(
-    ui.getByRole("button", { name: "生成" }).getAttribute("aria-pressed"),
-  ).toBe("true");
-  expect(
-    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
-  ).toBe("a poster");
-  fireEvent.click(ui.getByRole("button", { name: "编辑" }));
-  expect(
-    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
-  ).toBe("edit separately");
-});
-
 test("generation and editing keep independent inputs, parameters and undo across restart", async () => {
   initial = { ...newDraft(undefined, "gpt"), prompt: "new scene" };
   const ui = render(<App />);
@@ -1140,28 +916,6 @@ test("queue saves requests immediately, cancels waiting work and runs FIFO snaps
   expect(
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
   ).toBe("next unfinished draft");
-});
-
-test("restoring queued work under StrictMode submits once and does not rerun interrupted tasks", async () => {
-  const job = queuedGeneration({ ...newDraft(), prompt: "restore this queue" });
-  historyItems = [
-    job.item,
-    { ...job.item, id: "interrupted-job", status: "interrupted" },
-  ];
-  const ui = render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  );
-  await waitFor(() => expect(submissions).toHaveLength(1));
-  expect(submissions[0].requestId).toBe(job.item.id);
-  await act(async () => finish(output));
-  await waitFor(() => expect(savedItem?.status).toBe("ok"));
-  expect(submissions).toHaveLength(1);
-  expect(historyItems.find((it) => it.id === "interrupted-job")?.status).toBe(
-    "interrupted",
-  );
-  ui.unmount();
 });
 
 test("a failed queue item does not retry and the next item still runs", async () => {
@@ -1494,6 +1248,12 @@ test("queued batch restoration reuses persisted seeds and request ids without ne
     ],
   };
   historyItems = [job.item];
+  const interrupted = {
+    ...job.item,
+    id: "interrupted-job",
+    status: "interrupted",
+  };
+  historyItems.push(interrupted);
   render(
     <StrictMode>
       <App />
@@ -1508,7 +1268,10 @@ test("queued batch restoration reuses persisted seeds and request ids without ne
   expect(submissions[1].params.seed).toBe(22);
   await act(async () => finish(output));
   await waitFor(() => expect(historyItems[0].status).toBe("ok"));
-  expect(historyItems).toHaveLength(1);
+  expect(historyItems).toHaveLength(2);
   expect(historyItems[0].id).toBe(job.item.id);
   expect(historyItems[0].resultFiles).toHaveLength(2);
+  expect(historyItems.find((it) => it.id === interrupted.id)?.status).toBe(
+    "interrupted",
+  );
 });

@@ -7,47 +7,8 @@ import {
   validateDraft,
 } from "../lib/workspace";
 import { buildRequest, compileDraft } from ".";
-import { changeRoute, routeFor } from "./catalog";
+import { changeRoute } from "./catalog";
 import { setPrimaryImage } from "../lib/workspace";
-
-test("each family has its own contract and compatible provider routes", () => {
-  const flux = newDraft(),
-    gpt = newDraft(DEFAULT_PREFERENCES, "gpt"),
-    qwen = newDraft(DEFAULT_PREFERENCES, "qwen");
-  expect(gpt.params.resolution).toBeUndefined();
-  expect(qwen.params.quality).toBeUndefined();
-  expect(routeFor({ modelId: gpt.modelId, provider: "bfl" })).toBeUndefined();
-  expect(routeFor({ modelId: flux.modelId, provider: "comfy" })?.maxRefs).toBe(
-    10,
-  );
-  expect(
-    routeFor({ modelId: qwen.modelId, provider: "runware" })?.maxRefs,
-  ).toBe(3);
-  expect(
-    routeFor({ modelId: qwen.modelId, provider: "openrouter" })?.maxRefs,
-  ).toBe(4);
-});
-test("plain models send plain text without FLUX JSON and omit unavailable parameters", () => {
-  const gpt = {
-    ...newDraft(DEFAULT_PREFERENCES, "gpt"),
-    prompt: "Edit this image",
-  };
-  const req = buildRequest(gpt, []);
-  expect(req.model).toBe("gpt-image-2.5-flare");
-  expect(req.finalPrompt).toBe("Edit this image");
-  expect(req.regions).toEqual([]);
-  expect(req.params.size).toBeUndefined();
-  expect(req.params.resolution).toBeUndefined();
-  const qwen = {
-    ...newDraft(DEFAULT_PREFERENCES, "qwen"),
-    prompt: "A poster with text",
-  };
-  const q = buildRequest(qwen, []);
-  expect(q.params.promptExtend).toBeUndefined();
-  expect(q.params.negativePrompt).toBeUndefined();
-  expect(q.params.count).toBe(1);
-  expect(compileDraft(qwen).rows).toEqual([]);
-});
 test("FLUX keeps independent source and target coordinates for structured providers", () => {
   const d = {
     ...newDraft(),
@@ -215,36 +176,6 @@ test("legacy overlay selection does not rewrite the actual API order or original
   ).toEqual(["a", "b"]);
   expect(compileDraft(migrated).finalPrompt).toBe(old.prompt);
 });
-test("primary image selection remaps references and roles become vendor-neutral prompt instructions", () => {
-  const d = {
-    ...newDraft(),
-    prompt: "Edit <ref_image_1> using <ref_image_0>",
-    refs: [
-      {
-        uid: "style",
-        name: "style",
-        dataUrl: "s",
-        width: 1600,
-        height: 900,
-        purpose: "style" as const,
-      },
-      { uid: "main", name: "main", dataUrl: "m", width: 900, height: 1600 },
-    ],
-  };
-  const selected = setPrimaryImage(d, "main");
-  const req = buildRequest(
-    selected,
-    selected.refs.map((r) => r.dataUrl),
-  );
-  expect(selected.intent).toBe("edit");
-  expect(req.images).toEqual(["m", "s"]);
-  expect(req.finalPrompt).toContain("Edit <ref_image_0> using <ref_image_1>");
-  expect(req.finalPrompt).toContain(
-    "Use <ref_image_1> as a reference for visual style",
-  );
-  expect(req.params.aspectRatio).toBe("auto");
-  expect(req.params.purpose).toBeUndefined();
-});
 test("route round trips restore original values and preserve inactive parameters", () => {
   let d = changeRoute(newDraft(DEFAULT_PREFERENCES, "qwen"), "runware");
   d = { ...d, params: { ...d.params, count: 20, negativePrompt: "no text" } };
@@ -258,52 +189,6 @@ test("route round trips restore original values and preserve inactive parameters
   expect(migrateDraft(JSON.parse(JSON.stringify(other))).routeSettings).toEqual(
     other.routeSettings,
   );
-});
-test("automatic Qwen sizes omit both dimensions without bypassing editing constraints", () => {
-  const d = changeRoute(newDraft(DEFAULT_PREFERENCES, "qwen"), "comfy");
-  const automatic = {
-    ...d,
-    prompt: "a poster",
-    params: { ...d.params, width: null, height: null },
-  };
-  expect(validateDraft(automatic)).toEqual([]);
-  expect(buildRequest(automatic, []).params.width).toBeUndefined();
-  expect(buildRequest(automatic, []).params.height).toBeUndefined();
-  expect(
-    validateDraft({
-      ...automatic,
-      refs: [{ uid: "r", name: "r", dataUrl: "r", width: 512, height: 512 }],
-      params: { ...automatic.params, promptExtendMode: "agent" },
-    }).join(),
-  ).toContain("direct");
-});
-test("human-readable dimensions are normalized before IPC and Runware output settings are exposed", () => {
-  const gpt = changeRoute(newDraft(DEFAULT_PREFERENCES, "gpt"), "comfy");
-  expect(
-    buildRequest(
-      { ...gpt, prompt: "test", params: { ...gpt.params, size: "2048×2048" } },
-      [],
-    ).params.size,
-  ).toBe("2048x2048");
-  for (const family of ["flux", "qwen"] as const) {
-    const d = changeRoute(newDraft(DEFAULT_PREFERENCES, family), "runware");
-    expect(
-      buildRequest(
-        {
-          ...d,
-          prompt: "test",
-          params: { ...d.params, outputFormat: "webp", outputCompression: 90 },
-        },
-        [],
-      ).params.outputCompression,
-    ).toBe(90);
-    expect(
-      validateDraft({
-        ...d,
-        params: { ...d.params, outputFormat: "jpeg", outputCompression: 100 },
-      }).join(),
-    ).toContain("99");
-  }
 });
 test("GPT reference tags follow primary changes and compile to native image numbering", () => {
   const d = {

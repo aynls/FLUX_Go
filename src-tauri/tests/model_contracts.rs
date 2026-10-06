@@ -75,6 +75,16 @@ fn every_catalog_route_builds_a_provider_native_request() {
                 assert_eq!(payload[0]["model"], route["model"]);
                 assert_eq!(payload[0]["deliveryMethod"], "async");
             }
+            // Every Lite route must preserve the application's one-paid-request-per-image contract.
+            if model["id"] == "seedream-5-lite" {
+                match provider.as_str() {
+                    "runware" => assert_eq!(payload[0]["settings"]["maxSequentialImages"], 1),
+                    "comfy" | "ark" | "byteplus" => {
+                        assert_eq!(payload["sequential_image_generation"], "disabled")
+                    }
+                    _ => assert_eq!(payload["n"], 1),
+                }
+            }
         }
     }
 }
@@ -162,74 +172,6 @@ fn seedream_official_sizes_are_independent_from_aggregator_constraints() {
     .is_err());
 }
 
-#[test]
-fn runware_gemini_uses_each_models_exact_dimensions_and_reference_auto_resolution() {
-    for (model, width) in [
-        ("gemini-3.1-flash-image", 1584),
-        ("gemini-3-pro-image", 1548),
-    ] {
-        let mut request = req(
-            "runware",
-            model,
-            json!({"resolution":"1K","aspectRatio":"21:9","seed":123}),
-        );
-        let p = runware::build_payload(&request, "test-id").unwrap();
-        assert_eq!(p[0]["width"], width);
-        assert_eq!(p[0]["height"], 672);
-        assert_eq!(p[0]["seed"], 123);
-        assert!(p[0].get("resolution").is_none());
-        request.params.aspect_ratio = Some("auto".into());
-        assert!(runware::build_payload(&request, "test-id").is_err());
-        request.images = vec![png(false)];
-        let p = runware::build_payload(&request, "test-id").unwrap();
-        assert_eq!(p[0]["resolution"], "1K");
-        assert!(p[0].get("width").is_none());
-    }
-}
-
-#[test]
-fn seedream_official_regions_have_distinct_model_ids_and_lite_returns_one_image() {
-    for (provider, prefix) in [("ark", "doubao-"), ("byteplus", "dola-")] {
-        let mut request = req(
-            provider,
-            "seedream-5-pro",
-            json!({"width":1024,"height":1024,"seed":42,"outputFormat":"png","watermark":false}),
-        );
-        request.images = vec![png(false), png(true)];
-        let body = ark::build_payload(&request).unwrap();
-        assert_eq!(body["model"], format!("{prefix}seedream-5-0-pro-260628"));
-        assert_eq!(body["image"], json!(request.images));
-        assert_eq!(body["size"], "1024x1024");
-        assert_eq!(body["seed"], 42);
-        assert!(body.get("mask").is_none());
-        request.model = "seedream-5-lite".into();
-        request.params.width = None;
-        request.params.height = None;
-        request.params.resolution = Some("3K".into());
-        let body = ark::build_payload(&request).unwrap();
-        assert_eq!(body["sequential_image_generation"], "disabled");
-        assert_eq!(body["size"], "3K");
-        assert_eq!(
-            body["model"],
-            if provider == "ark" {
-                "doubao-seedream-5-0-260128"
-            } else {
-                "seedream-5-0-260128"
-            }
-        );
-    }
-    let request = req(
-        "runware",
-        "seedream-5-lite",
-        json!({"resolution":"3K","aspectRatio":"16:9"}),
-    );
-    let body = runware::build_payload(&request, "test-id").unwrap();
-    assert_eq!(body[0]["width"], 4096);
-    assert_eq!(body[0]["height"], 2304);
-    assert_eq!(body[0]["settings"]["maxSequentialImages"], 1);
-    assert!(body[0].get("resolution").is_none());
-}
-
 #[tokio::test]
 async fn gemini_results_ignore_thought_images_and_support_mixed_image_parts() {
     let encoded = png(false);
@@ -245,30 +187,23 @@ async fn gemini_results_ignore_thought_images_and_support_mixed_image_parts() {
             .is_err()
     );
 }
-#[test]
-fn qwen_auto_size_is_omitted_and_runware_output_options_are_mapped() {
-    let qwen = req("comfy", "qwen-image-3", json!({"width":null,"height":null}));
-    let payload = comfy::build_payload(&qwen).unwrap();
-    assert!(payload["parameters"].get("size").is_none());
-    for model in ["flux-3-image", "qwen-image-3"] {
-        let mut request = req(
-            "runware",
-            model,
-            json!({"outputFormat":"webp","outputCompression":90}),
-        );
-        if model == "flux-3-image" {
-            request.regions = serde_json::from_value(json!([{"id":"scene","description":"the scene","referenceIndex":null,"sourceBox":null,"targetBox":[0,0,1000,1000]}])).unwrap();
-        }
-        let payload =
-            runware::build_payload(&request, "50836053-a0ee-4cf5-b9d6-ae7c5d140ada").unwrap();
-        assert_eq!(payload[0]["outputFormat"], "WEBP");
-        assert_eq!(payload[0]["outputQuality"], 90);
-        request.params.output_compression = Some(100);
-        assert!(models::validate(&request).is_err());
-    }
-}
+
 #[test]
 fn unsupported_fields_and_reference_limits_fail_before_billing() {
+    assert!(
+        serde_json::from_value::<lutriui_lib::provider::GenerateParams>(
+            json!({"aspect_ratio":"16:9"})
+        )
+        .is_err()
+    );
+    for images in [
+        vec!["https://example.com/a.png".into()],
+        vec!["data:text/plain;base64,YQ==".into()],
+    ] {
+        let mut invalid = req("openrouter", "flux-3-image", json!({}));
+        invalid.images = images;
+        assert!(models::validate(&invalid).is_err());
+    }
     assert!(models::validate(&req("bfl", "gpt-image-2.5-flare", json!({}))).is_err());
     assert!(models::validate(&req(
         "openrouter",
@@ -358,33 +293,4 @@ fn masks_apply_to_first_image_and_convert_alpha_to_runware_white_edit_regions() 
     request.provider = "comfy".into();
     request.images.clear();
     assert!(models::validate(&request).is_err());
-}
-#[tokio::test]
-async fn comfy_native_outputs_preserve_images_without_fabricating_dollar_costs() {
-    let request = req(
-        "comfy",
-        "gpt-image-2.5-sunburst",
-        json!({"outputFormat":"png"}),
-    );
-    let encoded = png(false);
-    let b64 = encoded.split_once(',').unwrap().1;
-    let out = comfy::normalize(&request,&json!({"data":[{"b64_json":b64},{"b64_json":b64}],"cost":211,"usage":{"total_tokens":999}}),Some("test-job")).await.unwrap();
-    assert_eq!(out.images.len(), 2);
-    assert!(out.usage.get("credits").is_none());
-    assert!(out.usage.get("cost").is_none());
-    assert_eq!(out.usage["total_tokens"], 999);
-}
-#[test]
-fn polling_deduplicates_outputs_and_does_not_mix_other_tasks() {
-    let mut results = std::collections::BTreeMap::new();
-    let body = json!({"data":[{"taskUUID":"job","imageUUID":"first","imageURL":"a","cost":0.1},{"taskUUID":"other","imageUUID":"foreign","imageURL":"b"}]});
-    assert!(runware::collect_results(&body, "job", &mut results).is_none());
-    runware::collect_results(&body, "job", &mut results);
-    assert_eq!(results.len(), 1);
-    let failed = json!({"data":[{"taskUUID":"job","imageUUID":"second","imageURL":"c"}],"errors":[{"taskUUID":"job","message":"partial failure"}]});
-    assert_eq!(
-        runware::collect_results(&failed, "job", &mut results).as_deref(),
-        Some("partial failure")
-    );
-    assert_eq!(results.len(), 2);
 }

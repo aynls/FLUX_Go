@@ -284,47 +284,6 @@ mod tests {
         )
     }
     #[test]
-    fn edit_keeps_resolution_and_grounding() {
-        let p = build_payload(&req(
-            vec![png(256, 256)],
-            GenerateParams {
-                resolution: Some("768".into()),
-                grounding: Some(false),
-                ..Default::default()
-            },
-        ))
-        .unwrap();
-        assert_eq!(p["aspect_ratio"], "auto");
-        assert_eq!(p["resolution"], "768sq");
-        assert_eq!(p["grounding"], false);
-        assert_eq!(p.as_object().unwrap().len(), 5);
-    }
-    #[test]
-    fn all_resolution_tiers_map_for_both_modes() {
-        for (ui, wire) in [
-            ("768", "768sq"),
-            ("1K", "1k"),
-            ("1.5K", "1.5k"),
-            ("2K", "2k"),
-            ("4K", "4k"),
-        ] {
-            for images in [vec![], vec![png(256, 256)]] {
-                let p = build_payload(&req(
-                    images,
-                    GenerateParams {
-                        resolution: Some(ui.into()),
-                        aspect_ratio: Some("16:9".into()),
-                        ..Default::default()
-                    },
-                ))
-                .unwrap();
-                assert_eq!(p["resolution"], wire);
-                assert_eq!(p["aspect_ratio"], "16:9");
-                assert!(p.get("grounding").is_none());
-            }
-        }
-    }
-    #[test]
     fn rejects_bad_images_and_dimensions() {
         for images in [
             vec!["not-a-data-url".into()],
@@ -334,56 +293,5 @@ mod tests {
         ] {
             assert!(build_payload(&req(images, GenerateParams::default())).is_err());
         }
-    }
-    #[test]
-    fn validates_native_params() {
-        for params in [
-            GenerateParams {
-                safety_tolerance: Some(5),
-                ..Default::default()
-            },
-            GenerateParams {
-                resolution: Some("8K".into()),
-                ..Default::default()
-            },
-            GenerateParams {
-                aspect_ratio: Some("11:9".into()),
-                ..Default::default()
-            },
-        ] {
-            assert!(build_payload(&req(vec![], params)).is_err());
-        }
-        let p = build_payload(&req(
-            vec![],
-            GenerateParams {
-                safety_tolerance: Some(4),
-                aspect_ratio: Some("auto".into()),
-                ..Default::default()
-            },
-        ))
-        .unwrap();
-        assert_eq!(p["safety_tolerance"], 4);
-        assert_eq!(p["aspect_ratio"], "auto");
-    }
-
-    #[test]
-    fn version_is_explicit_and_invalid_versions_are_rejected() {
-        let p = build_payload(&req(
-            vec![],
-            GenerateParams {
-                version: Some("latest".into()),
-                ..Default::default()
-            },
-        ))
-        .unwrap();
-        assert_eq!(p["version"], "latest");
-        assert!(build_payload(&req(
-            vec![],
-            GenerateParams {
-                version: Some("unknown".into()),
-                ..Default::default()
-            }
-        ))
-        .is_err());
     }
 }

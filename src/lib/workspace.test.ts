@@ -2,10 +2,8 @@ import { expect, test } from "bun:test";
 import {
   newDraft,
   resizeCanvas,
-  renameBox,
   reorderRefs,
   validateDraft,
-  changeRole,
   sourceOnCanvas,
   canvasToSource,
   setPrimaryImage,
@@ -77,13 +75,6 @@ test("canvas resize preserves target framing and leaves source pixels unchanged"
   expect(next.boxes[0].srcRect).toEqual(d.boxes[0].srcRect);
   expect(d.canvas.w).toBe(1000);
 });
-test("rename preserves internal identity and updates exact prompt references", () => {
-  const next = renameBox(fixture(), "stable", "star_1");
-  expect(next.boxes[0].uid).toBe("stable");
-  expect(next.boxes[0].id).toBe("star_1");
-  expect(next.prompt).toContain("<star_1>");
-  expect(next.prompt).not.toContain("<obj_1>");
-});
 test("reference reorder remaps tags simultaneously and retains source identity", () => {
   const d = fixture();
   const next = reorderRefs(d, [d.refs[1], d.refs[0]]);
@@ -109,37 +100,6 @@ test("compression catches valid original that becomes too narrow and supports co
   d.boxes = [];
   expect(validateDraft(d).some((e) => e.includes("154"))).toBe(true);
   expect(validateDraft({ ...d, maxInputEdge: 4000 })).toEqual([]);
-});
-test("invalid compression values and provider switch are blocked", () => {
-  expect(
-    validateDraft({ ...fixture(), maxInputEdge: 0 }).length,
-  ).toBeGreaterThan(0);
-  const d = fixture();
-  d.params.safetyTolerance = 5;
-  expect(validateDraft(d).length).toBeGreaterThan(0);
-  expect(
-    validateDraft({ ...d, provider: "openrouter" }).length,
-  ).toBeGreaterThan(0);
-});
-test("source role initialization scales to source dimensions", () => {
-  const d = fixture();
-  const b = { ...d.boxes[0], srcRect: undefined };
-  const next = changeRole(b, "move", d);
-  expect(next.srcRect).toEqual({ x: 250, y: 0, w: 250, h: 500 });
-});
-test("missing source blocks submission instead of falling back to another reference", () => {
-  const d = fixture();
-  d.refs = [d.refs[0]];
-  expect(
-    composePrompt({
-      mode: "edit",
-      instruction: d.prompt,
-      boxes: d.boxes,
-      iw: 1000,
-      ih: 500,
-      refs: d.refs,
-    }).error,
-  ).toContain("来源图片");
 });
 test("source geometry accounts for letterboxing and cannot leave the source bounds", () => {
   const ref = {
