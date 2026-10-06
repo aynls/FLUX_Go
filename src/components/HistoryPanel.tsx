@@ -211,9 +211,9 @@ export default function HistoryPanel({
                       batchMode ? toggle(it.id) : setDetailId(it.id)
                     }
                   >
-                    {it.thumb ? (
+                    {it.thumbFile || it.thumb ? (
                       <img
-                        src={it.thumb}
+                        src={it.thumbFile ? assetUrl(it.thumbFile) : it.thumb!}
                         alt=""
                         className="h-14 w-14 shrink-0 rounded object-cover"
                       />
@@ -344,16 +344,17 @@ function HistoryDetail({
           />
         </button>
       )}
+      {!resultSrc && item.resultFiles.length > 0 && <p className="help">这张结果图片已从图库删除，生成参数仍然保留。</p>}
       {item.resultFiles.length > 1 && (
         <div className="result-gallery mt-2" aria-label="历史生成结果">
           {item.resultFiles.map((path, i) => (
             <button
-              key={path}
+              key={i}
               className={resultIndex === i ? "active" : ""}
               aria-label={"历史结果 " + (i + 1)}
               onClick={() => setResultIndex(i)}
             >
-              <img src={assetUrl(path)} alt={"历史结果 " + (i + 1)} />
+              {path ? <img src={assetUrl(path)} alt={"历史结果 " + (i + 1)} /> : <span className="help">图片已删除</span>}
             </button>
           ))}
         </div>

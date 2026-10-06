@@ -16,6 +16,7 @@ import {
 } from "@phosphor-icons/react";
 import ResizableSidebar from "./components/ResizableSidebar";
 import HistoryPanel from "./components/HistoryPanel";
+import Gallery from "./components/Gallery";
 import Settings from "./components/Settings";
 import Modal from "./components/Modal";
 import References from "./workspaces/shared/References";
@@ -52,6 +53,7 @@ import type {
   HistoryItem,
   ProviderStatus,
   WorkingImage,
+  GalleryItem,
 } from "./lib/types";
 
 import { getResultBase, type SavedResult } from "./app/generation";
@@ -104,6 +106,13 @@ export default function App() {
   const [historyError, setHistoryError] = useState("");
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [tab, setTab] = useState<"params" | "history">("params");
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [galleryPicker, setGalleryPicker] = useState(false);
+  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
+  const [galleryError, setGalleryError] = useState("");
+  const [galleryReady, setGalleryReady] = useState(false);
+  const galleryContext = useRef(false);
+  galleryContext.current = galleryOpen || galleryPicker;
   const [settings, setSettings] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [requestFeedback, setRequestFeedback] = useState<{
@@ -128,14 +137,31 @@ export default function App() {
   const [view, setView] = useState<"canvas" | "result" | "compare">("canvas");
   const [original, setOriginal] = useState(false),
     [savingResult, setSavingResult] = useState(false);
-  const storeResult = (r: SavedResult) => {
+  const storeResult = (r: SavedResult, preserveSelection = false) => {
     const key = workspaceKey(r.snapshot);
-    setResults((s) => ({ ...s, [key]: r }));
+    const selected = (previous: SavedResult | undefined) => {
+      const next =
+        preserveSelection && previous?.item.id === r.item.id
+          ? {
+              ...r,
+              selectedIndex: previous.selectedIndex,
+              image: previous.image,
+            }
+          : r;
+      return {
+        ...next,
+        image: {
+          ...next.image,
+          assetId: next.item.resultAssetIds?.[next.selectedIndex],
+        },
+      };
+    };
+    setResults((s) => ({ ...s, [key]: selected(s[key]) }));
     setAttempts((s) => ({
       ...s,
       [key]: s[key]?.some((v) => v.item.id === r.item.id)
-        ? s[key]!.map((v) => (v.item.id === r.item.id ? r : v))
-        : [...(s[key] ?? []), r].slice(-20),
+        ? s[key]!.map((v) => (v.item.id === r.item.id ? selected(v) : v))
+        : [...(s[key] ?? []), selected(undefined)].slice(-20),
     }));
   };
   const markSaved = (r: SavedResult) => {
@@ -162,17 +188,25 @@ export default function App() {
     } catch (e) {
       setHistoryError("历史读取失败：" + String(e));
     }
+    try {
+      setGalleryItems(await api.galleryList());
+      setGalleryReady(true);
+      setGalleryError("");
+    } catch (e) {
+      setGalleryError("图库读取失败：" + String(e));
+    }
   }, []);
   const queue = useGenerationQueue(
     submitting,
     (r) => {
-      storeResult(r);
+      storeResult(r, true);
+      if (r.item.status === "running") return;
       // Queue completion never interrupts the canvas or the user's next request.
       setNotice(
         r.saved
           ? r.item.status === "partial"
-            ? "批次部分完成，成功的图片已保留，可从结果栏或历史查看"
-            : "任务已完成，可从结果栏或历史查看"
+            ? "批次部分完成，成功的图片已保存在图库"
+            : "任务已完成，图片已保存在图库"
           : "任务已完成，历史未保存，请从结果区重新保存",
       );
     },
@@ -198,7 +232,12 @@ export default function App() {
   }, [activeKey]);
 
   const importBatch = useCallback(
-    (loaders: (() => Promise<api.ImportedImage>)[]) => {
+    (
+      loaders: (() => Promise<api.ImportedImage>)[],
+      source: "file" | "clipboard" | "url" = "file",
+    ) => {
+      const destination = galleryContext.current ? "gallery" : "references";
+      const target = workspaceKey(current.current);
       setImporting(true);
       importJobs.current++;
       importQueue.current = importQueue.current
@@ -208,20 +247,38 @@ export default function App() {
             errors: string[] = [];
           for (const load of loaders) {
             const max = routeFor(current.current)?.maxRefs ?? 0;
-            if (current.current.refs.length + accepted.length >= max) {
+            if (
+              destination === "references" &&
+              current.current.refs.length + accepted.length >= max
+            ) {
               errors.push(`此路由参考图最多 ${max} 张，其余文件未导入`);
               break;
             }
             try {
               const r = await load();
-              if (r.width * r.height > 16_000_000)
-                throw new Error(r.name + " 超过 16MP");
-              accepted.push({ ...r, uid: crypto.randomUUID() });
+              if (r.width * r.height > 64_000_000)
+                throw new Error(r.name + " 超过 64MP");
+              const assetId =
+                r.assetId ?? (await api.galleryImport(r, source)).id;
+              accepted.push({ ...r, assetId, uid: crypto.randomUUID() });
             } catch (e) {
               errors.push(String(e));
             }
           }
-          if (accepted.length) {
+          if (
+            accepted.length &&
+            destination === "references" &&
+            workspaceKey(current.current) !== target
+          )
+            errors.push(
+              "当前任务已切换，图片已保存在图库，请在需要的任务中重新选择",
+            );
+          let added = 0;
+          if (
+            accepted.length &&
+            destination === "references" &&
+            workspaceKey(current.current) === target
+          ) {
             const room = Math.max(
               0,
               (routeFor(current.current)?.maxRefs ?? 0) -
@@ -233,6 +290,7 @@ export default function App() {
               ...current.current,
               refs: [...current.current.refs, ...accepted.slice(0, room)],
             };
+            added = accepted.slice(0, room).length;
             commit(
               taskIntent(next) === "edit" && !next.baseId && next.refs.length
                 ? setPrimaryImage(next, next.refs[0].uid!)
@@ -242,12 +300,17 @@ export default function App() {
           }
           setNotice(
             [
-              accepted.length ? "已添加 " + accepted.length + " 张参考图" : "",
+              added
+                ? "已添加 " + added + " 张参考图"
+                : accepted.length
+                  ? "已导入 " + accepted.length + " 张图片到图库"
+                  : "",
               ...errors,
             ]
               .filter(Boolean)
               .join("；"),
           );
+          await refreshHistory();
         })
         .catch((e) => setNotice("导入失败：" + String(e)))
         .finally(() => {
@@ -255,7 +318,7 @@ export default function App() {
           if (!importJobs.current) setImporting(false);
         });
     },
-    [commit, current],
+    [commit, current, refreshHistory],
   );
   const openFiles = async () => {
     try {
@@ -324,26 +387,49 @@ export default function App() {
   }, [importBatch]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (!ready || settings || refPreview || urlDialog) return;
+      if (
+        !ready ||
+        importing ||
+        settings ||
+        refPreview ||
+        urlDialog ||
+        document.querySelector("dialog[open]")
+      )
+        return;
       const typing =
         e.target instanceof HTMLElement &&
         (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) ||
           e.target.isContentEditable);
-      if (!typing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+      if (
+        !galleryContext.current &&
+        !typing &&
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === "z"
+      ) {
         e.preventDefault();
         e.shiftKey ? redo() : undo();
         setSelected(null);
       }
-      if (!typing && e.ctrlKey && e.key.toLowerCase() === "y") {
+      if (
+        !galleryContext.current &&
+        !typing &&
+        e.ctrlKey &&
+        e.key.toLowerCase() === "y"
+      ) {
         e.preventDefault();
         redo();
         setSelected(null);
       }
       if (!typing && e.ctrlKey && e.key.toLowerCase() === "v") {
         e.preventDefault();
-        importBatch([api.clipboardImage]);
+        importBatch([api.clipboardImage], "clipboard");
       }
-      if (!typing && ["Delete", "Backspace"].includes(e.key) && selectedId) {
+      if (
+        !galleryContext.current &&
+        !typing &&
+        ["Delete", "Backspace"].includes(e.key) &&
+        selectedId
+      ) {
         e.preventDefault();
         const d = current.current;
         if (d.family === "gpt" && d.refs[0]) {
@@ -420,7 +506,7 @@ export default function App() {
       max = routeFor(d)?.maxRefs ?? 0;
     if (!edit && d.refs.length >= max) {
       setNotice(`参考图已达 ${max} 张，请先移除一张`);
-      return;
+      return false;
     }
     const r = { ...im, uid: crypto.randomUUID() };
     const retained =
@@ -429,7 +515,7 @@ export default function App() {
         : d.refs;
     if (edit && retained.length + 1 > max) {
       setNotice(`保留参考素材后超过 ${max} 张，请先移除一张素材再继续编辑`);
-      return;
+      return false;
     }
     commit(
       edit
@@ -455,6 +541,59 @@ export default function App() {
     setView("canvas");
     setTab("params");
     setSelected(null);
+    return true;
+  };
+  const useGalleryRefs = async (ids: string[]) => {
+    const target = current.current;
+    const unique = [...new Set(ids)].filter(
+      (id) => !target.refs.some((r) => r.assetId === id),
+    );
+    if (!unique.length) throw new Error("所选图片已在当前任务中");
+    const room = Math.max(
+      0,
+      (routeFor(target)?.maxRefs ?? 0) - target.refs.length,
+    );
+    if (unique.length > room)
+      throw new Error(`当前任务还可添加 ${room} 张参考图`);
+    setImporting(true);
+    try {
+      const images = await Promise.all(
+        unique.map(async (id) => ({
+          ...(await api.galleryRead(id)),
+          uid: crypto.randomUUID(),
+        })),
+      );
+      if (workspaceKey(current.current) !== workspaceKey(target))
+        throw new Error("当前任务已切换，请重新选择");
+      const next = {
+        ...current.current,
+        refs: [...current.current.refs, ...images],
+      };
+      commit(
+        taskIntent(next) === "edit" && !next.baseId
+          ? setPrimaryImage(next, next.refs[0].uid!)
+          : next,
+        true,
+      );
+      setGalleryPicker(false);
+      setGalleryOpen(false);
+      setTab("params");
+      setNotice(`已添加 ${images.length} 张参考图`);
+    } finally {
+      setImporting(false);
+    }
+  };
+  const editGalleryImage = async (item: GalleryItem) => {
+    setImporting(true);
+    try {
+      const image = await api.galleryRead(item.id);
+      if (!useResult(image, true))
+        throw new Error("当前编辑任务的参考素材已满，请先移除一张");
+      setGalleryOpen(false);
+      setGalleryPicker(false);
+    } finally {
+      setImporting(false);
+    }
   };
   const restoreHistory = async (item: HistoryItem) => {
     if (importing) {
@@ -571,17 +710,36 @@ export default function App() {
     >
       <References
         draft={draft}
+        galleryIds={
+          galleryReady && !galleryError
+            ? galleryItems
+                .filter((item) => !item.pendingDelete)
+                .map((item) => item.id)
+            : undefined
+        }
         ready={ready}
         importing={importing}
         onChange={(d, discrete = true) => commit(d, discrete)}
         onPreview={setRefPreview}
         onFiles={() => void openFiles()}
-        onPaste={() => importBatch([api.clipboardImage])}
+        onPaste={() => importBatch([api.clipboardImage], "clipboard")}
+        onGallery={() => setGalleryPicker(true)}
         onUrl={() => setUrlDialog(true)}
         onNotice={setNotice}
       />
     </ResizableReferences>
   );
+  const galleryProps = {
+    items: galleryItems,
+    error: galleryError,
+    importing,
+    saveDirectory: prefs.saveDirectory,
+    onRefresh: refreshHistory,
+    onFiles: () => void openFiles(),
+    onPaste: () => importBatch([api.clipboardImage], "clipboard"),
+    onUse: useGalleryRefs,
+    onEdit: editGalleryImage,
+  };
   return (
     <div className={"workbench workbench-" + draft.family}>
       <header className="app-header">
@@ -594,46 +752,63 @@ export default function App() {
             {(["create", "edit"] as const).map((task) => (
               <button
                 key={task}
-                aria-pressed={intent === task}
-                className={intent === task ? "active" : ""}
+                aria-pressed={!galleryOpen && intent === task}
+                className={!galleryOpen && intent === task ? "active" : ""}
                 disabled={!ready || importing}
-                onClick={() => ws.switchIntent(task)}
+                onClick={() => {
+                  setGalleryOpen(false);
+                  setTab("params");
+                  ws.switchIntent(task);
+                }}
               >
                 {task === "create" ? "生成" : "编辑"}
               </button>
             ))}
-          </div>
-        </div>
-        <div className="family-tabs" role="tablist" aria-label="模型家族">
-          {families.map((f) => (
             <button
-              role="tab"
-              aria-selected={draft.family === f.id}
-              className={draft.family === f.id ? "active" : ""}
-              key={f.id}
-              title={f.description}
-              disabled={!ready || importing}
+              aria-pressed={galleryOpen}
+              className={galleryOpen ? "active" : ""}
+              disabled={importing}
               onClick={() => {
-                ws.switchFamily(f.id);
-                setTab("params");
+                setGalleryOpen(true);
+                void refreshHistory();
               }}
             >
-              <img
-                className={
-                  "family-icon" +
-                  (["flux", "gpt"].includes(f.id) ? " monochrome" : "")
-                }
-                src={FAMILY_ICONS[f.id]}
-                width={20}
-                height={20}
-                alt=""
-                aria-hidden="true"
-                draggable={false}
-              />
-              {f.label}
+              图库
             </button>
-          ))}
+          </div>
         </div>
+        {!galleryOpen && (
+          <div className="family-tabs" role="tablist" aria-label="模型家族">
+            {families.map((f) => (
+              <button
+                role="tab"
+                aria-selected={draft.family === f.id}
+                className={draft.family === f.id ? "active" : ""}
+                key={f.id}
+                title={f.description}
+                disabled={!ready || importing}
+                onClick={() => {
+                  ws.switchFamily(f.id);
+                  setTab("params");
+                }}
+              >
+                <img
+                  className={
+                    "family-icon" +
+                    (["flux", "gpt"].includes(f.id) ? " monochrome" : "")
+                  }
+                  src={FAMILY_ICONS[f.id]}
+                  width={20}
+                  height={20}
+                  alt=""
+                  aria-hidden="true"
+                  draggable={false}
+                />
+                {f.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="row">
           {(generationTask || queue.pending.length > 0) && (
             <button onClick={() => setQueueOpen(true)}>
@@ -658,6 +833,8 @@ export default function App() {
             disabled={!ready || importing}
             onClick={() => {
               ws.reset();
+              setGalleryOpen(false);
+              setTab("params");
               setSelected(null);
               setView("canvas");
             }}
@@ -666,7 +843,7 @@ export default function App() {
             新建
           </button>
           <button
-            disabled={!undoStack.length || importing}
+            disabled={galleryOpen || !undoStack.length || importing}
             onClick={() => {
               undo();
               setSelected(null);
@@ -676,7 +853,7 @@ export default function App() {
             <ArrowCounterClockwise size={16} />
           </button>
           <button
-            disabled={!redoStack.length || importing}
+            disabled={galleryOpen || !redoStack.length || importing}
             onClick={() => {
               redo();
               setSelected(null);
@@ -691,7 +868,13 @@ export default function App() {
           </button>
         </div>
       </header>
-      <div className="workspace">
+      <div className="gallery-page" hidden={!galleryOpen}>
+        <Gallery {...galleryProps} />
+      </div>
+      <div
+        className="workspace"
+        style={galleryOpen ? { display: "none" } : undefined}
+      >
         <ResizableSidebar
           widthPercent={prefs.sidebarWidthPercent}
           onWidthChange={(sidebarWidthPercent) =>
@@ -904,6 +1087,28 @@ export default function App() {
           )}
         </main>
       </div>
+      {galleryPicker && (
+        <Modal
+          title="从图库选择"
+          large
+          onClose={() => {
+            if (!importing) setGalleryPicker(false);
+          }}
+        >
+          <Gallery
+            {...galleryProps}
+            picker={{
+              limit: Math.max(
+                0,
+                (routeFor(draft)?.maxRefs ?? 0) - draft.refs.length,
+              ),
+              usedIds: draft.refs.flatMap((r) =>
+                r.assetId ? [r.assetId] : [],
+              ),
+            }}
+          />
+        </Modal>
+      )}
       {notice && (
         <div className="notice" role="status">
           <span>{notice}</span>
@@ -1016,7 +1221,7 @@ export default function App() {
             disabled={!imageUrl.trim()}
             onClick={() => {
               const url = imageUrl.trim();
-              importBatch([() => api.importUrl(url)]);
+              importBatch([() => api.importUrl(url)], "url");
               setUrlDialog(false);
               setImageUrl("");
             }}

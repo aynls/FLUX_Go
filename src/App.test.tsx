@@ -8,10 +8,12 @@ import type {
   HistoryItem,
   GenerationProgress,
   Box,
+  GalleryItem,
 } from "./lib/types";
 import { newDraft } from "./lib/workspace";
 import Canvas from "./components/Canvas";
 import HistoryPanel from "./components/HistoryPanel";
+import Gallery from "./components/Gallery";
 import { StrictMode } from "react";
 import { queuedGeneration } from "./app/generation";
 
@@ -46,6 +48,7 @@ let finish: (out: GenerateOutput) => void = () => {};
 let failGeneration: (error: Error) => void = () => {};
 let failHistory = false;
 let historyItems: HistoryItem[] = [];
+let galleryItems: GalleryItem[] = [];
 let deletedIds: string[] = [];
 let failedDeletes = new Set<string>();
 let draftWrites: (Draft | WorkspaceSession)[] = [];
@@ -109,6 +112,37 @@ mock.module("./lib/api", () => ({
     draftWrites.push(d);
   },
   historyList: async () => historyItems,
+  galleryList: async () => galleryItems,
+  galleryImport: async (
+    image: { name: string; width: number; height: number },
+    source: GalleryItem["source"],
+  ) => {
+    const item: GalleryItem = {
+      ...image,
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+      mime: "image/png",
+      source,
+      historyId: null,
+      model: null,
+      provider: null,
+      filePath: "owned/original.png",
+      thumbPath: "owned/thumb.png",
+      pendingDelete: false,
+    };
+    galleryItems = [...galleryItems, item];
+    return item;
+  },
+  galleryRead: async (id: string) => {
+    const item = galleryItems.find((i) => i.id === id);
+    if (!item) throw new Error("图片已从图库删除");
+    return { ...item, assetId: id, dataUrl: "data:image/png;base64," + id };
+  },
+  galleryDelete: async (id: string) => {
+    if (failedDeletes.has(id)) throw new Error("file locked");
+    deletedIds.push(id);
+    galleryItems = galleryItems.filter((item) => item.id !== id);
+  },
   generate: (
     request: GenerateRequestPayload,
     onProgress?: typeof reportProgress,
@@ -128,10 +162,18 @@ mock.module("./lib/api", () => ({
     if (failHistory) throw new Error("disk full");
     const saved = structuredClone(item);
     const path = (file: { name: string }) => `test/${item.id}/${file.name}.png`;
-    saved.inputFiles.push(...files.filter((f) => f.kind === "input").map(path));
-    saved.resultFiles.push(
-      ...files.filter((f) => f.kind === "result").map(path),
-    );
+    saved.inputFiles = [
+      ...new Set([
+        ...saved.inputFiles,
+        ...files.filter((f) => f.kind === "input").map(path),
+      ]),
+    ];
+    saved.resultFiles = [
+      ...new Set([
+        ...saved.resultFiles,
+        ...files.filter((f) => f.kind === "result").map(path),
+      ]),
+    ];
     const mask = files.find((f) => f.kind === "mask");
     if (mask) saved.maskFile = path(mask);
     if (item.status === "ok" || item.status === "partial") savedItem = saved;
@@ -165,8 +207,9 @@ mock.module("./lib/api", () => ({
   credentialCheck: async () => "verified",
   credentialConfigure: async () => {},
 }));
-const { render, fireEvent, waitFor, cleanup, act } =
-  await import("@testing-library/react");
+const { render, fireEvent, waitFor, cleanup, act } = await import(
+  "@testing-library/react"
+);
 const { default: App } = await import("./App");
 beforeEach(() => {
   initial = null;
@@ -175,6 +218,7 @@ beforeEach(() => {
   savedItem = null;
   failHistory = false;
   historyItems = [];
+  galleryItems = [];
   deletedIds = [];
   failedDeletes = new Set();
   draftWrites = [];
@@ -341,9 +385,9 @@ test("history keeps multiple results and restores the GPT mask into its own work
         .getAttribute("aria-selected"),
     ).toBe("true"),
   );
-  expect(
-    ui.getByRole("img", { name: "主图与黑色编辑蒙版" }).tagName,
-  ).toBe("CANVAS");
+  expect(ui.getByRole("img", { name: "主图与黑色编辑蒙版" }).tagName).toBe(
+    "CANVAS",
+  );
   expect(
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
   ).toBe("masked edit");
@@ -374,7 +418,8 @@ test("new image families expose official routes, color icons and independent per
     ).map((option) => option.value),
   ).toEqual(["openrouter", "google"]);
   expect(
-    ui.getByRole("combobox", { name: "分辨率档位" })
+    ui
+      .getByRole("combobox", { name: "分辨率档位" })
       .querySelector('option[value="512"]'),
   ).toBeNull();
   fireEvent.change(ui.getByRole("combobox", { name: "提供商" }), {
@@ -1085,6 +1130,8 @@ test("repeat count queues identical requests with independent random seeds and s
   await act(async () => finish(output));
   await waitFor(() => expect(submissions).toHaveLength(2));
   expect(submissions[1].params.seed).toBe(seeds[1]);
+  expect(ui.getByRole("button", { name: "用这张图开始编辑" })).toBeTruthy();
+  expect(historyItems.find((it) => it.id === batchId)?.status).toBe("running");
   expect(submissions[1].historyId).toBe(batchId);
   expect(submissions[1].requestId).not.toBe(submissions[0].requestId);
   await act(async () => finish(output));
@@ -1106,6 +1153,128 @@ test("repeat count queues identical requests with independent random seeds and s
   expect(
     submissions.every((req) => req.finalPrompt.includes("same scene")),
   ).toBe(true);
+});
+
+const galleryFixture = (id: string): GalleryItem => ({
+  id,
+  name: id,
+  createdAt: 1,
+  width: 768,
+  height: 512,
+  mime: "image/png",
+  source: "file",
+  filePath: `owned/${id}.png`,
+  thumbPath: `owned/${id}-thumb.png`,
+  historyId: null,
+  model: null,
+  provider: null,
+  pendingDelete: false,
+});
+
+test("gallery import only adds owned assets; picker reuses assets in selection order and undo restores references", async () => {
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: "图库" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "图库" }));
+  fireEvent.click(ui.getByRole("button", { name: "导入图片" }));
+  await waitFor(() => expect(galleryItems).toHaveLength(2));
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: "查看图片 second.png" }),
+    ).toBeTruthy(),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "生成" }));
+  expect(ui.getByRole("heading", { name: /素材\s*0\/10/ })).toBeTruthy();
+  fireEvent.click(ui.getByRole("button", { name: "从图库选择" }));
+  const dialog = ui.getByRole("dialog", { name: "从图库选择" });
+  const { within } = await import("@testing-library/react");
+  const picker = within(dialog);
+  fireEvent.click(picker.getByRole("button", { name: "选择图片 second.png" }));
+  fireEvent.click(picker.getByRole("button", { name: "选择图片 first.png" }));
+  fireEvent.click(
+    picker.getByRole("button", { name: "添加为参考素材 · 2 张" }),
+  );
+  await waitFor(() => expect(ui.queryByRole("dialog")).toBeNull());
+  expect(galleryItems).toHaveLength(2);
+  expect(
+    ui
+      .getAllByRole("img")
+      .filter((im) =>
+        ["first.png", "second.png"].includes(im.getAttribute("alt") ?? ""),
+      )
+      .map((im) => im.getAttribute("alt")),
+  ).toEqual(["second.png", "first.png"]);
+  fireEvent.click(ui.getByTitle("撤销 Ctrl+Z"));
+  expect(ui.getByRole("heading", { name: /素材\s*0\/10/ })).toBeTruthy();
+});
+
+test("gallery picker enforces remaining slots and already-used assets without changing selection order", async () => {
+  galleryItems = ["used", "a", "b", "c"].map(galleryFixture);
+  let chosen: string[] = [];
+  const ui = render(
+    <Gallery
+      items={galleryItems}
+      error=""
+      importing={false}
+      saveDirectory=""
+      onRefresh={async () => {}}
+      onFiles={() => {}}
+      onPaste={() => {}}
+      onUse={async (ids) => {
+        chosen = ids;
+      }}
+      onEdit={async () => {}}
+      picker={{ limit: 2, usedIds: ["used"] }}
+    />,
+  );
+  expect(
+    ui.getByRole("button", { name: "选择图片 used" }).hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.click(ui.getByRole("button", { name: "选择图片 b" }));
+  fireEvent.click(ui.getByRole("button", { name: "选择图片 a" }));
+  expect(
+    ui.getByRole("button", { name: "选择图片 c" }).hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.click(ui.getByRole("button", { name: "添加为参考素材 · 2 张" }));
+  await waitFor(() => expect(chosen).toEqual(["b", "a"]));
+});
+
+test("gallery deletion confirms, retains failed items for retry, and never calls deletion on cancel", async () => {
+  galleryItems = ["a", "b"].map(galleryFixture);
+  const props = {
+    error: "",
+    importing: false,
+    saveDirectory: "",
+    onRefresh: async () => {
+      ui.rerender(<Gallery {...props} items={galleryItems} />);
+    },
+    onFiles: () => {},
+    onPaste: () => {},
+    onUse: async () => {},
+    onEdit: async () => {},
+  };
+  const ui = render(<Gallery {...props} items={galleryItems} />);
+  fireEvent.click(ui.getByRole("button", { name: "选择" }));
+  fireEvent.click(ui.getByRole("button", { name: "选择图片 a" }));
+  fireEvent.click(ui.getByRole("button", { name: "选择图片 b" }));
+  fireEvent.click(ui.getByRole("button", { name: "删除" }));
+  fireEvent.click(ui.getByRole("button", { name: "取消" }));
+  expect(deletedIds).toEqual([]);
+  failedDeletes.add("b");
+  fireEvent.click(ui.getByRole("button", { name: "删除" }));
+  fireEvent.click(ui.getByRole("button", { name: "确认删除图片" }));
+  await waitFor(() => expect(deletedIds).toEqual(["a"]));
+  await waitFor(() =>
+    expect(ui.getAllByRole("alert")[0].textContent).toContain("file locked"),
+  );
+  expect(galleryItems.map((i) => i.id)).toEqual(["b"]);
+  failedDeletes.clear();
+  fireEvent.click(ui.getByRole("button", { name: "确认删除图片" }));
+  await waitFor(() => expect(ui.queryByRole("dialog")).toBeNull());
+  expect(galleryItems).toHaveLength(0);
 });
 
 test("fixed seeds are preserved and seedless routes do not gain unsupported seeds", () => {

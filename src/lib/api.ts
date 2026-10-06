@@ -14,6 +14,7 @@ import type {
   WorkspaceSession,
   ProviderId,
   CredentialSettings,
+  GalleryItem,
 } from "./types";
 
 export class AppError extends Error {
@@ -82,6 +83,7 @@ export async function generate(
 }
 
 export interface ImportedImage {
+  assetId?: string;
   dataUrl: string;
   width: number;
   height: number;
@@ -139,3 +141,21 @@ export const historyStorage = () =>
   isTauri()
     ? invoke<string>("history_storage")
     : Promise.resolve("请在桌面应用中查看历史目录");
+
+export const galleryList = () =>
+  isTauri() ? invoke<GalleryItem[]>("gallery_list") : Promise.resolve([]);
+export const galleryImport = (
+  image: ImportedImage,
+  source: "file" | "clipboard" | "url",
+) =>
+  invoke<GalleryItem>("gallery_import", {
+    dataUrl: image.dataUrl,
+    name: image.name,
+    source,
+  });
+export const galleryDelete = (id: string) =>
+  invoke<void>("gallery_delete", { id });
+export const galleryRead = async (id: string): Promise<ImportedImage> => ({
+  ...(await invoke<ImportedImage>("gallery_read", { id })),
+  assetId: id,
+});

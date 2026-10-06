@@ -134,7 +134,12 @@ export function useGenerationQueue(
               .join("；");
           }
           // Save every finished request before issuing another paid request.
-          await api.historySave(job.item, job.files);
+          const saved = await api.historySave(job.item, job.files);
+          job.item = { ...saved, batch: job.item.batch };
+          if (combined) {
+            combined = { ...combined, item: job.item, saved: true };
+            if (alive.current) callbacks.current.onResult(combined);
+          }
           await refresh();
           if (alive.current)
             setTask((t) => (t ? { ...t, completed: i + 1 } : t));

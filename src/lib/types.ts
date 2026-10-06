@@ -120,6 +120,8 @@ export interface HistoryBatchRequest {
   error?: string | null;
 }
 export interface HistoryItem {
+  resultAssetIds?: string[];
+  thumbFile?: string | null;
   batch?: { requests: HistoryBatchRequest[] } | null;
   error?: string | null;
   taskId?: string | null;
@@ -153,6 +155,7 @@ export interface HistoryItem {
 
 /** 有序参考图，其编辑和引用语义由模型定义。 */
 export interface WorkingImage {
+  assetId?: string;
   uid?: string;
   dataUrl: string;
   width: number;
@@ -160,6 +163,22 @@ export interface WorkingImage {
   name: string;
   purpose?: ReferencePurpose;
   note?: string;
+}
+
+export interface GalleryItem {
+  id: string;
+  name: string;
+  createdAt: number;
+  width: number;
+  height: number;
+  mime: string;
+  source: "file" | "clipboard" | "url" | "generated";
+  historyId: string | null;
+  model: string | null;
+  provider: string | null;
+  filePath: string;
+  thumbPath: string;
+  pendingDelete: boolean;
 }
 
 export interface GenerateRequestPayload {

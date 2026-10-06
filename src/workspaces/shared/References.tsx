@@ -18,11 +18,13 @@ import { useEffect, type MouseEvent, type KeyboardEvent } from "react";
 
 export interface ReferencesProps {
   draft: Draft;
+  galleryIds?: string[];
   ready: boolean;
   importing: boolean;
   onChange: (d: Draft, discrete?: boolean) => void;
   onPreview: (id: string) => void;
   onFiles: () => void;
+  onGallery: () => void;
   onPaste: () => void;
   onUrl: () => void;
   onNotice: (text: string) => void;
@@ -99,6 +101,13 @@ export default function References(p: ReferencesProps) {
           </details>
         </div>
       </div>
+      <button
+        className="reference-gallery-button"
+        disabled={disabled}
+        onClick={p.onGallery}
+      >
+        从图库选择
+      </button>
       {!d.refs.length && (
         <div className="reference-empty">
           <strong>{editing ? "添加要编辑的主图" : "添加参考素材"}</strong>
@@ -194,6 +203,11 @@ export default function References(p: ReferencesProps) {
                 <span>
                   {r.width}×{r.height}
                 </span>
+                {r.assetId &&
+                  p.galleryIds &&
+                  !p.galleryIds.includes(r.assetId) && (
+                    <span>图库原图已删除 · 工作副本可用</span>
+                  )}
                 {!isMain && (
                   <label>
                     用途

@@ -1594,3 +1594,239 @@ button {
   padding: 8px 6px;
   text-align: center;
 }
+
+/* The library owns its scroll area; controls and selection stay visible. */
+.gallery-page {
+  flex: 1;
+  min-height: 0;
+  padding: 22px 28px 0;
+}
+.gallery-page[hidden] {
+  display: none;
+}
+.gallery {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 16px;
+}
+.modal:has(> .modal-body > .gallery-picker) {
+  height: min(850px, 90vh);
+}
+.modal:has(> .modal-body > .gallery-picker) > .modal-body {
+  flex: 1;
+  overflow: hidden;
+}
+.gallery-cell {
+  position: relative;
+  min-width: 0;
+}
+.gallery-peek {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  padding: 5px;
+  background: var(--glass);
+  border: 0;
+}
+.gallery-toolbar,
+.gallery-title,
+.gallery-filters,
+.gallery-selection,
+.gallery-detail-meta,
+.gallery-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.gallery-toolbar,
+.gallery-filters {
+  justify-content: space-between;
+}
+.gallery-title h2 {
+  font-size: 22px;
+  margin: 0;
+}
+.gallery-title > svg {
+  color: var(--accent);
+}
+.gallery-filters > input {
+  max-width: 260px;
+}
+.gallery-filters .segmented {
+  display: flex;
+  gap: 4px;
+}
+.gallery-filters .segmented button {
+  min-width: 68px;
+}
+.gallery-hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+.gallery-error {
+  color: var(--danger);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.gallery-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 24px;
+  scrollbar-gutter: stable;
+}
+.gallery-day + .gallery-day {
+  margin-top: 28px;
+}
+.gallery-day h3 {
+  margin-bottom: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 4px;
+}
+.gallery-picker .gallery-grid {
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+.gallery-tile {
+  position: relative;
+  display: block;
+  padding: 0;
+  width: 100%;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 3px;
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+.gallery-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 140ms ease;
+}
+.gallery-tile:hover img {
+  transform: scale(1.025);
+}
+.gallery-tile.selected {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+.gallery-tile.selected img {
+  transform: scale(0.9);
+  border-radius: 4px;
+}
+.gallery-tile:focus-visible {
+  outline-offset: -3px;
+}
+.gallery-check {
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
+  width: 24px;
+  height: 24px;
+  border: 2px solid #fff;
+  background: #20242c55;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 12px;
+  font-weight: 650;
+}
+.gallery-check.checked {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+.gallery-tile-label {
+  position: absolute;
+  inset: auto 0 0;
+  background: var(--glass);
+  padding: 7px;
+  font-size: 12px;
+}
+.gallery-empty {
+  min-height: 260px;
+  height: 70%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+}
+.gallery-empty > svg,
+.gallery-empty p {
+  color: var(--muted);
+}
+.gallery-empty strong {
+  font-size: 18px;
+}
+.gallery-more {
+  display: flex;
+  margin: 24px auto 0;
+}
+.gallery-selection {
+  border-top: 1px solid var(--border);
+  padding: 12px 0;
+  background: var(--surface);
+}
+.gallery-selection > .primary {
+  margin-left: auto;
+}
+.gallery-preview {
+  display: flex;
+  justify-content: center;
+  background: var(--canvas);
+  border-radius: 6px;
+}
+.gallery-preview img {
+  max-width: 100%;
+  max-height: 55vh;
+  object-fit: contain;
+}
+.gallery-detail-meta {
+  margin: 14px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.gallery-detail-actions {
+  margin-top: 16px;
+}
+.reference-gallery-button {
+  width: 100%;
+  margin-bottom: 10px;
+}
+.reference {
+  --reference-color: #6f83bf;
+  border-color: var(--reference-color);
+}
+.reference.reference-primary {
+  --reference-color: var(--accent);
+  border-color: var(--reference-color);
+}
+.reference .reference-image {
+  border: 2px solid var(--reference-color);
+}
+.reference-card-heading > span {
+  color: var(--reference-color);
+}
+@media (max-width: 760px) {
+  .gallery-page {
+    padding: 14px 12px 0;
+  }
+  .gallery-grid {
+    grid-template-columns: repeat(auto-fill, minmax(115px, 1fr));
+  }
+  .gallery-filters > input {
+    max-width: none;
+  }
+}
