@@ -77,6 +77,7 @@ export async function executeGeneration(
   snapshot: Draft,
   onProgress?: (progress: GenerationProgress) => void,
   queued?: HistoryItem,
+  requestId?: string,
 ): Promise<SavedResult> {
   onProgress?.({ phase: "preparing" });
   const images = await Promise.all(
@@ -93,7 +94,10 @@ export async function executeGeneration(
     : undefined;
   onProgress?.({ phase: "waiting" });
   const request = buildRequest(snapshot, images, mask);
-  if (queued) request.requestId = queued.id;
+  if (queued) {
+    request.requestId = requestId ?? queued.id;
+    request.historyId = queued.id;
+  }
   const out = await generate(request, onProgress);
   if (!out.images[0]) throw new Error("服务返回成功，但没有图片");
   const image: WorkingImage = {
@@ -147,4 +151,39 @@ export async function executeGeneration(
       : []),
   ];
   return { image, selectedIndex: 0, out, snapshot, item, files, saved: false };
+}
+
+/** Merge outputs without duplicating the common prompt, inputs or mask. */
+export function mergeGenerationResults(
+  previous: SavedResult | null,
+  next: SavedResult,
+): SavedResult {
+  if (!previous) return next;
+  const images = [...previous.out.images, ...next.out.images];
+  const usage = { ...previous.out.usage, ...next.out.usage };
+  for (const key of ["cost", "credits", "total_tokens"]) {
+    const a = previous.out.usage?.[key],
+      b = next.out.usage?.[key];
+    if (typeof a === "number" && typeof b === "number") usage[key] = a + b;
+    else delete usage[key];
+  }
+  return {
+    ...previous,
+    out: {
+      ...previous.out,
+      images,
+      usage,
+      notes: [...new Set([...previous.out.notes, ...next.out.notes])],
+    },
+    item: { ...previous.item, usage, cost: usage.cost ?? null },
+    files: [
+      ...previous.files.filter((f) => f.kind !== "result"),
+      ...images.map((im, i) => ({
+        kind: "result",
+        name: "result_" + i,
+        data: im.dataUrl,
+      })),
+    ],
+    saved: false,
+  };
 }

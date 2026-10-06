@@ -269,9 +269,10 @@ pub async fn generate(
     request: GenerateRequest,
 ) -> Result<GenerateOutput, String> {
     let request_id = request.request_id.clone();
+    let history_id = request.history_id.clone().or_else(|| request_id.clone());
     let reporter: crate::provider::progress::Reporter = std::sync::Arc::new(
         move |phase, task_id, completed, status| {
-            if let Some(id) = request_id.as_deref() {
+            if let Some(id) = history_id.as_deref() {
                 if let Ok(store) = app.state::<AppState>().history.lock() {
                     if let Some(store) = store.as_ref() {
                         let _ = store.progress(id, phase, task_id);

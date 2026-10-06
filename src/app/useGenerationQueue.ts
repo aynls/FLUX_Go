@@ -6,11 +6,12 @@ import { makeThumb } from "../lib/image";
 import {
   executeGeneration,
   queuedGeneration,
+  mergeGenerationResults,
   type SavedResult,
 } from "./generation";
 import type { Draft, GenerationTask, HistoryItem } from "../lib/types";
 
-type Job = ReturnType<typeof queuedGeneration>;
+type Job = ReturnType<typeof queuedGeneration> & { snapshots?: Draft[] };
 export function useGenerationQueue(
   active: RefObject<boolean>,
   onResult: (result: SavedResult) => void,
@@ -49,57 +50,139 @@ export function useGenerationQueue(
         modelId: job.snapshot.modelId,
         provider: job.snapshot.provider,
         startedAt: Date.now(),
-        total: routeFor(job.snapshot)?.parameters.count
-          ? (job.snapshot.params.count ?? 1)
-          : 1,
+        total:
+          job.snapshots?.length ??
+          (routeFor(job.snapshot)?.parameters.count
+            ? (job.snapshot.params.count ?? 1)
+            : 1),
         phase: "preparing",
       });
+      let combined: SavedResult | null = null;
+      const snapshots = job.snapshots ?? [job.snapshot];
+      const requests = job.item.batch?.requests;
       try {
-        await api.historySave({ ...job.item, status: "running" }, job.files);
-        await refresh();
-        const result = await executeGeneration(
-          job.snapshot,
-          (progress) => {
-            const changed =
-              job.item.phase !== progress.phase ||
-              (progress.taskId && job.item.taskId !== progress.taskId);
+        job.item = { ...job.item, status: "running" };
+        for (let i = 0; i < snapshots.length; i++) {
+          if (requests) requests[i].status = "running";
+          job.item = { ...job.item, phase: "preparing", taskId: null };
+          if (alive.current)
+            setTask((t) =>
+              t
+                ? { ...t, phase: "preparing", taskId: undefined, completed: i }
+                : t,
+            );
+          await api.historySave(job.item, job.files);
+          await refresh();
+          try {
+            const result = await executeGeneration(
+              snapshots[i],
+              (progress) => {
+                const changed =
+                  job.item.phase !== progress.phase ||
+                  (progress.taskId && job.item.taskId !== progress.taskId);
+                job.item = {
+                  ...job.item,
+                  phase: progress.phase,
+                  taskId: progress.taskId ?? job.item.taskId,
+                };
+                if (requests && progress.taskId)
+                  requests[i].taskId = progress.taskId;
+                if (alive.current)
+                  setTask((t) =>
+                    t
+                      ? {
+                          ...t,
+                          ...progress,
+                          completed:
+                            snapshots.length > 1 ? i : progress.completed,
+                        }
+                      : t,
+                  );
+                if (changed) void refresh();
+              },
+              job.item,
+              requests?.[i].requestId,
+            );
+            if (requests) requests[i].status = "ok";
+            combined = mergeGenerationResults(combined, result);
             job.item = {
-              ...job.item,
-              phase: progress.phase,
-              taskId: progress.taskId ?? job.item.taskId,
+              ...combined.item,
+              batch: job.item.batch,
+              status: "running",
+              error: job.item.error,
+              taskId: job.item.taskId,
+              phase: "saving",
             };
-            if (alive.current) setTask((t) => (t ? { ...t, ...progress } : t));
-            if (changed) void refresh();
-          },
-          job.item,
-        );
-        result.item.taskId = job.item.taskId ?? null;
-        result.item.phase = "completed";
-        try {
-          result.item.thumb = await makeThumb(result.image.dataUrl);
-          await api.historySave(result.item, result.files);
-          result.saved = true;
-        } catch (e) {
-          callbacks.current.onNotice(
-            "结果已完成，但历史保存失败，可从结果区重新保存：" + String(e),
-          );
+            job.files = combined.files;
+            if (!job.item.thumb)
+              job.item.thumb = await makeThumb(combined.image.dataUrl).catch(
+                () => null,
+              );
+          } catch (e) {
+            const message =
+              (e instanceof Error ? e.message : String(e)) +
+              (e instanceof api.AppError && e.hint ? " · " + e.hint : "");
+            if (requests) {
+              requests[i].status = "failed";
+              requests[i].error = message;
+            }
+            job.item.error = [
+              job.item.error,
+              `第 ${i + 1} 次请求失败：${message}`,
+            ]
+              .filter(Boolean)
+              .join("；");
+          }
+          // Save every finished request before issuing another paid request.
+          await api.historySave(job.item, job.files);
+          await refresh();
+          if (alive.current)
+            setTask((t) => (t ? { ...t, completed: i + 1 } : t));
         }
-        if (alive.current) callbacks.current.onResult(result);
+        job.item = {
+          ...job.item,
+          status: combined ? (job.item.error ? "partial" : "ok") : "failed",
+          phase: "completed",
+        };
+        if (combined) {
+          combined.item = job.item;
+          try {
+            await api.historySave(job.item, job.files);
+            combined.saved = true;
+          } catch (e) {
+            callbacks.current.onNotice(
+              "结果已完成，但历史保存失败，可从结果区重新保存：" + String(e),
+            );
+          }
+          if (alive.current) callbacks.current.onResult(combined);
+        } else {
+          await api.historySave(job.item, job.files);
+          callbacks.current.onNotice("任务失败：" + job.item.error);
+        }
       } catch (e) {
-        const message =
-          (e instanceof Error ? e.message : String(e)) +
-          (e instanceof api.AppError && e.hint ? " · " + e.hint : "");
-        try {
-          await api.historySave(
-            { ...job.item, status: "failed", error: message },
-            job.files,
-          );
-        } catch (saveError) {
-          callbacks.current.onNotice(
-            "任务失败且历史更新失败：" + message + "；" + String(saveError),
-          );
+        const message = "批次停止，未继续提交剩余请求：" + String(e);
+        for (const request of requests ?? []) {
+          if (request.status === "queued" || request.status === "running") {
+            request.status = "skipped";
+            request.error = "历史保存失败，未发送此请求";
+          }
         }
-        if (alive.current) callbacks.current.onNotice("任务失败：" + message);
+        job.item = {
+          ...job.item,
+          status: combined ? "partial" : "failed",
+          error: [job.item.error, message].filter(Boolean).join("；"),
+        };
+        try {
+          await api.historySave(job.item, job.files);
+          if (combined) combined.saved = true;
+        } catch (saveError) {
+          callbacks.current.onNotice("历史更新失败：" + String(saveError));
+        }
+        if (combined && alive.current) {
+          combined.item = job.item;
+          callbacks.current.onResult(combined);
+        }
+        if (alive.current) callbacks.current.onNotice(message);
       } finally {
         await refresh();
         running.current = null;
@@ -112,31 +195,35 @@ export function useGenerationQueue(
     if (locked.current || !ready) return;
     if (!Number.isInteger(count) || count < 1 || count > 20)
       throw new Error("生成张数须为 1–20 的整数");
-    if (jobs.current.length + count > 20)
-      throw new Error("队列最多容纳 20 条等待任务，请减少次数或稍后提交");
+    if (
+      jobs.current.reduce((n, job) => n + (job.snapshots?.length ?? 1), 0) +
+        count >
+      20
+    )
+      throw new Error("队列最多容纳 20 张等待图片，请减少张数或稍后提交");
     locked.current = true;
     setAccepting(true);
     sync();
-    let accepted = 0;
-    let id: string | undefined;
     try {
-      for (let i = 0; i < count; i++) {
-        const job = queuedGeneration(
-          singleImageDraft(structuredClone(snapshot)),
-        );
-        await api.historySave(job.item, job.files);
-        jobs.current.push(job);
-        accepted++;
-        id = job.item.id;
-        sync();
-      }
-      await refresh();
-      return id;
-    } catch (e) {
-      await refresh();
-      throw new Error(
-        `已加入 ${accepted}/${count} 条任务；剩余任务未提交：${String(e)}`,
+      const entries = Array.from({ length: count }, () =>
+        queuedGeneration(singleImageDraft(structuredClone(snapshot))),
       );
+      const job: Job = {
+        ...entries[0],
+        snapshots: entries.map((entry) => entry.snapshot),
+      };
+      job.item.batch = {
+        requests: entries.map((entry) => ({
+          requestId: entry.item.id,
+          seed: entry.snapshot.params.seed,
+          status: "queued",
+        })),
+      };
+      await api.historySave(job.item, job.files);
+      jobs.current.push(job);
+      sync();
+      await refresh();
+      return job.item.id;
     } finally {
       locked.current = false;
       setAccepting(false);
@@ -187,9 +274,13 @@ export function useGenerationQueue(
                   name: item.recipe.maskName ?? "编辑蒙版",
                 }
               : null;
-            const job = queuedGeneration(
-              migrateDraft({ ...item.recipe, refs, mask }),
-            );
+            const snapshot = migrateDraft({ ...item.recipe, refs, mask });
+            const job: Job = queuedGeneration(snapshot);
+            if (item.batch)
+              job.snapshots = item.batch.requests.map((request) => ({
+                ...snapshot,
+                params: { ...snapshot.params, seed: request.seed },
+              }));
             if (!isCurrent()) return;
             job.item = {
               ...item,

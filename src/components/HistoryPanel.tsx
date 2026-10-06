@@ -404,6 +404,12 @@ function HistoryDetail({
           }
         />
         <Meta label="包围盒" value={`${(item.boxes ?? []).length} 个`} />
+        {item.batch && (
+          <Meta
+            label="生成张数"
+            value={`${item.resultFiles.length} / ${item.batch.requests.length} 张`}
+          />
+        )}
       </div>
       {item.error && <p className="error-text">{item.error}</p>}
       {item.taskId && <p className="help">供应商任务：{item.taskId}</p>}
@@ -443,7 +449,17 @@ function HistoryDetail({
         <summary>生成参数</summary>
         <dl className="request-parameters">
           {Object.entries(item.params)
-            .filter(([key, value]) => catalog.fields[key] && value != null)
+            .filter(
+              ([key, value]) =>
+                catalog.fields[key] &&
+                value != null &&
+                !(item.batch && key === "count") &&
+                !(
+                  item.batch &&
+                  item.batch.requests.length > 1 &&
+                  key === "seed"
+                ),
+            )
             .map(([key, value]) => (
               <div key={key}>
                 <dt>{catalog.fields[key].label}</dt>
@@ -453,6 +469,29 @@ function HistoryDetail({
         </dl>
       </details>
 
+      {item.batch && item.batch.requests.length > 1 && (
+        <details className="mt-3">
+          <summary>逐张请求详情</summary>
+          {item.batch.requests.map((request, i) => (
+            <div key={request.requestId} className="help">
+              第 {i + 1} 张 ·{" "}
+              {
+                {
+                  queued: "等待执行",
+                  running: "执行中",
+                  ok: "已完成",
+                  failed: "失败",
+                  skipped: "未执行",
+                  interrupted: "已中断",
+                }[request.status]
+              }
+              {request.seed != null && ` · 种子 ${request.seed}`}
+              {request.taskId && <p>供应商任务：{request.taskId}</p>}
+              {request.error && <p className="error-text">{request.error}</p>}
+            </div>
+          ))}
+        </details>
+      )}
       <details className="mt-3">
         <summary className="cursor-pointer text-xs text-zinc-500">
           最终发送的提示词
@@ -555,15 +594,20 @@ function historyStatus(item: HistoryItem) {
     reasoning: "处理中",
     saving: "保存结果",
   };
-  return item.status === "running"
-    ? (phases[item.phase ?? ""] ?? "执行中")
-    : ((
-        {
-          queued: "等待执行",
-          ok: "已完成",
-          failed: "失败",
-          cancelled: "已取消",
-          interrupted: "已中断",
-        } as Record<string, string>
-      )[item.status] ?? item.status);
+  const status =
+    item.status === "running"
+      ? (phases[item.phase ?? ""] ?? "执行中")
+      : ((
+          {
+            queued: "等待执行",
+            ok: "已完成",
+            failed: "失败",
+            cancelled: "已取消",
+            interrupted: "已中断",
+            partial: "部分完成",
+          } as Record<string, string>
+        )[item.status] ?? item.status);
+  return item.batch && item.batch.requests.length > 1
+    ? `${status} · ${item.batch.requests.filter((request) => request.status === "ok").length}/${item.batch.requests.length} 张`
+    : status;
 }

@@ -159,7 +159,9 @@ export default function App() {
       // Queue completion never interrupts the canvas or the user's next request.
       setNotice(
         r.saved
-          ? "任务已完成，可从结果栏或历史查看"
+          ? r.item.status === "partial"
+            ? "批次部分完成，成功的图片已保留，可从结果栏或历史查看"
+            : "任务已完成，可从结果栏或历史查看"
           : "任务已完成，历史未保存，请从结果区重新保存",
       );
     },

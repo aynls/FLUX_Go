@@ -108,7 +108,15 @@ export interface GenerationTask extends GenerationProgress {
   total: number;
 }
 
+export interface HistoryBatchRequest {
+  requestId: string;
+  seed?: number | null;
+  status: "queued" | "running" | "ok" | "failed" | "skipped" | "interrupted";
+  taskId?: string | null;
+  error?: string | null;
+}
 export interface HistoryItem {
+  batch?: { requests: HistoryBatchRequest[] } | null;
   error?: string | null;
   taskId?: string | null;
   phase?: string | null;
@@ -161,6 +169,7 @@ export interface GenerateRequestPayload {
   regions?: LayoutRegion[];
   mask?: string;
   requestId?: string;
+  historyId?: string;
 }
 
 export interface LayoutRegion {

@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct HistoryItem {
     #[serde(default)]
+    pub batch: Option<serde_json::Value>,
+    #[serde(default)]
     pub error: Option<String>,
     #[serde(default)]
     pub task_id: Option<String>,
@@ -68,6 +70,22 @@ impl HistoryStore {
                     item.status = "interrupted".into();
                     item.error =
                         Some("应用关闭时任务尚未完成；供应商可能仍在处理，未自动重新提交。".into());
+                    if let Some(requests) = item
+                        .batch
+                        .as_mut()
+                        .and_then(|batch| batch.get_mut("requests"))
+                        .and_then(|requests| requests.as_array_mut())
+                    {
+                        for request in requests {
+                            match request["status"].as_str() {
+                                Some("running") => {
+                                    request["status"] = serde_json::json!("interrupted")
+                                }
+                                Some("queued") => request["status"] = serde_json::json!("skipped"),
+                                _ => {}
+                            }
+                        }
+                    }
                     changed = true;
                 }
             }
@@ -340,7 +358,10 @@ mod tests {
         let item: HistoryItem = serde_json::from_value(serde_json::json!({
             "id":"queued_task", "createdAt":1, "provider":"comfy", "model":"qwen-image-3.0",
             "mode":"t2i", "prompt":"snapshot", "finalPrompt":"snapshot", "params":{},
-            "boxes":[], "status":"queued"
+            "boxes":[], "status":"queued",
+            "batch":{"requests":[{"requestId":"first", "status":"ok", "seed":11},
+                {"requestId":"second", "status":"running", "seed":22},
+                {"requestId":"third", "status":"queued", "seed":33}]}
         }))
         .unwrap();
         let mut saved = store
@@ -369,6 +390,11 @@ mod tests {
         assert_eq!(restored.task_id.as_deref(), Some("remote-task"));
         assert_eq!(restored.input_files, original_paths);
         assert!(restored.error.is_some());
+        let requests = &restored.batch.as_ref().unwrap()["requests"];
+        assert_eq!(requests[0]["status"], "ok");
+        assert_eq!(requests[1]["status"], "interrupted");
+        assert_eq!(requests[2]["status"], "skipped");
+        assert_eq!(requests[1]["seed"], 22);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

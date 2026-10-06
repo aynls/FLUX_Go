@@ -118,14 +118,22 @@ mock.module("./lib/api", () => ({
       failGeneration = reject;
     });
   },
-  historySave: async (item: HistoryItem) => {
+  historySave: async (
+    item: HistoryItem,
+    files: { kind: string; name: string; data: string }[] = [],
+  ) => {
     if (failHistory) throw new Error("disk full");
-    if (item.status === "ok") savedItem = item;
-    historyItems = [
-      ...historyItems.filter((it) => it.id !== item.id),
-      { ...item },
-    ];
-    return item;
+    const saved = structuredClone(item);
+    const path = (file: { name: string }) => `test/${item.id}/${file.name}.png`;
+    saved.inputFiles.push(...files.filter((f) => f.kind === "input").map(path));
+    saved.resultFiles.push(
+      ...files.filter((f) => f.kind === "result").map(path),
+    );
+    const mask = files.find((f) => f.kind === "mask");
+    if (mask) saved.maskFile = path(mask);
+    if (item.status === "ok" || item.status === "partial") savedItem = saved;
+    historyItems = [...historyItems.filter((it) => it.id !== item.id), saved];
+    return saved;
   },
   importImage: async (path: string) => ({
     dataUrl: "data:image/png;base64," + path,
@@ -1223,28 +1231,40 @@ test("repeat count queues identical requests with independent random seeds and s
   expect(count.value).toBe("1");
   fireEvent.change(count, { target: { value: "2" } });
   fireEvent.click(button());
-  await waitFor(() => expect(historyItems).toHaveLength(2));
+  await waitFor(() => expect(historyItems).toHaveLength(1));
   await waitFor(() => expect(submissions).toHaveLength(1));
-  expect(historyItems.filter((it) => it.status === "queued")).toHaveLength(1);
-  const seeds = historyItems.map((it) => it.params.seed);
+  expect(historyItems[0].status).toBe("running");
+  const batchId = historyItems[0].id;
+  expect(submissions[0].params.count).toBe(1);
+  const seeds = historyItems[0].batch!.requests.map((request) => request.seed);
   expect(seeds.every((seed) => Number.isInteger(seed))).toBe(true);
   expect(new Set(seeds).size).toBe(2);
   expect(
     historyItems.every((it) => it.recipe?.params.seed === it.params.seed),
   ).toBe(true);
-  expect(new Set(historyItems.map((it) => it.id)).size).toBe(2);
+  expect(historyItems[0].batch!.requests).toHaveLength(2);
   fireEvent.change(count, { target: { value: "1" } });
   await waitFor(() => expect(button().hasAttribute("disabled")).toBe(false));
   fireEvent.click(button());
-  await waitFor(() => expect(historyItems).toHaveLength(3));
+  await waitFor(() => expect(historyItems).toHaveLength(2));
   expect(submissions).toHaveLength(1);
   await act(async () => finish(output));
   await waitFor(() => expect(submissions).toHaveLength(2));
-  expect(submissions[1].params.seed).toBe(
-    historyItems.find((it) => it.id === submissions[1].requestId)?.params.seed,
-  );
+  expect(submissions[1].params.seed).toBe(seeds[1]);
+  expect(submissions[1].historyId).toBe(batchId);
+  expect(submissions[1].requestId).not.toBe(submissions[0].requestId);
   await act(async () => finish(output));
   await waitFor(() => expect(submissions).toHaveLength(3));
+  const batch = historyItems.find((item) => item.id === batchId)!;
+  expect(batch.resultFiles).toHaveLength(2);
+  expect(
+    batch.batch!.requests.every((request) => request.status === "ok"),
+  ).toBe(true);
+  expect(batch.cost).toBe(output.usage!.cost! * 2);
+  fireEvent.click(ui.getByRole("button", { name: "历史" }));
+  fireEvent.click(ui.getAllByText("same scene")[0]);
+  expect(ui.getByRole("button", { name: "历史结果 2" })).toBeTruthy();
+  expect(ui.getAllByText("提示词")).toHaveLength(1);
   await act(async () => finish(output));
   await waitFor(() =>
     expect(historyItems.every((it) => it.status === "ok")).toBe(true),
@@ -1346,4 +1366,85 @@ test("history select all excludes active tasks and partial deletion preserves fa
   await waitFor(() => expect(refreshed).toBe(2));
   expect(deletedIds).toEqual(["done", "failed"]);
   expect(historyItems.map((it) => it.id)).toEqual(["waiting", "running"]);
+});
+
+test("a partially failed batch retains its images and shared inputs in one history record", async () => {
+  const base = {
+    dataUrl: "data:image/png;base64,YQ==",
+    name: "shared input",
+    uid: "shared",
+    width: 512,
+    height: 512,
+  };
+  initial = {
+    ...newDraft(undefined, "gpt"),
+    provider: "comfy",
+    intent: "edit",
+    baseId: base.uid,
+    refs: [base],
+    prompt: "batch edit",
+  };
+  const ui = render(<App />);
+  const button = () =>
+    ui.getByRole("button", { name: /^(应用编辑 ·|请求已发送$)/ });
+  await waitFor(() => expect(button().hasAttribute("disabled")).toBe(false));
+  fireEvent.change(ui.getByRole("spinbutton", { name: "生成张数" }), {
+    target: { value: "3" },
+  });
+  fireEvent.click(button());
+  await waitFor(() => expect(submissions).toHaveLength(1));
+  expect(historyItems).toHaveLength(1);
+  await act(async () => finish(output));
+  await waitFor(() => expect(submissions).toHaveLength(2));
+  expect(historyItems[0].resultFiles).toHaveLength(1);
+  await act(async () => failGeneration(new Error("second failed")));
+  await waitFor(() => expect(submissions).toHaveLength(3));
+  expect(historyItems[0].resultFiles).toHaveLength(1);
+  await act(async () => finish(output));
+  await waitFor(() => expect(historyItems[0].status).toBe("partial"));
+  expect(historyItems).toHaveLength(1);
+  expect(historyItems[0].inputFiles).toHaveLength(1);
+  expect(historyItems[0].resultFiles).toHaveLength(2);
+  expect(
+    historyItems[0].batch!.requests.map((request) => request.status),
+  ).toEqual(["ok", "failed", "ok"]);
+  expect(new Set(submissions.map((request) => request.requestId)).size).toBe(3);
+  expect(new Set(submissions.map((request) => request.historyId)).size).toBe(1);
+  fireEvent.click(ui.getByRole("button", { name: "历史" }));
+  fireEvent.click(ui.getByText("batch edit"));
+  expect(ui.getByRole("button", { name: "历史结果 2" })).toBeTruthy();
+  expect(ui.getAllByRole("button", { name: /查看历史素材/ })).toHaveLength(1);
+});
+
+test("queued batch restoration reuses persisted seeds and request ids without new history records", async () => {
+  const job = queuedGeneration({
+    ...newDraft(undefined, "qwen"),
+    provider: "comfy",
+    prompt: "restore batch",
+    params: { seed: 11, count: 1 },
+  });
+  job.item.batch = {
+    requests: [
+      { requestId: "batch-first", seed: 11, status: "queued" },
+      { requestId: "batch-second", seed: 22, status: "queued" },
+    ],
+  };
+  historyItems = [job.item];
+  render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+  await waitFor(() => expect(submissions).toHaveLength(1));
+  expect(submissions[0].requestId).toBe("batch-first");
+  expect(submissions[0].params.seed).toBe(11);
+  await act(async () => finish(output));
+  await waitFor(() => expect(submissions).toHaveLength(2));
+  expect(submissions[1].requestId).toBe("batch-second");
+  expect(submissions[1].params.seed).toBe(22);
+  await act(async () => finish(output));
+  await waitFor(() => expect(historyItems[0].status).toBe("ok"));
+  expect(historyItems).toHaveLength(1);
+  expect(historyItems[0].id).toBe(job.item.id);
+  expect(historyItems[0].resultFiles).toHaveLength(2);
 });

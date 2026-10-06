@@ -35,6 +35,8 @@ pub struct GenerateRequest {
     pub mask: Option<String>,
     #[serde(default)]
     pub request_id: Option<String>,
+    #[serde(default)]
+    pub history_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
