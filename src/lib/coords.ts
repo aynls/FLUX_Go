@@ -15,7 +15,7 @@ export interface Rect {
 }
 
 // 缩放倍率：1 = 100%。所有画布缩放入口统一使用这两个边界。
-export const MIN_SCALE = 0.5;
+export const MIN_SCALE = 0.8;
 export const MAX_SCALE = 1.5;
 // 边缘可达范围之外的额外平移倍率：1 = 无额外留白，1.5 = 每侧增加画布尺寸的 25%。
 export const PAN_RANGE_MULTIPLIER = 1.2;

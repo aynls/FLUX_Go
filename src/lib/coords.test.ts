@@ -136,11 +136,11 @@ function roundtrip(v: View, x: number, y: number) {
 }
 
 describe("视图变换", () => {
-  test("fitView 横图在横视口", () => {
+  test("fitView 横图居中并遵守缩放下限", () => {
     const v = fitView(2000, 1000, 1000, 1000, 0);
-    expect(v.scale).toBeCloseTo(0.5);
-    expect(v.tx).toBeCloseTo(0);
-    expect(v.ty).toBeCloseTo(250);
+    expect(v.scale).toBe(MIN_SCALE);
+    expect(v.tx).toBeCloseTo((1000 - 2000 * MIN_SCALE) / 2);
+    expect(v.ty).toBeCloseTo((1000 - 1000 * MIN_SCALE) / 2);
   });
 
   test("fitView 竖图居中并遵守缩放下限", () => {
@@ -182,13 +182,14 @@ describe("视图变换", () => {
     expect(v1.scale).toBeCloseTo(v0.scale * 1.6);
   });
 
-  test("zoomAt 缩小同样保持锚点", () => {
+  test("zoomAt 缩小至下限仍保持锚点", () => {
     const v0: View = { scale: 1, tx: 40, ty: -20 };
     const v1 = zoomAt(v0, 10, 10, 0.5);
-    expect(v1.scale).toBeCloseTo(v0.scale * 0.5);
+    expect(v1.scale).toBe(MIN_SCALE);
     const b = screenToImg(v0, 10, 10);
     const a = screenToImg(v1, 10, 10);
     expect(a.x).toBeCloseTo(b.x, 6);
+    expect(a.y).toBeCloseTo(b.y, 6);
   });
 
   test("缩放限制", () => {
