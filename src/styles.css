@@ -337,7 +337,8 @@ h3 {
   flex-direction: column;
   min-height: 0;
 }
-.sidebar-resizer {
+.sidebar-resizer,
+.reference-resizer {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -347,7 +348,8 @@ h3 {
   cursor: col-resize;
   touch-action: none;
 }
-.sidebar-resizer::after {
+.sidebar-resizer::after,
+.reference-resizer::after {
   content: "";
   position: absolute;
   top: 0;
@@ -358,16 +360,31 @@ h3 {
 }
 .sidebar-resizer:hover::after,
 .sidebar-resizer:focus-visible::after,
-.sidebar.resizing .sidebar-resizer::after {
+.sidebar.resizing .sidebar-resizer::after,
+.reference-resizer:hover::after,
+.reference-resizer:focus-visible::after,
+.reference-sidebar.resizing .reference-resizer::after {
   background: var(--accent);
 }
-.sidebar-resizer:focus-visible {
+.sidebar-resizer:focus-visible,
+.reference-resizer:focus-visible {
   outline: none;
 }
 .workspace:has(.sidebar.resizing),
-.workspace:has(.sidebar.resizing) * {
+.workspace:has(.sidebar.resizing) *,
+.workspace:has(.reference-sidebar.resizing),
+.workspace:has(.reference-sidebar.resizing) * {
   cursor: col-resize !important;
   user-select: none !important;
+}
+.reference-sidebar {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+.reference-resizer {
+  left: -4px;
+  right: auto;
 }
 .tabs {
   display: flex;
@@ -953,15 +970,20 @@ pre {
 .qwen-work-area,
 .result-work-area {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 238px;
+  grid-template-columns: minmax(0, 1fr) min(
+      var(--reference-sidebar-width, 238px),
+      max(180px, calc(100% - 230px))
+    );
   flex: 1;
   min-height: 0;
   min-width: 0;
 }
-.flux-work-area > .reference-strip,
-.gpt-work-area > .reference-strip,
-.qwen-work-area > .reference-strip,
-.result-work-area > .reference-strip {
+.flux-work-area > .reference-sidebar > .reference-strip,
+.gpt-work-area > .reference-sidebar > .reference-strip,
+.qwen-work-area > .reference-sidebar > .reference-strip,
+.result-work-area > .reference-sidebar > .reference-strip {
+  height: 100%;
+  box-sizing: border-box;
   border: 0;
   border-left: 1px solid var(--border);
   max-height: none;
@@ -1415,7 +1437,10 @@ button {
   .gpt-work-area,
   .qwen-work-area,
   .result-work-area {
-    grid-template-columns: minmax(0, 1fr) 195px;
+    grid-template-columns: minmax(0, 1fr) min(
+        var(--reference-sidebar-width, 238px),
+        max(180px, calc(100% - 230px))
+      );
   }
 }
 @media (max-width: 760px) {
@@ -1430,9 +1455,13 @@ button {
   .qwen-work-area,
   .result-work-area {
     display: grid;
-    grid-template-columns: minmax(230px, 1fr) 180px;
+    grid-template-columns: minmax(230px, 1fr) min(
+        var(--reference-sidebar-width, 238px),
+        max(180px, calc(100% - 230px))
+      );
   }
   :is(.flux-work-area, .gpt-work-area, .qwen-work-area, .result-work-area)
+    > .reference-sidebar
     > .reference-strip {
     max-height: none;
     order: initial;

@@ -223,6 +223,7 @@ export interface Preferences {
   >;
   defaultFamily?: FamilyId;
   sidebarWidthPercent: number;
+  referenceSidebarWidth?: number;
   saveDirectory: string;
   theme: "system" | "light" | "dark";
   provider: ProviderId;

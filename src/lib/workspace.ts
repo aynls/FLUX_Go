@@ -26,6 +26,7 @@ import { gptSize } from "../models/gpt";
 export const DEFAULT_PREFERENCES: Preferences = {
   defaultFamily: "flux",
   sidebarWidthPercent: 25,
+  referenceSidebarWidth: 238,
   saveDirectory: "",
   theme: "system",
   provider: "openrouter",

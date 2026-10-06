@@ -1,5 +1,11 @@
 import { useGenerationQueue } from "./app/useGenerationQueue";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
@@ -13,6 +19,9 @@ import HistoryPanel from "./components/HistoryPanel";
 import Settings from "./components/Settings";
 import Modal from "./components/Modal";
 import References from "./workspaces/shared/References";
+import ResizableReferences, {
+  referenceWidth,
+} from "./components/ResizableReferences";
 import { WorkspaceSidebar, WorkspaceStage } from "./workspaces";
 import { useWorkspace } from "./app/useWorkspace";
 import * as api from "./lib/api";
@@ -554,17 +563,24 @@ export default function App() {
   const reference = draft.refs.find((r) => r.uid === refPreview);
   const resultBase = getResultBase(result);
   const references = (
-    <References
-      draft={draft}
-      ready={ready}
-      importing={importing}
-      onChange={(d, discrete = true) => commit(d, discrete)}
-      onPreview={setRefPreview}
-      onFiles={() => void openFiles()}
-      onPaste={() => importBatch([api.clipboardImage])}
-      onUrl={() => setUrlDialog(true)}
-      onNotice={setNotice}
-    />
+    <ResizableReferences
+      width={prefs.referenceSidebarWidth}
+      onWidthChange={(referenceSidebarWidth) =>
+        setPrefs((p) => ({ ...p, referenceSidebarWidth }))
+      }
+    >
+      <References
+        draft={draft}
+        ready={ready}
+        importing={importing}
+        onChange={(d, discrete = true) => commit(d, discrete)}
+        onPreview={setRefPreview}
+        onFiles={() => void openFiles()}
+        onPaste={() => importBatch([api.clipboardImage])}
+        onUrl={() => setUrlDialog(true)}
+        onNotice={setNotice}
+      />
+    </ResizableReferences>
   );
   return (
     <div className={"workbench workbench-" + draft.family}>
@@ -604,7 +620,8 @@ export default function App() {
             >
               <img
                 className={
-                  "family-icon" + (["flux", "gpt"].includes(f.id) ? " monochrome" : "")
+                  "family-icon" +
+                  (["flux", "gpt"].includes(f.id) ? " monochrome" : "")
                 }
                 src={FAMILY_ICONS[f.id]}
                 width={20}
@@ -751,6 +768,11 @@ export default function App() {
         </ResizableSidebar>
         <main
           className="main-area"
+          style={
+            {
+              "--reference-sidebar-width": `${referenceWidth(prefs.referenceSidebarWidth)}px`,
+            } as CSSProperties
+          }
           aria-label={familyById(draft.family).label + " 工作区"}
         >
           <div className="canvas-toolbar">

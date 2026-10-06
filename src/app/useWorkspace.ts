@@ -19,6 +19,7 @@ import {
   workspaceKey,
 } from "../lib/workspace";
 import { families, fieldsFor, providers } from "../models/catalog";
+import { referenceWidth } from "../components/ResizableReferences";
 import type {
   Draft,
   FamilyId,
@@ -47,6 +48,7 @@ function readPreferences(): Preferences {
       20,
       Math.min(40, Number(p.sidebarWidthPercent) || 25),
     );
+    p.referenceSidebarWidth = referenceWidth(p.referenceSidebarWidth);
     return p;
   } catch {
     return DEFAULT_PREFERENCES;
