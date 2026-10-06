@@ -137,10 +137,7 @@ export default function Sidebar(p: SidebarProps) {
         <PromptEditor {...p} />
         <section>
           <h2>输出</h2>
-          <ParameterFields
-            {...p}
-            keys={["resolution", "aspectRatio", "count"]}
-          />
+          <ParameterFields {...p} keys={["resolution", "aspectRatio"]} />
         </section>
         <section>
           <div className="section-heading">

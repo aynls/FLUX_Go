@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import * as api from "../lib/api";
 import { migrateDraft, taskIntent } from "../lib/workspace";
-import { routeFor } from "../models/catalog";
+import { routeFor, singleImageDraft } from "../models/catalog";
 import { makeThumb } from "../lib/image";
 import {
   executeGeneration,
@@ -111,7 +111,7 @@ export function useGenerationQueue(
   const enqueue = async (snapshot: Draft, count = 1) => {
     if (locked.current || !ready) return;
     if (!Number.isInteger(count) || count < 1 || count > 20)
-      throw new Error("生成次数须为 1–20 的整数");
+      throw new Error("生成张数须为 1–20 的整数");
     if (jobs.current.length + count > 20)
       throw new Error("队列最多容纳 20 条等待任务，请减少次数或稍后提交");
     locked.current = true;
@@ -121,7 +121,9 @@ export function useGenerationQueue(
     let id: string | undefined;
     try {
       for (let i = 0; i < count; i++) {
-        const job = queuedGeneration(structuredClone(snapshot));
+        const job = queuedGeneration(
+          singleImageDraft(structuredClone(snapshot)),
+        );
         await api.historySave(job.item, job.files);
         jobs.current.push(job);
         accepted++;

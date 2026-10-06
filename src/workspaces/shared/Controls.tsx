@@ -7,6 +7,7 @@ import {
   providers,
   changeRoute,
   routeFor,
+  singleImageDraft,
 } from "../../models/catalog";
 import { estimateCost } from "../../lib/params";
 import { estimateComfyCredits, formatCredits } from "../../models/pricing";
@@ -141,6 +142,7 @@ export function ParameterFields({
       {keys
         .filter(
           (key) =>
+            key !== "count" &&
             fields[key] &&
             !(key === "outputCompression" && values.outputFormat === "png") &&
             !(key === "promptExtendMode" && values.promptExtend === false),
@@ -439,7 +441,6 @@ export function QwenSizeFields(
           "resolution",
           "aspectRatio",
           ...(auto ? [] : ["width", "height"]),
-          "count",
         ]}
       />
     </>
@@ -612,7 +613,7 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
       window.clearTimeout(restore);
     };
   }, [p.sentRequestId, taskKey]);
-  const outputCount = fieldsFor(d).count ? (d.params.count ?? 1) : 1;
+  const outputCount = repeatCount;
   const [elapsed, setElapsed] = useState(0);
   const startedAt = p.generationTask?.startedAt;
   useEffect(() => {
@@ -634,22 +635,29 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
     saving: "保存历史",
   };
   const job = p.generationTask;
-  const credits = estimateComfyCredits(d);
+  const perRequestCredits = estimateComfyCredits(singleImageDraft(d));
+  const credits = perRequestCredits
+    ? {
+        min: perRequestCredits.min * repeatCount,
+        max: perRequestCredits.max * repeatCount,
+      }
+    : null;
   const creditLabel = credits
     ? (formatCredits(credits.min) === formatCredits(credits.max)
         ? formatCredits(credits.min)
         : formatCredits(credits.min) + "–" + formatCredits(credits.max)) +
       " Credits"
     : null;
-  const cost =
+  const perRequestCost =
     d.family === "flux" && d.provider === "openrouter"
       ? estimateCost(d.params.resolution)
       : null;
+  const cost = perRequestCost == null ? null : perRequestCost * repeatCount;
   const reason = p.busy
     ? ""
-    : (p.errors[0] ??
+    : (p.errors.find((error) => error !== "请输入提示词") ??
       (!p.finalPreview
-        ? "填写提示词后生成"
+        ? ""
         : !p.providerStatus?.[d.provider]
           ? "配置当前供应商的 API Key 后生成"
           : ""));
@@ -707,8 +715,8 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
         <input
           className="generate-repeat-count"
           type="number"
-          aria-label="生成次数"
-          title="生成次数"
+          aria-label="生成张数"
+          title="生成张数"
           min={1}
           max={20}
           step={1}

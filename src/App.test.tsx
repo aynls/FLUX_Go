@@ -408,6 +408,7 @@ test("GPT native parameters are sent and all results can be selected and exporte
   await waitFor(() => expect(submitted).not.toBeNull());
   expect(submitted!.model).toBe("gpt-image-2.5-flare");
   expect(submitted!.params.size).toBe("1024x1024");
+  expect(submitted!.params.count).toBe(1);
   expect(submitted!.params.resolution).toBeUndefined();
   await act(async () =>
     finish({
@@ -741,9 +742,6 @@ test("family default model and parameters apply only to new work", async () => {
   fireEvent.change(ui.getByRole("combobox", { name: "默认模型" }), {
     target: { value: "gpt-image-2.5-sunburst" },
   });
-  fireEvent.change(ui.getByRole("spinbutton", { name: "生成张数" }), {
-    target: { value: "3" },
-  });
   fireEvent.click(ui.getByRole("button", { name: "关闭" }));
   expect(
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
@@ -755,7 +753,7 @@ test("family default model and parameters apply only to new work", async () => {
   expect(
     (ui.getByRole("spinbutton", { name: "生成张数" }) as HTMLInputElement)
       .value,
-  ).toBe("3");
+  ).toBe("1");
 });
 
 test("continuing an edit replaces the primary, retains reference roles, and starts a new instruction", async () => {
@@ -847,7 +845,10 @@ test("route changes undo within a task; task navigation preserves independent dr
       ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
     ).toBe(false),
   );
-  fireEvent.change(ui.getByRole("spinbutton", { name: "生成张数" }), {
+  fireEvent.change(ui.getByRole("combobox", { name: "种子模式" }), {
+    target: { value: "fixed" },
+  });
+  fireEvent.change(ui.getByRole("spinbutton", { name: "种子值" }), {
     target: { value: "20" },
   });
   fireEvent.change(ui.getByRole("combobox", { name: "提供商" }), {
@@ -858,8 +859,7 @@ test("route changes undo within a task; task navigation preserves independent dr
     (ui.getByRole("combobox", { name: "提供商" }) as HTMLSelectElement).value,
   ).toBe("runware");
   expect(
-    (ui.getByRole("spinbutton", { name: "生成张数" }) as HTMLInputElement)
-      .value,
+    (ui.getByRole("spinbutton", { name: "种子值" }) as HTMLInputElement).value,
   ).toBe("20");
   fireEvent.click(ui.getByRole("button", { name: "编辑" }));
   expect(
@@ -1202,14 +1202,14 @@ test("repeat count queues identical requests with independent random seeds and s
     ...newDraft(undefined, "qwen"),
     provider: "comfy",
     prompt: "same scene",
-    params: { seed: null },
+    params: { seed: null, count: 4 },
   };
   const ui = render(<App />);
   const button = () =>
     ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ });
   await waitFor(() => expect(button().hasAttribute("disabled")).toBe(false));
   const count = ui.getByRole("spinbutton", {
-    name: "生成次数",
+    name: "生成张数",
   }) as HTMLInputElement;
   expect(count.value).toBe("1");
   fireEvent.change(count, { target: { value: "2" } });

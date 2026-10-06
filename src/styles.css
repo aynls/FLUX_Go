@@ -1462,3 +1462,21 @@ button {
     order: initial;
   }
 }
+
+.generate-submit-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.generate-submit-row > button {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.generate-submit-row > .generate-repeat-count {
+  flex: 0 0 60px;
+  width: 60px;
+  min-width: 0;
+  padding: 8px 6px;
+  text-align: center;
+}

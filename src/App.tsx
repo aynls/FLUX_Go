@@ -29,7 +29,13 @@ import {
   primaryImage,
   setPrimaryImage,
 } from "./lib/workspace";
-import { families, familyById, modelByAnyId, routeFor } from "./models/catalog";
+import {
+  families,
+  familyById,
+  modelByAnyId,
+  routeFor,
+  singleImageDraft,
+} from "./models/catalog";
 import { compileDraft } from "./models";
 import { maskFromRects } from "./workspaces/gpt/mask";
 import type {
@@ -351,9 +357,10 @@ export default function App() {
     return () => window.removeEventListener("keydown", key);
   });
 
-  const preview = compileDraft(draft);
+  const requestDraft = singleImageDraft(draft);
+  const preview = compileDraft(requestDraft);
   const errors = [
-    ...validateDraft(draft),
+    ...validateDraft(requestDraft),
     ...(draft.prompt.trim() || draft.boxes.length
       ? preview.error
         ? [preview.error]
@@ -375,7 +382,7 @@ export default function App() {
   };
   const generate = async (count: number) => {
     if (!ready || importing) return;
-    const snapshot = current.current;
+    const snapshot = singleImageDraft(current.current);
     const compiled = compileDraft(snapshot);
     const invalid = [
       ...validateDraft(snapshot),

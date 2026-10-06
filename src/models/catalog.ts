@@ -187,3 +187,8 @@ export function validateFields(d: Draft): string[] {
     errors.push("此路由不支持蒙版，请移除蒙版或切换到 Comfy / Runware");
   return errors;
 }
+
+/** New queue entries always request one image; the footer owns total quantity. */
+export function singleImageDraft(d: Draft): Draft {
+  return fieldsFor(d).count ? { ...d, params: { ...d.params, count: 1 } } : d;
+}

@@ -21,7 +21,6 @@ export default function GptSidebar(p: WorkspaceControlsProps) {
               "quality",
               "size",
               "aspectRatio",
-              "count",
               "background",
               "outputFormat",
               "outputCompression",
