@@ -20,28 +20,39 @@ pub fn default_env_name(provider: &str) -> &'static str {
         "bfl" => "BFL_API_KEY",
         "comfy" => "COMFY_API_KEY",
         "runware" => "RUNWARE_API_KEY",
+        "google" => "GEMINI_API_KEY",
+        "ark" => "ARK_API_KEY",
+        "byteplus" => "BYTEPLUS_API_KEY",
         _ => "OPENROUTER_API_KEY",
     }
 }
 
 fn default_key_settings() -> HashMap<String, CredentialSettings> {
-    ["openrouter", "bfl", "comfy", "runware"]
-        .into_iter()
-        .map(|p| {
-            (
-                p.to_string(),
-                CredentialSettings {
-                    source: if stored_key(p).is_some() {
-                        "manual"
-                    } else {
-                        "environment"
-                    }
-                    .into(),
-                    env_name: default_env_name(p).into(),
-                },
-            )
-        })
-        .collect()
+    [
+        "openrouter",
+        "bfl",
+        "comfy",
+        "runware",
+        "google",
+        "ark",
+        "byteplus",
+    ]
+    .into_iter()
+    .map(|p| {
+        (
+            p.to_string(),
+            CredentialSettings {
+                source: if stored_key(p).is_some() {
+                    "manual"
+                } else {
+                    "environment"
+                }
+                .into(),
+                env_name: default_env_name(p).into(),
+            },
+        )
+    })
+    .collect()
 }
 
 pub fn init_key_settings(dir: &Path) -> Result<(), String> {
@@ -79,7 +90,10 @@ pub fn key_settings(provider: &str) -> CredentialSettings {
 }
 
 fn validate_key_settings(provider: &str, config: &CredentialSettings) -> Result<(), String> {
-    if !matches!(provider, "openrouter" | "bfl" | "comfy" | "runware") {
+    if !matches!(
+        provider,
+        "openrouter" | "bfl" | "comfy" | "runware" | "google" | "ark" | "byteplus"
+    ) {
         return Err("未知提供商".into());
     }
     if !matches!(config.source.as_str(), "environment" | "manual") {
@@ -111,7 +125,10 @@ pub fn save_key_settings(provider: &str, config: CredentialSettings) -> Result<(
 }
 
 pub fn credential_entry(provider: &str) -> Result<keyring::Entry, String> {
-    if !matches!(provider, "bfl" | "openrouter" | "comfy" | "runware") {
+    if !matches!(
+        provider,
+        "bfl" | "openrouter" | "comfy" | "runware" | "google" | "ark" | "byteplus"
+    ) {
         return Err("未知提供商".into());
     }
     keyring::Entry::new("app.lutriui.desktop", provider).map_err(|_| "无法访问系统凭据存储".into())
@@ -125,7 +142,10 @@ pub fn stored_key(provider: &str) -> Option<String> {
 }
 
 pub fn configured_key(provider: &str) -> Option<String> {
-    if !matches!(provider, "openrouter" | "bfl" | "comfy" | "runware") {
+    if !matches!(
+        provider,
+        "openrouter" | "bfl" | "comfy" | "runware" | "google" | "ark" | "byteplus"
+    ) {
         return None;
     }
     let config = key_settings(provider);

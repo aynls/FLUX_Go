@@ -3,9 +3,11 @@
 //! 模型与路由契约由 models 校验。适配器负责原生字段、鉴权、异步任务和结果处理。
 //! 密钥只在本层读取，绝不回传前端。
 
+pub mod ark;
 pub mod bfl;
 pub mod comfy;
 mod credentials;
+pub mod google;
 pub mod openrouter;
 pub mod progress;
 pub mod runware;
@@ -152,6 +154,8 @@ pub async fn dispatch(req: &GenerateRequest) -> ProviderResult {
         "bfl" => bfl::generate(req).await,
         "comfy" => comfy::generate(req).await,
         "runware" => runware::generate(req).await,
+        "google" => google::generate(req).await,
+        "ark" | "byteplus" => ark::generate(req).await,
         other => Err(ProviderError::msg(format!("未知提供商: {other}"))),
     }
 }

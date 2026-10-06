@@ -27,6 +27,13 @@ export interface ModelRoute {
   defaults?: GenerateParams;
   maxPixels?: number;
   minPrompt?: number;
+  maxPrompt?: number;
+  minPixels?: number;
+  maxAspect?: number;
+  dimensionsKey?: string;
+  maxInputBytes?: number;
+  maxInputPixels?: number;
+  maxRequestBytes?: number;
   notes?: string;
   docs: string;
 }
@@ -54,6 +61,10 @@ export const catalog = raw as unknown as {
   families: FamilyDefinition[];
   models: ModelDefinition[];
   fields: Record<string, FieldDefinition>;
+  imageDimensions: Record<
+    string,
+    Record<string, Record<string, [number, number]>>
+  >;
 };
 export const families = catalog.families;
 export const providers = catalog.providers;

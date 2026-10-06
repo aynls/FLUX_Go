@@ -411,6 +411,8 @@ export function QwenSizeFields(
 ) {
   const fields = fieldsFor(p.draft),
     auto = p.draft.params.width === null && p.draft.params.height === null;
+  const customEdge =
+    (routeFor(p.draft)?.minPixels ?? 0) > 1048576 ? 2048 : 1024;
   return (
     <>
       {fields.width?.nullable && (
@@ -424,8 +426,8 @@ export function QwenSizeFields(
                 ...p.draft,
                 params: {
                   ...p.draft.params,
-                  width: e.target.value === "auto" ? null : 1024,
-                  height: e.target.value === "auto" ? null : 1024,
+                  width: e.target.value === "auto" ? null : customEdge,
+                  height: e.target.value === "auto" ? null : customEdge,
                 },
               })
             }
@@ -438,7 +440,9 @@ export function QwenSizeFields(
       <ParameterFields
         {...p}
         keys={[
-          "resolution",
+          ...(p.draft.family === "seedream" && fields.width && !auto
+            ? []
+            : ["resolution"]),
           "aspectRatio",
           ...(auto ? [] : ["width", "height"]),
         ]}

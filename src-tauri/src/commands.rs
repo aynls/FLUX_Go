@@ -15,6 +15,9 @@ pub struct ProviderStatus {
     pub bfl: bool,
     pub comfy: bool,
     pub runware: bool,
+    pub google: bool,
+    pub ark: bool,
+    pub byteplus: bool,
     pub sources: std::collections::HashMap<String, String>,
     pub settings: std::collections::HashMap<String, crate::provider::CredentialSettings>,
     pub stored_keys: std::collections::HashMap<String, bool>,
@@ -25,7 +28,15 @@ pub async fn provider_status() -> ProviderStatus {
     let mut sources = std::collections::HashMap::new();
     let mut settings = std::collections::HashMap::new();
     let mut stored_keys = std::collections::HashMap::new();
-    for p in ["openrouter", "bfl", "comfy", "runware"] {
+    for p in [
+        "openrouter",
+        "bfl",
+        "comfy",
+        "runware",
+        "google",
+        "ark",
+        "byteplus",
+    ] {
         let config = crate::provider::key_settings(p);
         let source = if config.source == "manual" {
             "system"
@@ -41,6 +52,9 @@ pub async fn provider_status() -> ProviderStatus {
         bfl: crate::provider::configured_key("bfl").is_some(),
         comfy: crate::provider::configured_key("comfy").is_some(),
         runware: crate::provider::configured_key("runware").is_some(),
+        google: crate::provider::configured_key("google").is_some(),
+        ark: crate::provider::configured_key("ark").is_some(),
+        byteplus: crate::provider::configured_key("byteplus").is_some(),
         sources,
         settings,
         stored_keys,
@@ -95,6 +109,8 @@ pub async fn credential_check(provider: String) -> Result<String, String> {
         "bfl" => client
             .get("https://api.bfl.ai/v1/credits")
             .header("x-key", &key),
+        "google" => client.get("https://generativelanguage.googleapis.com/v1/models").header("x-goog-api-key", &key),
+        "ark" | "byteplus" => return Err("此供应商未提供已确认的免费密钥检查接口；请通过实际生成确认模型权限。".into()),
         "comfy" => client.get("https://cloud.comfy.org/api/user").header("X-API-Key", &key),
         "runware" => client.post("https://api.runware.ai/v1").bearer_auth(&key).json(&serde_json::json!([{
             "taskType":"accountManagement", "taskUUID":uuid::Uuid::new_v4().to_string(), "operation":"getDetails"

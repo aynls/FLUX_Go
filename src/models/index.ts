@@ -3,6 +3,7 @@ import { composePrompt } from "../lib/protocol";
 import { routeFor, validateFields, pickParams, defaultsFor } from "./catalog";
 import { validateGpt } from "./gpt";
 import { validateQwen } from "./qwen";
+import { validateImage } from "./image";
 import { referenceInstruction } from "./referenceInstructions";
 import { gptSize } from "./gpt";
 
@@ -29,7 +30,13 @@ export function compileDraft(d: Draft) {
     error: d.prompt.trim() ? null : "请输入提示词",
   };
 }
-const validators = { flux: () => [], gpt: validateGpt, qwen: validateQwen };
+const validators = {
+  flux: () => [],
+  gpt: validateGpt,
+  qwen: validateQwen,
+  gemini: validateImage,
+  seedream: validateImage,
+};
 export function validateModel(d: Draft) {
   const errors = [...validateFields(d), ...validators[d.family](d)];
   if (
@@ -43,7 +50,8 @@ export function validateModel(d: Draft) {
   if (d.intent === "edit" && d.baseId && d.refs[0]?.uid !== d.baseId)
     errors.push("主图须位于图片 1，请重新指定主图");
   const length = Array.from(compileDraft(d).finalPrompt).length;
-  if (length > 32000) errors.push("编译后的提示词超过 32000 字符");
+  const maxPrompt = routeFor(d)?.maxPrompt ?? 32000;
+  if (length > maxPrompt) errors.push(`编译后的提示词超过 ${maxPrompt} 字符`);
   if (length > 0 && length < (routeFor(d)?.minPrompt ?? 1))
     errors.push(`此路由提示词至少需要 ${routeFor(d)?.minPrompt} 个字符`);
   if (d.family !== "flux" && d.boxes.length)

@@ -17,6 +17,8 @@ import {
   fieldsFor,
   modelById,
   providers,
+  catalog,
+  routeFor,
 } from "../models/catalog";
 import { validateModel } from "../models";
 import { gptSize } from "../models/gpt";
@@ -359,16 +361,26 @@ export function changeRole(b: Box, role: Box["role"], d: Draft): Box {
   };
 }
 export function outputEstimate(d: Draft) {
+  const key = routeFor(d)?.dimensionsKey;
+  const dimensions =
+    key &&
+    catalog.imageDimensions[key]?.[d.params.resolution ?? "1K"]?.[
+      d.params.aspectRatio ?? "1:1"
+    ];
+  if (dimensions) return { w: dimensions[0], h: dimensions[1] };
   if (fieldsFor(d).size) return gptSize(d.params.size) ?? { w: 1024, h: 1024 };
-  if (fieldsFor(d).width)
+  if (fieldsFor(d).width && d.params.width != null && d.params.height != null)
     return { w: d.params.width ?? 1024, h: d.params.height ?? 1024 };
   const edge =
     (
       {
+        "512": 512,
+        "0.5K": 512,
         "768": 768,
         "1K": 1024,
         "1.5K": 1536,
         "2K": 2048,
+        "3K": 3072,
         "4K": 4096,
       } as Record<string, number>
     )[d.params.resolution ?? "1K"] ?? 1024;

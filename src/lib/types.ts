@@ -21,8 +21,9 @@ export interface Box {
   desc: string;
 }
 
-export type ProviderId = "openrouter" | "bfl" | "comfy" | "runware";
-export type FamilyId = "flux" | "gpt" | "qwen";
+export type ProviderId =
+  "openrouter" | "bfl" | "comfy" | "runware" | "google" | "ark" | "byteplus";
+export type FamilyId = "flux" | "gpt" | "qwen" | "gemini" | "seedream";
 export type TaskIntent = "create" | "edit";
 export type WorkspaceKey = `${FamilyId}:${TaskIntent}`;
 export type ReferencePurpose =
@@ -57,6 +58,9 @@ export interface ProviderStatus {
   bfl: boolean;
   comfy: boolean;
   runware: boolean;
+  google: boolean;
+  ark: boolean;
+  byteplus: boolean;
   sources?: Record<ProviderId, string>;
   settings?: Record<ProviderId, CredentialSettings>;
   storedKeys?: Record<ProviderId, boolean>;

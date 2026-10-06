@@ -48,6 +48,8 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
                 json!({"input":{"messages":[{"role":"user","content":content}]}, "parameters":parameters}),
             )
         }
+        "gemini" => super::google::native_payload(req, true),
+        "seedream" => super::ark::native_payload(req),
         _ => Err(ProviderError::msg("Comfy 尚未实现该模型家族的请求编码")),
     }
 }
@@ -155,7 +157,7 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
 pub async fn normalize(req: &GenerateRequest, body: &Value, job: Option<&str>) -> ProviderResult {
     let model = crate::models::resolve(req)?;
     let images = match model.family {
-        "gpt" => {
+        "gpt" | "seedream" => {
             transport::openai_images(body, req.params.output_format.as_deref().unwrap_or("png"))
                 .await?
         }
@@ -188,9 +190,15 @@ pub async fn normalize(req: &GenerateRequest, body: &Value, job: Option<&str>) -
             }
             images
         }
+        "gemini" => super::google::images(body).await?,
         _ => return Err(ProviderError::msg("Comfy 结果格式未实现")),
     };
-    let mut usage = body["usage"].as_object().cloned().unwrap_or_else(Map::new);
+    let mut usage = body
+        .get("usage")
+        .or_else(|| body.get("usageMetadata"))
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_else(Map::new);
     // Native provider cost/credits fields are not the Comfy charge.
     usage.remove("credits");
     usage.remove("cost");

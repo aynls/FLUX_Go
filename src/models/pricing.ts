@@ -32,6 +32,7 @@ export function estimateComfyCredits(
     const total = output * count + d.refs.length * q.reference;
     return { min: total, max: total };
   }
+  if (d.family !== "gpt") return null;
   const quality = String(p.quality ?? "auto");
   const ranges = prices.gptUsd.ranges as Record<string, number[]>;
   const presets = prices.gptUsd.presets as Record<

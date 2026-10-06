@@ -13,7 +13,7 @@ LutriUI 将模型契约、工作区和供应商传输分开。新增模型时，
 | `src/app/generation.ts`     | 输入处理、生成快照、结果和历史材料组装                                                              |
 | `src/components/`           | 画布、历史、设置、结果展示等通用交互                                                                |
 | `src-tauri/src/models.rs`   | 读取同一模型目录，校验每个付费请求的路由、字段和输入约束                                            |
-| `src-tauri/src/provider/`   | 四个供应商的原生请求、鉴权、轮询和结果处理；凭据与共享传输分别位于 `credentials.rs`、`transport.rs` |
+| `src-tauri/src/provider/`   | 各供应商的原生请求、鉴权、轮询和结果处理；凭据与共享传输分别位于 `credentials.rs`、`transport.rs` |
 
 `Draft` 保存规范模型编号 `modelId`，供应商原生编号放在路由目录中。`routeSettings` 按模型和供应商保存参数；切回时恢复原设置，新路由会投影共享参数并显示调整摘要。发送时只使用当前路由白名单中的字段。切换到不支持蒙版的路由时，保留蒙版并阻止提交，供用户切回或移除。供应商不会自动切换。
 
@@ -24,6 +24,8 @@ LutriUI 将模型契约、工作区和供应商传输分开。新增模型时，
 | FLUX.3 Image  | FLUX.3 Image    | OpenRouter、BFL、Comfy、Runware |
 | GPT Image 2.5 | Flare、Sunburst | OpenRouter、Comfy、Runware      |
 | Qwen Image    | 3.0、3.0 Pro    | OpenRouter、Comfy、Runware      |
+| Gemini Image  | Nano Banana 2、Pro | OpenRouter、Comfy、Runware、Google |
+| Seedream      | 5.0 Pro、Lite、Flash | OpenRouter、Comfy、Runware、火山方舟、BytePlus |
 
 目录于 2026-10-06 根据公开 API 资料核对。账户权限、价格与供应商后续变更仍以供应商实际响应为准。
 
@@ -36,6 +38,12 @@ GPT Image 工作区使用主图、参考图列表、质量、背景和输出格�
 Qwen 工作区使用有序参考图和文字指令，支持 3.0 与 3.0 Pro。OpenRouter 路由开放分辨率、宽高比、种子与张数，参考图上限为 4；Comfy 和 Runware 使用像素尺寸、负面提示词和扩写控制，参考图上限为 3。Comfy 将尺寸编码为 `宽*高`；选择自动尺寸时省略该字段，并对 Pro 显示费用区间。Runware 使用独立宽高字段，并开放输出格式与压缩质量。有参考图时只支持 `direct` 扩写，关闭扩写时省略扩写方式。[OpenRouter 路由](https://openrouter.ai/api/v1/images/models/qwen/qwen-image-3/endpoints)、[Comfy schema](https://docs.comfy.org/router-schemas/qwen/qwen-image-3.0.json)、[Runware 文档](https://runware.ai/docs/models/alibaba-qwen-image-3-0)。
 
 ## 任务与参考素材
+
+Gemini Image 使用有序参考图、分辨率和宽高比，两个版本均至多 14 张参考图，不开放蒙版。Google 官方路由使用 `x-goog-api-key` 请求头与 `generateContent`，输出配置为 `generationConfig.responseFormat.image`，不发送 Vertex AI 专用的输出格式字段。Comfy 使用 Vertex AI 原生 `generationConfig.imageConfig`，开放 1K/2K/4K 与 PNG/JPEG。结果按内容字段提取，忽略文字与思考图片，兼容 inlineData 与 fileData。Runware 使用各模型独立的官方尺寸表；自动比例需要参考图并发送分辨率预设，其他比例发送精确宽高，另外开放种子与输出压缩。[Google API](https://ai.google.dev/gemini-api/docs/generate-content/image-generation)、[Comfy schema](https://docs.comfy.org/router-schemas/vertexai/gemini-3.1-flash-image.json)、[Runware](https://runware.ai/docs/models/google-nano-banana-2)。
+
+Seedream 支持 5.0 Pro、Lite 与 Flash，不开放独立蒙版或图层拆分。OpenRouter 三个版本均至多 14 张参考图；Pro/Flash 开放 1K/2K，Lite 开放 2K/4K。Comfy 和官方路由使用原生图像请求，Pro/Flash 至多 10 张参考图，Lite 至多 14 张；支持分辨率预设或自定义像素尺寸、PNG/JPEG 与水印。预设模式的比例由提示词描述，自定义尺寸按版本校验面积。Lite 的 Comfy 路由开放 2K/3K，官方路由的尺寸差异见下文。Runware Pro/Flash 使用自定义宽高，Lite 使用官方 2K/3K 尺寸表，不发送未开放的种子；输出支持 PNG/JPEG/WebP。Comfy 与官方 Lite 禁用连续出图，Runware Lite 将 `maxSequentialImages` 固定为 1，由应用队列管理张数。[Comfy schema](https://docs.comfy.org/router-schemas/byteplus/seedream-5-0-pro-260628.json)、[Runware Pro](https://runware.ai/docs/models/bytedance-seedream-5-0-pro)、[Runware Lite](https://runware.ai/docs/models/bytedance-seedream-5-0-lite)。
+
+Seedream 官方分为火山方舟（国内）与 BytePlus ModelArk（国际），分别使用北京和东南亚 API 地址与独立密钥。国内 Pro/Flash 模型编号以 `doubao-` 开头，国际以 `dola-` 开头；Lite 分别为 `doubao-seedream-5-0-260128` 与 `seedream-5-0-260128`，不能混用。官方 Pro/Flash 支持 1K/1.5K/2K，Lite 支持 2K/3K/4K；官方自定义尺寸的 Pro/Flash 面积上限为 4,624,220px，Lite 为 16,777,216px，分别按官方规则校验，不沿用 Comfy 的限制。官方请求同步返回，付费请求不自动重试。Google 默认环境变量为 `GEMINI_API_KEY`，火山方舟为 `ARK_API_KEY`，BytePlus 为 `BYTEPLUS_API_KEY`，均支持自定义变量名或系统凭据中的手动密钥。Google 连接检查读取模型目录；火山方舟与 BytePlus 尚无已确认的免费密钥检查接口，保存密钥不承诺模型权限已验证。[火山方舟 API](https://docs.volcengine.com/docs/ark/image-generation-api?lang=zh)、[BytePlus API](https://docs.byteplus.com/en/docs/modelark/image-generation-api)、[BytePlus 模型说明](https://docs.byteplus.com/de/docs/modelark/seedream-5-0-pro)。新增家族没有 Comfy 预估价格表，界面不显示预估值；实际扣费仍读取 Comfy 响应头。
 
 任务模式区分生成新画面与编辑图片。编辑主图始终排在请求的第一位，供自动比例、GPT 蒙版和结果对照使用。指定新主图时，程序同步重排素材并重映射提示词中的精确图片标签；已有蒙版时阻止更换主图，避免把蒙版作用于另一张图片。
 
@@ -57,7 +65,7 @@ FLUX 主图等比显示。移除区域保留虚线标记。来源标记的显示
 
 Comfy 预估独立保存在 `shared/comfy-pricing.json`，记录核验日期与官方来源。FLUX 使用分辨率价格，Qwen 使用输出张数、Pro 面积档位和参考图数量，GPT 使用质量和尺寸的官方预估区间并估算输入费用。预估不作为扣费凭据。实际 Credits 从提交和结果轮询响应的 `X-Comfy-Credits-Used` 读取，后续响应缺失时保留已有值，不累加重复轮询返回的费用。该响应头只对部分模型和成功响应提供；上游响应体的 `cost` 或 `credits` 不代表 Comfy 扣费。没有实际扣费信息时，结果及历史隐藏成本项。[Comfy 计费说明](https://docs.comfy.org/development/comfy-router/billing)。
 
-草稿使用 `WorkspaceSession` 保存三个家族的独立 `Draft`。旧版 schema 2 的 FLUX 草稿迁移到 schema 3；无法识别的版本或损坏内容暂停自动保存，保留原文件。新建方案可恢复保存。
+草稿使用 `WorkspaceSession` 保存五个家族的独立 `Draft`。旧版 schema 2 的 FLUX 草稿迁移到 schema 3；无法识别的版本或损坏内容暂停自动保存，保留原文件。新建方案可恢复保存。
 
 每个家族进一步拆分生成和编辑任务。`taskWorkspaces` 按 `family:intent` 保存独立草稿，`workspaces` 保留各家族最近活动的任务，用于恢复入口和读取此前的单任务会话。撤销记录、结果选择和本会话最近 20 次尝试按相同任务键隔离；结果原图来自请求快照，后台完成只更新发起任务的结果。任务切换属于导航，替换编辑主图属于可撤销修改。重启恢复草稿，完整结果通过本地历史查看。
 

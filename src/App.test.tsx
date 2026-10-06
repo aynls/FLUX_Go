@@ -100,6 +100,9 @@ mock.module("./lib/api", () => ({
     openrouter: true,
     comfy: true,
     runware: true,
+    google: true,
+    ark: true,
+    byteplus: true,
   }),
   draftLoad: async () => initial,
   draftSave: async (d: Draft | WorkspaceSession) => {
@@ -347,6 +350,67 @@ test("history keeps multiple results and restores the GPT mask into its own work
   expect(
     ui.getByRole("button", { name: "移除蒙版" }).hasAttribute("disabled"),
   ).toBe(false);
+});
+
+test("new image families expose official routes, color icons and independent persisted drafts", async () => {
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("tab", { name: "Gemini Image" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  const geminiTab = ui.getByRole("tab", { name: "Gemini Image" });
+  expect(geminiTab.querySelector("img")?.getAttribute("src")).toBe(
+    "/nano-banana.png",
+  );
+  expect(geminiTab.querySelector("img")?.className).not.toContain("monochrome");
+  fireEvent.click(geminiTab);
+  fireEvent.change(ui.getByRole("combobox", { name: "提供商" }), {
+    target: { value: "google" },
+  });
+  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
+    target: { value: "Google image" },
+  });
+  expect(ui.queryByRole("combobox", { name: "输出格式" })).toBeNull();
+  const seedTab = ui.getByRole("tab", { name: "Seedream" });
+  expect(seedTab.querySelector("img")?.getAttribute("src")).toBe(
+    "/seeddream.png",
+  );
+  fireEvent.click(seedTab);
+  const provider = ui.getByRole("combobox", { name: "提供商" });
+  expect(provider.querySelector('option[value="ark"]')).not.toBeNull();
+  expect(provider.querySelector('option[value="byteplus"]')).not.toBeNull();
+  fireEvent.change(provider, { target: { value: "byteplus" } });
+  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
+    target: { value: "BytePlus image" },
+  });
+  await waitFor(() =>
+    expect(
+      (draftWrites.at(-1) as WorkspaceSession)?.workspaces.seedream?.prompt,
+    ).toBe("BytePlus image"),
+  );
+  initial = draftWrites.at(-1)!;
+  ui.unmount();
+  const restarted = render(<App />);
+  await waitFor(() =>
+    expect(
+      (restarted.getByRole("combobox", { name: "提供商" }) as HTMLSelectElement)
+        .value,
+    ).toBe("byteplus"),
+  );
+  expect(
+    (restarted.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement)
+      .value,
+  ).toBe("BytePlus image");
+  fireEvent.click(restarted.getByRole("tab", { name: "Gemini Image" }));
+  expect(
+    (restarted.getByRole("combobox", { name: "提供商" }) as HTMLSelectElement)
+      .value,
+  ).toBe("google");
+  expect(
+    (restarted.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement)
+      .value,
+  ).toBe("Google image");
 });
 
 test("family workspaces keep independent drafts and persist across restart", async () => {

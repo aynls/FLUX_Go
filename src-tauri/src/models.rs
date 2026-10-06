@@ -50,9 +50,12 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
         &req.final_prompt
     };
     let min_prompt = m.route["minPrompt"].as_u64().unwrap_or(1);
-    if prompt.trim().chars().count() < min_prompt as usize || prompt.chars().count() > 32000 {
+    let max_prompt = m.route["maxPrompt"].as_u64().unwrap_or(32000);
+    if prompt.trim().chars().count() < min_prompt as usize
+        || prompt.chars().count() > max_prompt as usize
+    {
         return Err(ProviderError::msg(format!(
-            "提示词须为 {min_prompt}–32000 字符"
+            "提示词须为 {min_prompt}–{max_prompt} 字符"
         )));
     }
     let rules = m.route["parameters"].as_object().unwrap();
@@ -93,11 +96,17 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
         if !["image/png", "image/jpeg", "image/webp", "image/gif"].contains(&mime.as_str()) {
             return Err(ProviderError::msg("不支持的输入图片类型"));
         }
-        if bytes.len() > 50 * 1024 * 1024 {
-            return Err(ProviderError::msg("单张参考图超过 50MB"));
+        let limit = m.route["maxInputBytes"]
+            .as_u64()
+            .unwrap_or(50 * 1024 * 1024);
+        if bytes.len() as u64 > limit {
+            return Err(ProviderError::msg("单张参考图超过此路由大小上限"));
         }
         if m.family == "gpt" && mime == "image/gif" {
             return Err(ProviderError::msg("GPT Image 参考图须为 PNG/JPEG/WebP"));
+        }
+        if m.family == "gemini" && mime == "image/gif" {
+            return Err(ProviderError::msg("Gemini 参考图须为 PNG/JPEG/WebP"));
         }
         if m.family == "flux"
             && matches!(req.provider.as_str(), "bfl" | "comfy")
@@ -114,9 +123,62 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
             ));
         }
         total_bytes += bytes.len();
+        if m.family == "seedream" && req.provider != "openrouter" {
+            let (w, h) = image::ImageReader::new(std::io::Cursor::new(bytes))
+                .with_guessed_format()
+                .map_err(|_| ProviderError::msg("参考图无效"))?
+                .into_dimensions()
+                .map_err(|_| ProviderError::msg("参考图无效"))?;
+            if w.min(h) < 15
+                || w.max(h) as f64 / w.min(h) as f64 > 16.0
+                || u64::from(w) * u64::from(h)
+                    > m.route["maxInputPixels"].as_u64().unwrap_or(u64::MAX)
+            {
+                return Err(ProviderError::msg(
+                    "Seedream 参考图尺寸或比例超过此路由限制",
+                ));
+            }
+        }
     }
     if m.family == "gpt" && req.provider == "comfy" && total_bytes > 64 * 1024 * 1024 {
         return Err(ProviderError::msg("Comfy GPT 参考图总大小超过 64MiB"));
+    }
+    if let Some(limit) = m.route["maxRequestBytes"].as_u64() {
+        let size = req.images.iter().map(String::len).sum::<usize>()
+            + prompt.len()
+            + params.to_string().len()
+            + 1024;
+        if size as u64 > limit {
+            return Err(ProviderError::msg(
+                "请求超过此路由总大小上限，请降低参考图尺寸",
+            ));
+        }
+    }
+    if m.family == "gemini"
+        && req.provider == "runware"
+        && req.params.aspect_ratio.as_deref() == Some("auto")
+        && req.images.is_empty()
+    {
+        return Err(ProviderError::msg("自动比例需要参考图"));
+    }
+    if m.family == "seedream" && rules.contains_key("width") {
+        if req.params.width.is_some() != req.params.height.is_some() {
+            return Err(ProviderError::msg("宽度和高度须同时设置"));
+        }
+        if req.params.width.is_none() && rules["width"]["nullable"].as_bool() != Some(true) {
+            return Err(ProviderError::msg("此路由需要指定宽度和高度"));
+        }
+        if let (Some(w), Some(h)) = (req.params.width, req.params.height) {
+            let area = u64::from(w) * u64::from(h);
+            if area < m.route["minPixels"].as_u64().unwrap_or(1)
+                || area > m.route["maxPixels"].as_u64().unwrap_or(u64::MAX)
+                || w.max(h) as f64 / w.min(h) as f64 > m.route["maxAspect"].as_f64().unwrap_or(16.0)
+            {
+                return Err(ProviderError::msg(
+                    "Seedream 输出面积或宽高比超过此路由限制",
+                ));
+            }
+        }
     }
     if m.family != "flux" && !req.regions.is_empty() {
         return Err(ProviderError::msg("此模型不支持 FLUX 区域协议"));

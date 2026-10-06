@@ -499,7 +499,18 @@ function KeySettingsCard({
           </>
         )}
         <button
-          disabled={busy || !configured || changed}
+          disabled={
+            busy ||
+            !configured ||
+            changed ||
+            provider === "ark" ||
+            provider === "byteplus"
+          }
+          title={
+            provider === "ark" || provider === "byteplus"
+              ? "请通过实际生成确认密钥和模型权限"
+              : undefined
+          }
           onClick={() => void run("check")}
         >
           检查连接

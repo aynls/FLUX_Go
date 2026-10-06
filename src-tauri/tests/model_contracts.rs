@@ -2,7 +2,7 @@
 use base64::Engine;
 use lutriui_lib::{
     models,
-    provider::{comfy, openrouter, parse_data_url, runware, GenerateRequest},
+    provider::{ark, comfy, google, openrouter, parse_data_url, runware, GenerateRequest},
 };
 use serde_json::{json, Value};
 
@@ -60,6 +60,8 @@ fn every_catalog_route_builds_a_provider_native_request() {
                 "openrouter" => openrouter::build_payload(&request),
                 "bfl" => lutriui_lib::provider::bfl::build_payload(&request),
                 "comfy" => comfy::build_payload(&request),
+                "google" => google::build_payload(&request),
+                "ark" | "byteplus" => ark::build_payload(&request),
                 "runware" => {
                     runware::build_payload(&request, "50836053-a0ee-4cf5-b9d6-ae7c5d140ada")
                 }
@@ -75,6 +77,173 @@ fn every_catalog_route_builds_a_provider_native_request() {
             }
         }
     }
+}
+
+#[test]
+fn gemini_native_requests_preserve_reference_order_and_route_configuration() {
+    let mut request = req(
+        "google",
+        "gemini-3.1-flash-image",
+        json!({"resolution":"512","aspectRatio":"8:1"}),
+    );
+    request.images = vec![png(false), png(true)];
+    let payload = google::build_payload(&request).unwrap();
+    let parts = payload["contents"][0]["parts"].as_array().unwrap();
+    assert_eq!(parts.len(), 3);
+    assert_eq!(
+        parts[0]["inlineData"]["data"],
+        request.images[0].split_once(',').unwrap().1
+    );
+    assert_eq!(
+        parts[1]["inlineData"]["data"],
+        request.images[1].split_once(',').unwrap().1
+    );
+    assert_eq!(parts[2]["text"], request.final_prompt);
+    assert_eq!(
+        payload["generationConfig"]["responseFormat"]["image"]["imageSize"],
+        "512"
+    );
+    assert!(payload["generationConfig"].get("imageConfig").is_none());
+    request.provider = "comfy".into();
+    request.params.resolution = Some("2K".into());
+    request.params.output_format = Some("jpeg".into());
+    let body = comfy::build_payload(&request).unwrap();
+    assert_eq!(
+        body["generationConfig"]["imageConfig"]["imageOutputOptions"]["mimeType"],
+        "image/jpeg"
+    );
+    assert!(body["generationConfig"].get("responseFormat").is_none());
+    request.provider = "google".into();
+    assert!(google::build_payload(&request).is_err());
+}
+
+#[test]
+fn seedream_official_sizes_are_independent_from_aggregator_constraints() {
+    for provider in ["ark", "byteplus"] {
+        models::validate(&req(
+            provider,
+            "seedream-5-pro",
+            json!({"resolution":"1.5K"}),
+        ))
+        .unwrap();
+        models::validate(&req(
+            provider,
+            "seedream-5-pro",
+            json!({"width":2816,"height":1584}),
+        ))
+        .unwrap();
+        models::validate(&req(
+            provider,
+            "seedream-5-lite",
+            json!({"resolution":"4K"}),
+        ))
+        .unwrap();
+        models::validate(&req(
+            provider,
+            "seedream-5-lite",
+            json!({"width":4096,"height":4096}),
+        ))
+        .unwrap();
+        assert!(models::validate(&req(
+            provider,
+            "seedream-5-pro",
+            json!({"width":4096,"height":4096})
+        ))
+        .is_err());
+    }
+    assert!(
+        models::validate(&req("comfy", "seedream-5-lite", json!({"resolution":"4K"}))).is_err()
+    );
+    assert!(models::validate(&req(
+        "comfy",
+        "seedream-5-pro",
+        json!({"width":2816,"height":1584})
+    ))
+    .is_err());
+}
+
+#[test]
+fn runware_gemini_uses_each_models_exact_dimensions_and_reference_auto_resolution() {
+    for (model, width) in [
+        ("gemini-3.1-flash-image", 1584),
+        ("gemini-3-pro-image", 1548),
+    ] {
+        let mut request = req(
+            "runware",
+            model,
+            json!({"resolution":"1K","aspectRatio":"21:9","seed":123}),
+        );
+        let p = runware::build_payload(&request, "test-id").unwrap();
+        assert_eq!(p[0]["width"], width);
+        assert_eq!(p[0]["height"], 672);
+        assert_eq!(p[0]["seed"], 123);
+        assert!(p[0].get("resolution").is_none());
+        request.params.aspect_ratio = Some("auto".into());
+        assert!(runware::build_payload(&request, "test-id").is_err());
+        request.images = vec![png(false)];
+        let p = runware::build_payload(&request, "test-id").unwrap();
+        assert_eq!(p[0]["resolution"], "1K");
+        assert!(p[0].get("width").is_none());
+    }
+}
+
+#[test]
+fn seedream_official_regions_have_distinct_model_ids_and_lite_returns_one_image() {
+    for (provider, prefix) in [("ark", "doubao-"), ("byteplus", "dola-")] {
+        let mut request = req(
+            provider,
+            "seedream-5-pro",
+            json!({"width":1024,"height":1024,"seed":42,"outputFormat":"png","watermark":false}),
+        );
+        request.images = vec![png(false), png(true)];
+        let body = ark::build_payload(&request).unwrap();
+        assert_eq!(body["model"], format!("{prefix}seedream-5-0-pro-260628"));
+        assert_eq!(body["image"], json!(request.images));
+        assert_eq!(body["size"], "1024x1024");
+        assert_eq!(body["seed"], 42);
+        assert!(body.get("mask").is_none());
+        request.model = "seedream-5-lite".into();
+        request.params.width = None;
+        request.params.height = None;
+        request.params.resolution = Some("3K".into());
+        let body = ark::build_payload(&request).unwrap();
+        assert_eq!(body["sequential_image_generation"], "disabled");
+        assert_eq!(body["size"], "3K");
+        assert_eq!(
+            body["model"],
+            if provider == "ark" {
+                "doubao-seedream-5-0-260128"
+            } else {
+                "seedream-5-0-260128"
+            }
+        );
+    }
+    let request = req(
+        "runware",
+        "seedream-5-lite",
+        json!({"resolution":"3K","aspectRatio":"16:9"}),
+    );
+    let body = runware::build_payload(&request, "test-id").unwrap();
+    assert_eq!(body[0]["width"], 4096);
+    assert_eq!(body[0]["height"], 2304);
+    assert_eq!(body[0]["settings"]["maxSequentialImages"], 1);
+    assert!(body[0].get("resolution").is_none());
+}
+
+#[tokio::test]
+async fn gemini_results_ignore_thought_images_and_support_mixed_image_parts() {
+    let encoded = png(false);
+    let body = json!({"candidates":[{"content":{"parts":[{"text":"description"},{"thought":true,"inlineData":{"data":encoded.split_once(',').unwrap().1,"mimeType":"image/png"}},{"inlineData":{"data":encoded.split_once(',').unwrap().1,"mimeType":"image/png"}},{"fileData":{"fileUri":encoded,"mimeType":"image/png"}}]}}],"usageMetadata":{"totalTokenCount":123}});
+    let request = req("comfy", "gemini-3-pro-image", json!({}));
+    let result = comfy::normalize(&request, &body, None).await.unwrap();
+    assert_eq!(result.images.len(), 2);
+    assert_eq!(result.usage["totalTokenCount"], 123);
+    assert!(result.usage.get("cost").is_none());
+    assert!(
+        google::images(&json!({"candidates":[{"content":{"parts":[{"text":"refusal"}]}}]}))
+            .await
+            .is_err()
+    );
 }
 #[test]
 fn qwen_auto_size_is_omitted_and_runware_output_options_are_mapped() {

@@ -53,6 +53,8 @@ const FAMILY_ICONS = {
   flux: "/flux.png",
   gpt: "/openai.png",
   qwen: "/qwen-color.png",
+  gemini: "/nano-banana.png",
+  seedream: "/seeddream.png",
 };
 
 export default function App() {
@@ -602,7 +604,7 @@ export default function App() {
             >
               <img
                 className={
-                  "family-icon" + (f.id === "qwen" ? "" : " monochrome")
+                  "family-icon" + (["flux", "gpt"].includes(f.id) ? " monochrome" : "")
                 }
                 src={FAMILY_ICONS[f.id]}
                 width={20}

@@ -49,7 +49,15 @@ function parseBackendError(e: unknown): AppError {
 
 export async function providerStatus(): Promise<ProviderStatus> {
   if (!isTauri())
-    return { openrouter: false, bfl: false, comfy: false, runware: false };
+    return {
+      openrouter: false,
+      bfl: false,
+      comfy: false,
+      runware: false,
+      google: false,
+      ark: false,
+      byteplus: false,
+    };
   return invoke<ProviderStatus>("provider_status");
 }
 export const isDesktop = () => isTauri();

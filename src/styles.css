@@ -267,6 +267,7 @@ h3 {
 .family-tabs {
   min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   min-width: 0;
 }

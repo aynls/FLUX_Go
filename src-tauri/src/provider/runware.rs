@@ -82,6 +82,48 @@ pub fn build_payload(req: &GenerateRequest, task_id: &str) -> Result<Value, Prov
                     json!(p.prompt_extend_mode.as_deref().unwrap_or("direct"));
             }
         }
+        "gemini" => {
+            let aspect = p.aspect_ratio.as_deref().unwrap_or("1:1");
+            let resolution = p.resolution.as_deref().unwrap_or("1K");
+            if aspect == "auto" {
+                task["resolution"] = json!(if resolution == "512" {
+                    "0.5K"
+                } else {
+                    resolution
+                });
+            } else {
+                let key = m.route["dimensionsKey"].as_str().unwrap_or(m.id);
+                let pair = crate::models::catalog()["imageDimensions"][key][resolution][aspect]
+                    .as_array()
+                    .ok_or_else(|| ProviderError::msg("Gemini 分辨率或比例无效"))?;
+                task["width"] = pair[0].clone();
+                task["height"] = pair[1].clone();
+            }
+            if let Some(seed) = p.seed {
+                task["seed"] = json!(seed);
+            }
+        }
+        "seedream" => {
+            if let Some(key) = m.route["dimensionsKey"].as_str() {
+                let pair = crate::models::catalog()["imageDimensions"][key]
+                    [p.resolution.as_deref().unwrap_or("2K")]
+                    [p.aspect_ratio.as_deref().unwrap_or("1:1")]
+                .as_array()
+                .ok_or_else(|| ProviderError::msg("Seedream 分辨率或比例无效"))?;
+                task["width"] = pair[0].clone();
+                task["height"] = pair[1].clone();
+            } else {
+                task["width"] = json!(p
+                    .width
+                    .ok_or_else(|| ProviderError::msg("Seedream 需要输出宽度"))?);
+                task["height"] = json!(p
+                    .height
+                    .ok_or_else(|| ProviderError::msg("Seedream 需要输出高度"))?);
+            }
+            if m.id == "seedream-5-lite" {
+                task["settings"] = json!({"maxSequentialImages":1});
+            }
+        }
         _ => return Err(ProviderError::msg("Runware 尚未实现该模型家族的编码")),
     }
     Ok(json!([task]))
