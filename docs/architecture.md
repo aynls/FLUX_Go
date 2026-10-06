@@ -9,13 +9,15 @@ LutriUI 将模型契约、工作区和供应商传输分开。新增模型时，
 | `shared/model-catalog.json` | 前后端共用的模型目录：家族、版本、供应商模型编号、参数规则、参考图上限、蒙版能力和文档来源          |
 | `src/models/`               | 参数投影、模型校验和请求编译；FLUX 协议位于 `flux/protocol.ts`                                      |
 | `src/workspaces/`           | 按家族注册的参数侧栏与工作区；通用控件和素材列表位于 `shared/`                                      |
-| `src/app/useWorkspace.ts`   | 草稿、家族切换、撤销、偏好和持久化                                                                  |
+| `src/app/useWorkspace.ts`   | 任务草稿、模型切换、撤销、偏好和持久化                                                                  |
 | `src/app/generation.ts`     | 输入处理、生成快照、结果和历史材料组装                                                              |
 | `src/components/`           | 画布、历史、设置、结果展示等通用交互                                                                |
 | `src-tauri/src/models.rs`   | 读取同一模型目录，校验每个付费请求的路由、字段和输入约束                                            |
 | `src-tauri/src/provider/`   | 各供应商的原生请求、鉴权、轮询和结果处理；凭据与共享传输分别位于 `credentials.rs`、`transport.rs` |
 
-`Draft` 保存规范模型编号 `modelId`，供应商原生编号放在路由目录中。`routeSettings` 按模型和供应商保存参数；切回时恢复原设置，新路由会投影共享参数并显示调整摘要。发送时只使用当前路由白名单中的字段。切换到不支持蒙版的路由时，保留蒙版并阻止提交，供用户切回或移除。供应商不会自动切换。
+`Draft` 保存规范模型编号 `modelId`，供应商原生编号放在路由目录中。`routeSettings` 按模型和供应商保存参数；切回时恢复原设置，同家族的新路由会投影共享参数，不同家族首次使用其新建默认值。发送时只使用当前路由白名单中的字段。切换到不支持蒙版的路由时，保留蒙版并阻止提交，供用户切回或移除。供应商不会自动切换。
+
+草稿格式为 `Draft.schema = 4`，会话格式为 `WorkspaceSession.schema = 2`。`tasks.create` 和 `tasks.edit` 保存两份任务内容，撤销栈在当前会话中分别管理，`familyRoutes` 记忆每个家族最近使用的模型与供应商。模型选择不再切换整份草稿，结果也按生成/编辑任务归属。会话写入 `workbench/session.json`；不迁移旧格式。损坏文件继续保留，直到用户明确新建方案。
 
 ## 已接入的组合
 

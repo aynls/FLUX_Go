@@ -115,7 +115,16 @@ mock.module("./lib/api", () => ({
     ark: true,
     byteplus: true,
   }),
-  draftLoad: async () => initial,
+  draftLoad: async () =>
+    initial && "tasks" in initial
+      ? initial
+      : initial
+        ? {
+            schema: 2,
+            activeIntent: initial.intent,
+            tasks: { [initial.intent]: initial },
+          }
+        : null,
   draftSave: async (d: Draft | WorkspaceSession) => {
     draftWrites.push(d);
   },
@@ -405,7 +414,7 @@ test("history keeps multiple results and restores the GPT mask into its own work
   ).toBe(false);
 });
 
-test("new image families expose official routes, color icons and independent persisted drafts", async () => {
+test("new image families expose official routes, color icons and independent route settings with shared task content", async () => {
   const ui = render(<App />);
   await waitFor(() =>
     expect(
@@ -451,9 +460,9 @@ test("new image families expose official routes, color icons and independent per
     target: { value: "BytePlus image" },
   });
   await waitFor(() =>
-    expect(
-      (draftWrites.at(-1) as WorkspaceSession)?.workspaces.seedream?.prompt,
-    ).toBe("BytePlus image"),
+    expect((draftWrites.at(-1) as WorkspaceSession)?.tasks.create?.prompt).toBe(
+      "BytePlus image",
+    ),
   );
   initial = draftWrites.at(-1)!;
   ui.unmount();
@@ -480,7 +489,7 @@ test("new image families expose official routes, color icons and independent per
   expect(
     (restarted.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement)
       .value,
-  ).toBe("Google image");
+  ).toBe("BytePlus image");
 });
 
 test("GPT native parameters are sent and all results can be selected and exported", async () => {
@@ -532,7 +541,7 @@ test("GPT native parameters are sent and all results can be selected and exporte
   );
   expect(ui.getByText(/123 Credits/)).toBeTruthy();
   expect(savedItem!.cost).toBeNull();
-  fireEvent.click(ui.getByRole("button", { name: "另存为" }));
+  fireEvent.click(await ui.findByRole("button", { name: "另存为" }));
   await waitFor(() => expect(exportPath).toEndWith("-2.webp"));
 });
 
@@ -754,7 +763,7 @@ test("in-flight snapshot is immutable; result does not overwrite newer draft or 
   expect(savedItem!.recipe!.refIds).toEqual(["a"]);
   expect(submitted!.params.version).toBe("latest");
   expect(ui.getByRole("button", { name: "另存为" })).toBeTruthy();
-  fireEvent.click(ui.getByRole("button", { name: "另存为" }));
+  fireEvent.click(await ui.findByRole("button", { name: "另存为" }));
   await waitFor(() =>
     expect(exportPath).toBe(
       "D:\\Pictures\\LutriUI\\lutriui-" + savedItem!.id.slice(0, 8) + ".png",
@@ -884,6 +893,56 @@ test("continuing an edit replaces the primary, retains reference roles, and star
   ).toBe("old <ref_image_1> instruction");
 });
 
+test("cross-model editing keeps the main image, prompt and mask, and model changes undo", async () => {
+  const image = {
+    uid: "main",
+    name: "main",
+    dataUrl: "data:image/png;base64,YQ==",
+    width: 1024,
+    height: 1024,
+  };
+  initial = {
+    ...newDraft(undefined, "gpt"),
+    provider: "comfy",
+    intent: "edit",
+    baseId: "main",
+    refs: [image],
+    mask: { ...image, name: "mask" },
+    prompt: "make it snow",
+  };
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement)
+        .value,
+    ).toBe("make it snow"),
+  );
+  fireEvent.click(ui.getByRole("tab", { name: "Gemini Image" }));
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("make it snow");
+  expect(ui.getByText("main")).toBeTruthy();
+  expect(
+    ui.getByRole("button", { name: /^应用编辑 ·/ }).hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.click(ui.getByRole("button", { name: "移除蒙版" }));
+  expect(
+    ui.getByRole("button", { name: /^应用编辑 ·/ }).hasAttribute("disabled"),
+  ).toBe(false);
+  fireEvent.click(ui.getByRole("button", { name: "撤销 Ctrl+Z" }));
+  expect(ui.getByRole("button", { name: "移除蒙版" })).toBeTruthy();
+  fireEvent.click(ui.getByRole("button", { name: "撤销 Ctrl+Z" }));
+  expect(
+    ui
+      .getByRole("tab", { name: "GPT Image 2.5" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(ui.getByRole("img", { name: "主图与黑色编辑蒙版" })).toBeTruthy();
+  expect(
+    (ui.getByRole("combobox", { name: "提供商" }) as HTMLSelectElement).value,
+  ).toBe("comfy");
+});
+
 test("generation and editing keep independent inputs, parameters and undo across restart", async () => {
   initial = { ...newDraft(undefined, "gpt"), prompt: "new scene" };
   const ui = render(<App />);
@@ -922,8 +981,7 @@ test("generation and editing keep independent inputs, parameters and undo across
   await waitFor(() =>
     expect(
       draftWrites.at(-1) &&
-        (draftWrites.at(-1) as WorkspaceSession).taskWorkspaces?.["gpt:edit"]
-          ?.prompt,
+        (draftWrites.at(-1) as WorkspaceSession).tasks.edit?.prompt,
     ).toBe("change the light"),
   );
   initial = draftWrites.at(-1)!;

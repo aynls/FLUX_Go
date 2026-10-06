@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { migrateDraft, newDraft, outputEstimate } from "../lib/workspace";
+import { readDraft, newDraft, outputEstimate } from "../lib/workspace";
 import { catalog, changeRoute, defaultsFor } from "./catalog";
 import { buildRequest, validateModel } from ".";
 import { estimateComfyCredits } from "./pricing";
@@ -81,7 +81,9 @@ test("Nano Banana 2.1 switches without losing old model settings or edit inputs"
   };
   expect(previous.modelId).toBe("gemini-3.1-flash-image");
   const selected = changeRoute(
-    previous, "openrouter", "gemini-nano-banana-2.1",
+    previous,
+    "openrouter",
+    "gemini-nano-banana-2.1",
   );
   expect(selected.params.resolution).toBe("1K");
   expect(selected.params.aspectRatio).toBe("8:1");
@@ -104,7 +106,10 @@ test("Nano Banana 2.1 switches without losing old model settings or edit inputs"
       params: { resolution: "4K", aspectRatio: "8:1" },
     };
     expect(validateModel(draft)).toEqual([]);
-    const request = buildRequest(draft, refs.map((r) => r.dataUrl));
+    const request = buildRequest(
+      draft,
+      refs.map((r) => r.dataUrl),
+    );
     expect(request.model).toBe("gemini-nano-banana-2.1");
     expect(request.images).toEqual(refs.map((r) => r.dataUrl));
     expect(request.params).toEqual({
@@ -112,7 +117,7 @@ test("Nano Banana 2.1 switches without losing old model settings or edit inputs"
       aspectRatio: "8:1",
       ...(provider === "openrouter" ? { count: 1 } : {}),
     });
-    expect(migrateDraft(JSON.parse(JSON.stringify(draft)))).toMatchObject(draft);
+    expect(readDraft(JSON.parse(JSON.stringify(draft)))).toMatchObject(draft);
     expect(
       validateModel({ ...draft, refs: [...refs, refs[0]] }).join(),
     ).toContain("14");

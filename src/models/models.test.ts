@@ -2,9 +2,10 @@ import { expect, test } from "bun:test";
 import {
   newDraft,
   DEFAULT_PREFERENCES,
-  migrateDraft,
-  migrateSession,
+  readDraft,
+  readSession,
   validateDraft,
+  changeFamily,
 } from "../lib/workspace";
 import { buildRequest, compileDraft } from ".";
 import { changeRoute } from "./catalog";
@@ -135,69 +136,112 @@ test("Qwen editing mode and route area limits are enforced", () => {
   );
   expect(request.params.promptExtendMode).toBeUndefined();
 });
-test("v2 FLUX drafts migrate and future versions never overwrite local data", () => {
-  const { family: _, modelId: __, mask: ___, ...old } = newDraft();
-  const migrated = migrateDraft({ ...old, schema: 2, prompt: "older work" });
-  expect(migrated.family).toBe("flux");
-  expect(migrated.schema).toBe(3);
-  expect(migrated.prompt).toBe("older work");
-  const session = migrateSession({
-    schema: 1,
-    activeFamily: "gpt",
-    workspaces: { flux: migrated, gpt: newDraft(DEFAULT_PREFERENCES, "gpt") },
+test("task sessions restore content and reject incompatible or mismatched data", () => {
+  const create = { ...newDraft(), prompt: "new work" };
+  const edit = {
+    ...newDraft(DEFAULT_PREFERENCES, "gpt"),
+    intent: "edit" as const,
+    prompt: "edit work",
+  };
+  const session = readSession({
+    schema: 2,
+    activeIntent: "edit",
+    tasks: { create, edit },
   });
-  expect(session?.workspaces.flux?.prompt).toBe("older work");
-  const edit = { ...newDraft(), intent: "edit" as const, prompt: "edit work" };
-  const tasks = migrateSession({
-    schema: 1,
-    activeFamily: "flux",
-    workspaces: { flux: migrated },
-    taskWorkspaces: { "flux:create": migrated, "flux:edit": edit },
-  });
-  expect(tasks?.taskWorkspaces?.["flux:create"]?.prompt).toBe("older work");
-  expect(tasks?.taskWorkspaces?.["flux:edit"]?.prompt).toBe("edit work");
+  expect(session?.tasks.create?.prompt).toBe("new work");
+  expect(session?.tasks.edit?.prompt).toBe("edit work");
+  expect(session?.activeIntent).toBe("edit");
   expect(() =>
-    migrateSession({
-      schema: 1,
-      activeFamily: "flux",
-      workspaces: { flux: migrated },
-      taskWorkspaces: { "flux:create": edit },
-    }),
+    readSession({ schema: 2, activeIntent: "create", tasks: { create: edit } }),
   ).toThrow("工作区任务不匹配");
-  expect(() => migrateSession({ ...old, schema: 999 })).toThrow();
+  expect(() => readSession({ schema: 999 })).toThrow();
+  expect(() => readDraft({ ...create, schema: 3 })).toThrow();
 });
-test("legacy overlay selection does not rewrite the actual API order or original prompt", () => {
-  const old = {
+test("restoring a main image order remaps exact image tags together", () => {
+  const draft = {
     ...newDraft(),
+    intent: "edit" as const,
     prompt: "Edit <ref_image_0> using <ref_image_1>",
-    baseId: "preview",
+    baseId: "main",
     refs: [
       {
-        uid: "actual-first",
-        name: "first",
+        uid: "reference",
+        name: "reference",
         dataUrl: "a",
         width: 1024,
         height: 1024,
       },
+      { uid: "main", name: "main", dataUrl: "b", width: 1024, height: 1024 },
+    ],
+  };
+  const restored = readDraft(JSON.parse(JSON.stringify(draft)));
+  expect(restored.baseId).toBe("main");
+  expect(
+    buildRequest(
+      restored,
+      restored.refs.map((r) => r.dataUrl),
+    ).images,
+  ).toEqual(["b", "a"]);
+  expect(restored.prompt).toBe("Edit <ref_image_1> using <ref_image_0>");
+  expect(compileDraft(restored).finalPrompt).toContain(
+    "Edit <ref_image_0> as the primary image",
+  );
+});
+test("changing model families retains creative content and restores independent route values", () => {
+  const source = {
+    ...changeRoute(newDraft(undefined, "gpt"), "comfy"),
+    intent: "edit" as const,
+    prompt: "replace the sky",
+    baseId: "main",
+    refs: [
+      { uid: "main", name: "main", width: 1024, height: 1024, dataUrl: "main" },
+    ],
+    mask: { name: "mask", width: 1024, height: 1024, dataUrl: "mask" },
+    repeatCount: 4,
+  };
+  source.params = { ...source.params, quality: "high", outputCompression: 82 };
+  const gemini = changeFamily(source, "gemini");
+  expect(gemini.refs).toEqual(source.refs);
+  expect(gemini.mask).toEqual(source.mask);
+  expect(gemini.prompt).toBe(source.prompt);
+  expect(gemini.baseId).toBe("main");
+  expect(gemini.repeatCount).toBe(4);
+  expect(validateDraft(gemini).join()).toContain("不支持蒙版");
+  const google = changeRoute(gemini, "google", "gemini-nano-banana-2.1");
+  const gpt = changeFamily({ ...google, prompt: "new instruction" }, "gpt");
+  expect(gpt.provider).toBe("comfy");
+  expect(gpt.params).toEqual(source.params);
+  expect(gpt.prompt).toBe("new instruction");
+  expect(gpt.mask).toEqual(source.mask);
+  const back = changeFamily(gpt, "gemini");
+  expect(back.modelId).toBe("gemini-nano-banana-2.1");
+  expect(back.provider).toBe("google");
+});
+test("unsupported regions block until explicitly paused and return intact", () => {
+  const d = {
+    ...newDraft(),
+    prompt: "an oak",
+    layoutEnabled: true,
+    boxes: [
       {
-        uid: "preview",
-        name: "preview",
-        dataUrl: "b",
-        width: 1024,
-        height: 1024,
+        id: "tree",
+        role: "place" as const,
+        desc: "oak",
+        rect: { x: 0, y: 0, w: 512, h: 512 },
       },
     ],
   };
-  delete old.intent;
-  const migrated = migrateDraft(JSON.parse(JSON.stringify(old)));
-  expect(migrated.baseId).toBe("actual-first");
+  const next = changeFamily(d, "gemini");
+  expect(validateDraft(next).join()).toContain("此模型不支持区域");
+  const paused = { ...next, layoutEnabled: false };
+  expect(validateDraft(paused)).toEqual([]);
+  expect(buildRequest(paused, []).regions).toEqual([]);
+  const back = changeFamily(paused, "flux");
+  expect(back.boxes).toEqual(d.boxes);
+  expect(buildRequest(back, []).regions).toEqual([]);
   expect(
-    buildRequest(
-      migrated,
-      migrated.refs.map((r) => r.dataUrl),
-    ).images,
-  ).toEqual(["a", "b"]);
-  expect(compileDraft(migrated).finalPrompt).toBe(old.prompt);
+    buildRequest({ ...back, layoutEnabled: true }, []).regions,
+  ).toHaveLength(1);
 });
 test("route round trips restore original values and preserve inactive parameters", () => {
   let d = changeRoute(newDraft(DEFAULT_PREFERENCES, "qwen"), "runware");
@@ -209,7 +253,7 @@ test("route round trips restore original values and preserve inactive parameters
   ).toBeUndefined();
   expect(changeRoute(other, "runware").params.count).toBe(20);
   expect(changeRoute(other, "runware").params.negativePrompt).toBe("no text");
-  expect(migrateDraft(JSON.parse(JSON.stringify(other))).routeSettings).toEqual(
+  expect(readDraft(JSON.parse(JSON.stringify(other))).routeSettings).toEqual(
     other.routeSettings,
   );
 });

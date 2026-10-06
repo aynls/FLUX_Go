@@ -119,7 +119,8 @@ export function changeRoute(
   provider: ProviderId,
   modelId = d.modelId,
 ): Draft {
-  const next = { ...d, provider, modelId };
+  const family = modelById(modelId)!.family;
+  const next = { ...d, family, provider, modelId };
   // Keep unsupported data (including masks and refs) for returning to the previous route.
   // Each route keeps its own values; new routes project shared values with visible feedback.
   const defaults = defaultsFor(modelId, provider);
@@ -130,7 +131,8 @@ export function changeRoute(
   };
   const params = {
     ...defaults,
-    ...(routeSettings[routeKey(modelId, provider)] ?? d.params),
+    ...(routeSettings[routeKey(modelId, provider)] ??
+      (family === d.family ? d.params : {})),
   };
   for (const [key, field] of Object.entries(fieldsFor(next))) {
     const value = params[key];
@@ -154,7 +156,16 @@ export function changeRoute(
     if (field.kind === "size" && value === "auto" && !field.allowAuto)
       params[key] = defaults[key];
   }
-  return { ...next, params, routeSettings };
+  return {
+    ...next,
+    params,
+    routeSettings,
+    familyRoutes: {
+      ...d.familyRoutes,
+      [d.family]: { modelId: d.modelId, provider: d.provider },
+      [family]: { modelId, provider },
+    },
+  };
 }
 export function validateFields(d: Draft): string[] {
   const route = routeFor(d);

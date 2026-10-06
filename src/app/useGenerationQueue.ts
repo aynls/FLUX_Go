@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import * as api from "../lib/api";
-import { migrateDraft, taskIntent } from "../lib/workspace";
+import { readDraft, taskIntent } from "../lib/workspace";
 import { routeFor, singleImageDraft } from "../models/catalog";
 import { makeThumb } from "../lib/image";
 import {
@@ -279,7 +279,7 @@ export function useGenerationQueue(
                   name: item.recipe.maskName ?? "编辑蒙版",
                 }
               : null;
-            const snapshot = migrateDraft({ ...item.recipe, refs, mask });
+            const snapshot = readDraft({ ...item.recipe, refs, mask });
             const job: Job = queuedGeneration(snapshot);
             if (item.batch)
               job.snapshots = item.batch.requests.map((request) => ({

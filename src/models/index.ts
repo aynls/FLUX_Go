@@ -55,8 +55,8 @@ export function validateModel(d: Draft) {
   if (length > maxPrompt) errors.push(`编译后的提示词超过 ${maxPrompt} 字符`);
   if (length > 0 && length < (routeFor(d)?.minPrompt ?? 1))
     errors.push(`此路由提示词至少需要 ${routeFor(d)?.minPrompt} 个字符`);
-  if (d.family !== "flux" && d.boxes.length)
-    errors.push("此模型不支持 FLUX 区域协议，请使用对应模型工作区");
+  if (d.family !== "flux" && d.boxes.length && d.layoutEnabled !== false)
+    errors.push("此模型不支持区域，请暂不使用区域或切换到 FLUX");
   if (d.family === "flux" && d.provider === "runware") {
     if (!d.refs.length && !d.boxes.length)
       errors.push("Runware FLUX 文生图需要至少一个放置区域，请在画布上画框");

@@ -98,7 +98,26 @@ export function RouteControls({
         <button onClick={onSettings}>设置</button>
       </div>
       {!!d.mask && !routeFor(d)?.mask && (
-        <p className="error-text">当前供应商不支持蒙版</p>
+        <div className="route-warning">
+          <p className="error-text">当前模型与供应商不支持蒙版。蒙版已保留。</p>
+          <button onClick={() => onChange({ ...d, mask: null, maskRects: [] })}>
+            移除蒙版
+          </button>
+        </div>
+      )}
+      {d.family !== "flux" && d.boxes.length > 0 && (
+        <div className="route-warning">
+          <p className={d.layoutEnabled === false ? "help" : "error-text"}>
+            {d.layoutEnabled === false
+              ? `保留 ${d.boxes.length} 个区域，当前不会发送。`
+              : "此模型不支持区域。可暂停使用，切回 FLUX 后恢复。"}
+          </p>
+          {d.layoutEnabled !== false && (
+            <button onClick={() => onChange({ ...d, layoutEnabled: false })}>
+              暂不使用区域
+            </button>
+          )}
+        </div>
       )}
     </section>
   );

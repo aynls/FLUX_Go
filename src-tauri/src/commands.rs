@@ -145,7 +145,8 @@ pub async fn draft_load(app: tauri::AppHandle) -> Result<Option<serde_json::Valu
         .path()
         .app_data_dir()
         .map_err(|e| e.to_string())?
-        .join("draft.json");
+        .join("workbench")
+        .join("session.json");
     if !p.exists() {
         return Ok(None);
     }
@@ -162,9 +163,14 @@ pub async fn draft_save(
     draft: serde_json::Value,
 ) -> Result<(), String> {
     let _guard = state.draft_lock.lock().map_err(|_| "草稿存储暂不可用")?;
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let p = dir.join("draft.json");
-    let tmp = dir.join("draft.json.tmp");
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("workbench");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let p = dir.join("session.json");
+    let tmp = dir.join("session.json.tmp");
     let json = serde_json::to_vec(&draft).map_err(|e| e.to_string())?;
     std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
     std::fs::rename(tmp, p).map_err(|e| e.to_string())

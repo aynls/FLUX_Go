@@ -140,28 +140,24 @@ export default function Sidebar(p: SidebarProps) {
           <h2>输出</h2>
           <ParameterFields {...p} keys={["resolution", "aspectRatio"]} />
         </section>
-        {taskIntent(d) === "create" && (
-          <section>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={regionsEnabled(d)}
-                disabled={requiresLayout(d)}
-                onChange={(e) =>
-                  p.onChange({ ...d, layoutEnabled: e.target.checked })
-                }
-              />
-              区域构图
-            </label>
-            {requiresLayout(d) ? (
-              <p className="help">此路由需要至少一个放置区域。</p>
-            ) : !regionsEnabled(d) && d.boxes.length > 0 ? (
-              <p className="help">
-                保留 {d.boxes.length} 个区域，当前不会发送。
-              </p>
-            ) : null}
-          </section>
-        )}
+        <section>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={regionsEnabled(d)}
+              disabled={requiresLayout(d)}
+              onChange={(e) =>
+                p.onChange({ ...d, layoutEnabled: e.target.checked })
+              }
+            />
+            {taskIntent(d) === "create" ? "区域构图" : "区域编辑"}
+          </label>
+          {requiresLayout(d) ? (
+            <p className="help">此路由需要至少一个放置区域。</p>
+          ) : !regionsEnabled(d) && d.boxes.length > 0 ? (
+            <p className="help">保留 {d.boxes.length} 个区域，当前不会发送。</p>
+          ) : null}
+        </section>
         {regionsEnabled(d) && (
           <section>
             <div className="section-heading">

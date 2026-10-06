@@ -19,6 +19,7 @@ import {
   providers,
   catalog,
   routeFor,
+  changeRoute,
 } from "../models/catalog";
 import { validateModel } from "../models";
 import { gptSize } from "../models/gpt";
@@ -53,7 +54,7 @@ export function newDraft(
     ...saved?.params,
   };
   return {
-    schema: 3,
+    schema: 4,
     intent: "create",
     showBase: true,
     family,
@@ -71,12 +72,12 @@ export function newDraft(
   };
 }
 
-export function migrateDraft(value: unknown): Draft {
+export function readDraft(value: unknown): Draft {
   if (!value || typeof value !== "object") throw new Error("草稿内容无效");
   const raw = value as Record<string, unknown>;
-  if (raw.schema !== 2 && raw.schema !== 3) throw new Error("草稿版本不兼容");
-  const family = raw.schema === 2 ? "flux" : raw.family;
-  const modelId = raw.schema === 2 ? "flux-3-image" : raw.modelId;
+  if (raw.schema !== 4) throw new Error("草稿版本不兼容");
+  const family = raw.family;
+  const modelId = raw.modelId;
   const model = typeof modelId === "string" ? modelById(modelId) : undefined;
   if (
     !model ||
@@ -87,6 +88,7 @@ export function migrateDraft(value: unknown): Draft {
   const canvas = raw.canvas as Draft["canvas"] | undefined;
   if (
     !Array.isArray(raw.refs) ||
+    (raw.intent !== "create" && raw.intent !== "edit") ||
     !Array.isArray(raw.boxes) ||
     !canvas ||
     !Number.isFinite(canvas.w) ||
@@ -106,10 +108,10 @@ export function migrateDraft(value: unknown): Draft {
       !(ref.width > 0 && ref.height > 0)
     )
       throw new Error("草稿参考图无效");
-  const migrated = withIds({
+  const draft = withIds({
     ...newDraft(DEFAULT_PREFERENCES, model.family),
     ...raw,
-    schema: 3,
+    schema: 4,
     family: model.family,
     modelId: model.id,
     params: {
@@ -117,56 +119,56 @@ export function migrateDraft(value: unknown): Draft {
       ...raw.params,
     },
     mask: (raw.mask ?? null) as WorkingImage | null,
-    intent:
-      raw.intent === "create" || raw.intent === "edit" ? raw.intent : undefined,
   } as Draft);
-  // Legacy baseId was only a visual overlay. Preserve the old API order and prompt.
-  if (!migrated.intent)
-    return { ...migrated, baseId: migrated.refs[0]?.uid ?? null };
-  return taskIntent(migrated) === "edit" && migrated.refs.length
+  return taskIntent(draft) === "edit" && draft.refs.length
     ? setPrimaryImage(
-        migrated,
-        migrated.refs.find((r) => r.uid === migrated.baseId)?.uid ??
-          migrated.refs[0].uid!,
+        draft,
+        draft.refs.find((r) => r.uid === draft.baseId)?.uid ??
+          draft.refs[0].uid!,
       )
-    : migrated;
+    : draft;
 }
-export function migrateSession(value: unknown): WorkspaceSession | null {
+export function readSession(value: unknown): WorkspaceSession | null {
   if (value == null) return null;
   const raw = value as Partial<WorkspaceSession>;
-  if (raw.schema !== 1) {
-    const draft = migrateDraft(value);
-    return {
-      schema: 1,
-      activeFamily: draft.family,
-      workspaces: { [draft.family]: draft },
-    };
-  }
-  if (!raw.workspaces || !raw.activeFamily || !familyById(raw.activeFamily))
+  if (
+    raw.schema !== 2 ||
+    !raw.tasks ||
+    !["create", "edit"].includes(raw.activeIntent ?? "")
+  )
     throw new Error("工作区版本或内容不兼容");
-  const workspaces: WorkspaceSession["workspaces"] = {};
-  for (const [family, value] of Object.entries(raw.workspaces)) {
-    const draft = migrateDraft(value);
-    if (draft.family !== family) throw new Error("工作区家族不匹配");
-    workspaces[draft.family] = draft;
+  const tasks: WorkspaceSession["tasks"] = {};
+  for (const [key, value] of Object.entries(raw.tasks)) {
+    const draft = readDraft(value);
+    if (draft.intent !== key) throw new Error("工作区任务不匹配");
+    tasks[draft.intent] = draft;
   }
-  if (!workspaces[raw.activeFamily]) throw new Error("活动工作区缺失");
-  const taskWorkspaces: NonNullable<WorkspaceSession["taskWorkspaces"]> = {};
-  for (const draft of Object.values(workspaces))
-    if (draft) taskWorkspaces[workspaceKey(draft)] = draft;
-  for (const [key, value] of Object.entries(raw.taskWorkspaces ?? {})) {
-    const draft = migrateDraft(value);
-    if (workspaceKey(draft) !== key) throw new Error("工作区任务不匹配");
-    taskWorkspaces[workspaceKey(draft)] = draft;
-  }
-  const active = workspaces[raw.activeFamily]!;
-  taskWorkspaces[workspaceKey(active)] = active;
-  return {
-    schema: 1,
-    activeFamily: raw.activeFamily,
-    workspaces,
-    taskWorkspaces,
+  if (!tasks[raw.activeIntent!]) throw new Error("活动工作区缺失");
+  return { schema: 2, activeIntent: raw.activeIntent!, tasks };
+}
+/** A model change keeps the task's creative content and restores that route's controls. */
+export function changeFamily(
+  d: Draft,
+  family: FamilyId,
+  prefs = DEFAULT_PREFERENCES,
+): Draft {
+  if (family === d.family) return d;
+  const fallback = newDraft(prefs, family);
+  const route = d.familyRoutes?.[family] ?? {
+    modelId: fallback.modelId,
+    provider: fallback.provider,
   };
+  const key = route.modelId + ":" + route.provider;
+  const initialParams = d.familyRoutes?.[family]
+    ? defaultsFor(route.modelId, route.provider)
+    : fallback.params;
+  const next = changeRoute(
+    { ...d, routeSettings: { [key]: initialParams, ...d.routeSettings } },
+    route.provider,
+    route.modelId,
+  );
+  const size = outputEstimate(next);
+  return size.w > 0 && size.h > 0 ? resizeCanvas(next, size) : next;
 }
 export function withIds(d: Draft): Draft {
   let pool = [...(d.colorPool ?? [])].filter((c) =>
@@ -272,10 +274,10 @@ export function reorderRefs(d: Draft, refs: WorkingImage[]): Draft {
   };
 }
 export function taskIntent(d: Draft): TaskIntent {
-  return d.intent ?? (d.refs.length ? "edit" : "create");
+  return d.intent;
 }
 export function workspaceKey(d: Draft): WorkspaceKey {
-  return `${d.family}:${taskIntent(d)}`;
+  return taskIntent(d);
 }
 export function primaryImage(d: Draft) {
   if (taskIntent(d) !== "edit") return null;

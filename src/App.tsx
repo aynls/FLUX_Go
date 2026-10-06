@@ -31,11 +31,10 @@ import * as api from "./lib/api";
 import { imageSize } from "./lib/image";
 import { exportDefaultPath } from "./lib/export";
 import {
-  newDraft,
   renameBox,
   withIds,
   validateDraft,
-  migrateDraft,
+  readDraft,
   taskIntent,
   workspaceKey,
   primaryImage,
@@ -44,7 +43,6 @@ import {
 import {
   families,
   familyById,
-  modelByAnyId,
   routeFor,
   singleImageDraft,
 } from "./models/catalog";
@@ -654,25 +652,9 @@ export default function App() {
             name: item.recipe?.maskName ?? "编辑蒙版",
           }
         : null;
-      const inferred = modelByAnyId(item.model) ?? undefined;
-      const legacy = newDraft(prefs, inferred?.family ?? "flux");
-      const raw = item.recipe
-        ? { ...item.recipe, refs, mask }
-        : {
-            ...legacy,
-            refs,
-            mask,
-            prompt: item.prompt,
-            boxes: item.boxes.map((b) => ({ ...b, sourceId: refs[0]?.uid })),
-            provider: item.provider,
-            params: { ...legacy.params, ...item.params },
-            canvas: {
-              w: item.canvasWidth ?? 1024,
-              h: item.canvasHeight ?? 1024,
-            },
-            baseId: refs[0]?.uid ?? null,
-          };
-      commit(withIds(migrateDraft(raw)), true);
+      if (!item.recipe) throw new Error("此记录没有可恢复的方案");
+      const raw = { ...item.recipe, refs, mask };
+      commit(withIds(readDraft(raw)), true);
       setView("canvas");
       setTab("params");
       setSelected(null);
@@ -892,10 +874,7 @@ export default function App() {
           {generationTask && tab === "history" && (
             <button
               onClick={() => {
-                ws.switchWorkspace(
-                  generationTask.family,
-                  generationTask.intent ?? "create",
-                );
+                ws.switchIntent(generationTask.intent ?? "create");
                 setTab("params");
               }}
             >
@@ -994,10 +973,7 @@ export default function App() {
               }
               onShowTask={() =>
                 generationTask &&
-                ws.switchWorkspace(
-                  generationTask.family,
-                  generationTask.intent ?? "create",
-                )
+                ws.switchIntent(generationTask.intent ?? "create")
               }
               finalPreview={preview.finalPrompt}
               errors={errors}
@@ -1198,10 +1174,7 @@ export default function App() {
               </strong>
               <button
                 onClick={() => {
-                  ws.switchWorkspace(
-                    generationTask.family,
-                    generationTask.intent ?? "create",
-                  );
+                  ws.switchIntent(generationTask.intent ?? "create");
                   setQueueOpen(false);
                 }}
               >

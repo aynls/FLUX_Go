@@ -6,6 +6,5 @@ export const requiresLayout = (d: Draft) =>
 /** Disabled construction stays in the draft but never reaches a request. */
 export const regionsEnabled = (d: Draft) =>
   d.family === "flux" &&
-  (d.intent === "edit" ||
-    requiresLayout(d) ||
-    (d.layoutEnabled ?? d.boxes.length > 0));
+  (requiresLayout(d) ||
+    (d.layoutEnabled ?? (d.intent === "edit" || d.boxes.length > 0)));

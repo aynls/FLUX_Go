@@ -22,12 +22,22 @@ export interface Box {
 }
 
 export type ProviderId =
-  "openrouter" | "bfl" | "comfy" | "runware" | "google" | "ark" | "byteplus";
+  | "openrouter"
+  | "bfl"
+  | "comfy"
+  | "runware"
+  | "google"
+  | "ark"
+  | "byteplus";
 export type FamilyId = "flux" | "gpt" | "qwen" | "gemini" | "seedream";
 export type TaskIntent = "create" | "edit";
-export type WorkspaceKey = `${FamilyId}:${TaskIntent}`;
+export type WorkspaceKey = TaskIntent;
 export type ReferencePurpose =
-  "reference" | "style" | "subject" | "composition" | "custom";
+  | "reference"
+  | "style"
+  | "subject"
+  | "composition"
+  | "custom";
 export type ParamValue = string | number | boolean | null;
 
 export interface GenerateParams {
@@ -206,12 +216,14 @@ export interface LayoutRegion {
 export interface Draft {
   layoutEnabled?: boolean;
   repeatCount?: number;
-  /** Older drafts infer intent from their inputs until migrated. */
-  intent?: TaskIntent;
+  intent: TaskIntent;
+  familyRoutes?: Partial<
+    Record<FamilyId, { modelId: string; provider: ProviderId }>
+  >;
   showBase?: boolean;
   routeSettings?: Record<string, GenerateParams>;
   colorPool?: string[];
-  schema: 3;
+  schema: 4;
   family: FamilyId;
   modelId: string;
   refs: WorkingImage[];
@@ -227,12 +239,11 @@ export interface Draft {
   maskRects?: Rect[];
 }
 
-/** 各家族的生成与编辑任务独立保存草稿；workspaces 记录最近活动的任务。 */
+/** 创作内容按任务保存；模型路由只改变参数和可用能力。 */
 export interface WorkspaceSession {
-  schema: 1;
-  activeFamily: FamilyId;
-  workspaces: Partial<Record<FamilyId, Draft>>;
-  taskWorkspaces?: Partial<Record<WorkspaceKey, Draft>>;
+  schema: 2;
+  activeIntent: TaskIntent;
+  tasks: Partial<Record<TaskIntent, Draft>>;
 }
 
 export interface Preferences {

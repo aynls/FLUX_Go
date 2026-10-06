@@ -1,10 +1,12 @@
 import Canvas from "../../components/Canvas";
 import { scaleRect, primaryImage, sourceOnCanvas } from "../../lib/workspace";
 import type { StageProps } from "../shared/Stage";
+import { regionsEnabled } from "../../models/flux/layout";
 export default function FluxStage(p: StageProps) {
   const d = p.draft;
   const base = d.showBase === false ? null : primaryImage(d);
-  const boxes = d.boxes
+  const active = regionsEnabled(d);
+  const boxes = (active ? d.boxes : [])
     .filter((b) => b.role !== "remove" || b.sourceId === base?.uid)
     .map((b) => {
       const source = d.refs.find((r) => r.uid === b.sourceId);
@@ -37,7 +39,7 @@ export default function FluxStage(p: StageProps) {
             phantom={d.canvas}
             boxes={boxes}
             selectedId={p.selectedId}
-            tool="box"
+            tool={active ? "box" : "pan"}
             editMode={!!d.refs.length}
             onSelect={p.onSelect}
             onChange={p.onBoxesChange}

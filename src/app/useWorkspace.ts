@@ -13,7 +13,8 @@ import {
   newDraft,
   withIds,
   resizeCanvas,
-  migrateSession,
+  readSession,
+  changeFamily,
   outputEstimate,
   taskIntent,
   workspaceKey,
@@ -62,10 +63,7 @@ export function useWorkspace(
   const [prefs, setPrefs] = useState<Preferences>(readPreferences);
   const [draft, setDraft] = useState<Draft>(() => newDraft(prefs));
   const current = useRef(draft);
-  const bank = useRef<WorkspaceSession["workspaces"]>({
-    [draft.family]: draft,
-  });
-  const tasks = useRef<NonNullable<WorkspaceSession["taskWorkspaces"]>>({
+  const tasks = useRef<WorkspaceSession["tasks"]>({
     [workspaceKey(draft)]: draft,
   });
   const [ready, setReady] = useState(false);
@@ -80,7 +78,6 @@ export function useWorkspace(
   >({});
   const replace = useCallback((d: Draft) => {
     current.current = d;
-    bank.current[d.family] = d;
     tasks.current[workspaceKey(d)] = d;
     setDraft(d);
   }, []);
@@ -171,28 +168,21 @@ export function useWorkspace(
     replace(next);
     lastEdit.current = 0;
   };
-  const draftForIntent = (
-    intent: TaskIntent,
-    family = current.current.family,
-  ) => {
+  const draftForIntent = (intent: TaskIntent) => {
     const d = current.current;
     return (
-      tasks.current[`${family}:${intent}`] ?? {
-        ...newDraft(prefs, family),
-        ...(family === d.family
-          ? {
-              provider: d.provider,
-              modelId: d.modelId,
-              params: { ...d.params },
-            }
-          : {}),
+      tasks.current[intent] ?? {
+        ...newDraft(prefs, d.family),
+        provider: d.provider,
+        modelId: d.modelId,
+        params: { ...d.params },
         intent,
       }
     );
   };
-  const switchWorkspace = (family: FamilyId, intent: TaskIntent) => {
+  const switchIntent = (intent: TaskIntent) => {
     if (gesture.current) return;
-    const key: WorkspaceKey = `${family}:${intent}`;
+    const key: WorkspaceKey = intent;
     if (key === workspaceKey(current.current)) return;
     histories.current[workspaceKey(current.current)] = {
       undo: undoStack,
@@ -200,19 +190,16 @@ export function useWorkspace(
     };
     setUndo(histories.current[key]?.undo ?? []);
     setRedo(histories.current[key]?.redo ?? []);
-    replace(draftForIntent(intent, family));
+    replace(draftForIntent(intent));
     lastEdit.current = 0;
   };
   const switchFamily = (family: FamilyId) =>
-    switchWorkspace(family, taskIntent(current.current));
-  const switchIntent = (intent: TaskIntent) =>
-    switchWorkspace(current.current.family, intent);
+    onChange(changeFamily(current.current, family, prefs));
   const session = useCallback(
     (d = current.current): WorkspaceSession => ({
-      schema: 1,
-      activeFamily: d.family,
-      workspaces: { ...bank.current, [d.family]: d },
-      taskWorkspaces: { ...tasks.current, [workspaceKey(d)]: d },
+      schema: 2,
+      activeIntent: taskIntent(d),
+      tasks: { ...tasks.current, [taskIntent(d)]: d },
     }),
     [],
   );
@@ -252,17 +239,10 @@ export function useWorkspace(
       .draftLoad()
       .then((raw) => {
         if (!alive) return;
-        const saved = migrateSession(raw);
+        const saved = readSession(raw);
         if (saved) {
-          bank.current = saved.workspaces;
-          tasks.current =
-            saved.taskWorkspaces ??
-            Object.fromEntries(
-              Object.values(saved.workspaces)
-                .filter((d): d is Draft => !!d)
-                .map((d) => [workspaceKey(d), d]),
-            );
-          replace(saved.workspaces[saved.activeFamily]!);
+          tasks.current = saved.tasks;
+          replace(saved.tasks[saved.activeIntent]!);
         }
       })
       .catch((e) => {
@@ -362,7 +342,6 @@ export function useWorkspace(
     redoStack,
     switchFamily,
     switchIntent,
-    switchWorkspace,
     draftForIntent,
     reset,
     closeApp,
