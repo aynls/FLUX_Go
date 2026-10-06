@@ -1,4 +1,4 @@
-# FLUX_Go
+# LutriUI
 
 基于 Tauri、React 和 TypeScript 的桌面图像生成与编辑工作台。支持 FLUX.3 Image、GPT Image 2.5（Flare / Sunburst）和 Qwen Image（3.0 / 3.0 Pro），通过 OpenRouter、BFL、Comfy 或 Runware 调用对应模型。
 

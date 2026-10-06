@@ -1,6 +1,6 @@
 # 模型、供应商与工作区
 
-FLUX_Go 将模型契约、工作区和供应商传输分开。新增模型时，先定义它能接收的输入和参数，再配置路由与界面。API Key、HTTP 请求和结果图片处理由 Rust 后端负责。
+LutriUI 将模型契约、工作区和供应商传输分开。新增模型时，先定义它能接收的输入和参数，再配置路由与界面。API Key、HTTP 请求和结果图片处理由 Rust 后端负责。
 
 ## 模块边界
 
@@ -58,6 +58,8 @@ FLUX 主图等比显示。移除区域保留虚线标记；选中区域时显示
 Comfy 预估独立保存在 `shared/comfy-pricing.json`，记录核验日期与官方来源。FLUX 使用分辨率价格，Qwen 使用输出张数、Pro 面积档位和参考图数量，GPT 使用质量和尺寸的官方预估区间并估算输入费用。预估不作为扣费凭据。实际 Credits 从最终响应头 `X-Comfy-Credits-Used` 读取；上游响应体的 `cost` 不代表 Comfy 扣费，缺少该响应头时显示未返回。[Comfy 响应头说明](https://docs.comfy.org/development/comfy-router/reference#response-headers)。
 
 草稿使用 `WorkspaceSession` 保存三个家族的独立 `Draft`。旧版 schema 2 的 FLUX 草稿迁移到 schema 3；无法识别的版本或损坏内容暂停自动保存，保留原文件。新建方案可恢复保存。
+
+桌面应用标识与系统凭据命名空间使用 `app.lutriui.desktop`，前端设置键使用 `lutriui-preferences-v2`，导出文件名前缀使用 `lutriui-`。改名后使用新的本地数据目录和凭据，不读取或迁移旧标识下的数据。
 
 ## 新增模型或供应商
 
