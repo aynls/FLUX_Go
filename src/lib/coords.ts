@@ -22,52 +22,126 @@ export const PAN_RANGE_MULTIPLIER = 1.2;
 // 到达平移边界时，仍保留的可见画布边缘（屏幕 px）。
 export const MIN_VISIBLE_CANVAS_PX = 64;
 
-export function clampScale(s: number): number {
-  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
+export function clampScale(s: number, minScale = MIN_SCALE): number {
+  return Math.min(MAX_SCALE, Math.max(minScale, s));
+}
+
+/** 高分辨率预览允许缩小到完整显示；FLUX 编辑画布仍使用原有缩放下限。 */
+export function fitMinimumScale(
+  iw: number,
+  ih: number,
+  vw: number,
+  vh: number,
+  pad = 24,
+): number {
+  if (iw <= 0 || ih <= 0 || vw <= 0 || vh <= 0) return MIN_SCALE;
+  return Math.min(
+    MIN_SCALE,
+    Math.max(0.01, Math.min((vw - pad * 2) / iw, (vh - pad * 2) / ih)),
+  );
 }
 
 /** 在视口内完整显示图像（含边距），居中 */
-export function fitView(iw: number, ih: number, vw: number, vh: number, pad = 24): View {
-  if (iw <= 0 || ih <= 0 || vw <= 0 || vh <= 0) return { scale: 1, tx: 0, ty: 0 };
-  const scale = clampScale(Math.min((vw - pad * 2) / iw, (vh - pad * 2) / ih));
+export function fitView(
+  iw: number,
+  ih: number,
+  vw: number,
+  vh: number,
+  pad = 24,
+  minScale = MIN_SCALE,
+): View {
+  if (iw <= 0 || ih <= 0 || vw <= 0 || vh <= 0)
+    return { scale: 1, tx: 0, ty: 0 };
+  const scale = clampScale(
+    Math.min((vw - pad * 2) / iw, (vh - pad * 2) / ih),
+    minScale,
+  );
   return { scale, tx: (vw - iw * scale) / 2, ty: (vh - ih * scale) / 2 };
 }
 
-export function screenToImg(v: View, sx: number, sy: number): { x: number; y: number } {
+export function screenToImg(
+  v: View,
+  sx: number,
+  sy: number,
+): { x: number; y: number } {
   return { x: (sx - v.tx) / v.scale, y: (sy - v.ty) / v.scale };
 }
 
-export function imgToScreen(v: View, x: number, y: number): { x: number; y: number } {
+export function imgToScreen(
+  v: View,
+  x: number,
+  y: number,
+): { x: number; y: number } {
   return { x: x * v.scale + v.tx, y: y * v.scale + v.ty };
 }
 
 /** 以屏幕点 (sx, sy) 为锚缩放：该点下的图像内容保持不动 */
-export function zoomAt(v: View, sx: number, sy: number, factor: number): View {
-  const scale = clampScale(v.scale * factor);
+export function zoomAt(
+  v: View,
+  sx: number,
+  sy: number,
+  factor: number,
+  minScale = MIN_SCALE,
+): View {
+  const scale = clampScale(v.scale * factor, minScale);
   const k = scale / v.scale;
   return { scale, tx: sx - (sx - v.tx) * k, ty: sy - (sy - v.ty) * k };
 }
 
 /** 平移范围覆盖画布超出视口的部分，并允许额外留白，同时保留可见画布边缘。 */
-export function clampCanvasView(v: View, iw: number, ih: number, vw: number, vh: number): View {
-  const scale = clampScale(v.scale);
+export function clampCanvasView(
+  v: View,
+  iw: number,
+  ih: number,
+  vw: number,
+  vh: number,
+  minScale = MIN_SCALE,
+): View {
+  const scale = clampScale(v.scale, minScale);
   if (iw <= 0 || ih <= 0 || vw <= 0 || vh <= 0) return { ...v, scale };
   const axis = (offset: number, image: number, viewport: number) => {
     const span = image * scale;
     const center = (viewport - span) / 2;
     const visible = Math.min(MIN_VISIBLE_CANVAS_PX, viewport / 4, span);
-    const travel = Math.max(0, span - viewport) / 2
-      + span * Math.max(0, PAN_RANGE_MULTIPLIER - 1) / 2;
-    return clamp(offset, Math.max(center - travel, visible - span), Math.min(center + travel, viewport - visible));
+    const travel =
+      Math.max(0, span - viewport) / 2 +
+      (span * Math.max(0, PAN_RANGE_MULTIPLIER - 1)) / 2;
+    return clamp(
+      offset,
+      Math.max(center - travel, visible - span),
+      Math.min(center + travel, viewport - visible),
+    );
   };
   return { scale, tx: axis(v.tx, iw, vw), ty: axis(v.ty, ih, vh) };
 }
 
-export function zoomCanvasAt(v: View, sx: number, sy: number, factor: number, iw: number, ih: number, vw: number, vh: number): View {
-  return clampCanvasView(zoomAt(v, sx, sy, factor), iw, ih, vw, vh);
+export function zoomCanvasAt(
+  v: View,
+  sx: number,
+  sy: number,
+  factor: number,
+  iw: number,
+  ih: number,
+  vw: number,
+  vh: number,
+  minScale = MIN_SCALE,
+): View {
+  return clampCanvasView(
+    zoomAt(v, sx, sy, factor, minScale),
+    iw,
+    ih,
+    vw,
+    vh,
+    minScale,
+  );
 }
 
-export function normalizeRect(x0: number, y0: number, x1: number, y1: number): Rect {
+export function normalizeRect(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): Rect {
   return {
     x: Math.min(x0, x1),
     y: Math.min(y0, y1),
@@ -172,7 +246,13 @@ export function pickHandle(
 }
 
 /** 拖动整个框：位置钳制在图像内，返回新 rect */
-export function moveRect(orig: Rect, dx: number, dy: number, iw: number, ih: number): Rect {
+export function moveRect(
+  orig: Rect,
+  dx: number,
+  dy: number,
+  iw: number,
+  ih: number,
+): Rect {
   const x = clamp(orig.x + dx, 0, Math.max(0, iw - orig.w));
   const y = clamp(orig.y + dy, 0, Math.max(0, ih - orig.h));
   return { ...orig, x, y };

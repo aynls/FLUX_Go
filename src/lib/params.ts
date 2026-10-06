@@ -32,7 +32,7 @@ export const DEFAULT_PARAMS: GenerateParams = {
 
 export const MAX_INPUT_EDGE_DEFAULT = 2048;
 
-export function estimateCost(resolution: string): number | null {
+export function estimateCost(resolution: string | undefined): number | null {
   return RESOLUTIONS.find((r) => r.value === resolution)?.costUsd ?? null;
 }
 
@@ -56,11 +56,11 @@ export function validateParams(p: GenerateParams, _mode: "edit" | "t2i", provide
   if (!RESOLUTIONS.some((r) => r.value === p.resolution)) {
     errors.push(`分辨率 ${p.resolution} 无效（允许 768/1K/1.5K/2K/4K）`);
   }
-  if (!ASPECT_RATIOS.includes(p.aspectRatio)) {
+  if (!ASPECT_RATIOS.includes(p.aspectRatio ?? "")) {
     errors.push(`宽高比 ${p.aspectRatio} 无效`);
   }
   if (p.version && p.version !== "latest") errors.push("模型版本仅支持 latest");
-  if (p.safetyTolerance !== null) {
+  if (p.safetyTolerance != null) {
     const v = p.safetyTolerance;
     const max = provider === "bfl" ? 4 : 6;
     if (!Number.isInteger(v) || v < 0 || v > max) {

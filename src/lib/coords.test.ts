@@ -3,6 +3,7 @@ import {
   clampRectToImage,
   clampScale,
   fitView,
+  fitMinimumScale,
   handlePoint,
   hitTest,
   imgToScreen,
@@ -24,28 +25,70 @@ import {
 
 const EPS = 1e-9;
 
+test("high resolution previews fit the entire image while FLUX keeps its original scale bounds", () => {
+  const dims = [3840, 2160, 720, 420] as const;
+  const minimum = fitMinimumScale(...dims);
+  const fitted = fitView(...dims, 24, minimum);
+  expect(fitted.scale).toBeLessThan(MIN_SCALE);
+  expect(3840 * fitted.scale).toBeLessThanOrEqual(720 - 48);
+  expect(2160 * fitted.scale).toBeLessThanOrEqual(420 - 48);
+  expect(fitView(...dims).scale).toBe(MIN_SCALE);
+  const bounded = zoomCanvasAt(fitted, 360, 210, 0.001, ...dims, minimum);
+  expect(bounded.scale).toBe(minimum);
+  expect(screenToImg(bounded, 360, 210)).toEqual(screenToImg(fitted, 360, 210));
+});
+
 test("pan follows configured range and retains visible canvas at every zoom", () => {
-  for (const [iw, ih, vw, vh] of [[1024, 1024, 1100, 600], [512, 768, 900, 400], [4000, 200, 300, 600]]) {
-    for (const scale of [MIN_SCALE, 1, MAX_SCALE]) for (const sign of [-1, 1]) {
-      const v = clampCanvasView({ scale, tx: sign * 1e8, ty: sign * 1e8 }, iw, ih, vw, vh);
-      for (const [offset, span, viewport] of [[v.tx, iw * v.scale, vw], [v.ty, ih * v.scale, vh]]) {
-        expect(Math.abs(offset - (viewport - span) / 2)).toBeLessThanOrEqual(Math.max(0, span - viewport) / 2 + span * Math.max(0, PAN_RANGE_MULTIPLIER - 1) / 2 + EPS);
-        expect(Math.min(viewport, offset + span) - Math.max(0, offset)).toBeGreaterThanOrEqual(Math.min(MIN_VISIBLE_CANVAS_PX, viewport / 4, span) - EPS);
+  for (const [iw, ih, vw, vh] of [
+    [1024, 1024, 1100, 600],
+    [512, 768, 900, 400],
+    [4000, 200, 300, 600],
+  ]) {
+    for (const scale of [MIN_SCALE, 1, MAX_SCALE])
+      for (const sign of [-1, 1]) {
+        const v = clampCanvasView(
+          { scale, tx: sign * 1e8, ty: sign * 1e8 },
+          iw,
+          ih,
+          vw,
+          vh,
+        );
+        for (const [offset, span, viewport] of [
+          [v.tx, iw * v.scale, vw],
+          [v.ty, ih * v.scale, vh],
+        ]) {
+          expect(Math.abs(offset - (viewport - span) / 2)).toBeLessThanOrEqual(
+            Math.max(0, span - viewport) / 2 +
+              (span * Math.max(0, PAN_RANGE_MULTIPLIER - 1)) / 2 +
+              EPS,
+          );
+          expect(
+            Math.min(viewport, offset + span) - Math.max(0, offset),
+          ).toBeGreaterThanOrEqual(
+            Math.min(MIN_VISIBLE_CANVAS_PX, viewport / 4, span) - EPS,
+          );
+        }
+        expect(clampCanvasView(v, iw, ih, vw, vh)).toEqual(v);
       }
-      expect(clampCanvasView(v, iw, ih, vw, vh)).toEqual(v);
-    }
   }
 });
 
 test("zoom then pan can bring all four canvas edges into the viewport", () => {
-  const cases: [number, number, number, number][] = [[1024, 1024, 1000, 600], [4000, 200, 300, 600], [200, 4000, 600, 300]];
+  const cases: [number, number, number, number][] = [
+    [1024, 1024, 1000, 600],
+    [4000, 200, 300, 600],
+    [200, 4000, 600, 300],
+  ];
   for (const dims of cases) {
     const [iw, ih, vw, vh] = dims;
     let v = fitView(...dims);
     v = zoomCanvasAt(v, vw / 2, vh / 2, MAX_SCALE / v.scale, ...dims);
     const near = clampCanvasView({ ...v, tx: 1e8, ty: 1e8 }, ...dims);
     const far = clampCanvasView({ ...v, tx: -1e8, ty: -1e8 }, ...dims);
-    for (const [start, end, span, viewport] of [[near.tx, far.tx, iw * v.scale, vw], [near.ty, far.ty, ih * v.scale, vh]]) {
+    for (const [start, end, span, viewport] of [
+      [near.tx, far.tx, iw * v.scale, vw],
+      [near.ty, far.ty, ih * v.scale, vh],
+    ]) {
       // 向右/下拖动可查看左/上边；向左/上拖动可查看右/下边。
       expect(start).toBeGreaterThanOrEqual(-EPS);
       expect(start).toBeLessThanOrEqual(viewport + EPS);
@@ -57,8 +100,16 @@ test("zoom then pan can bring all four canvas edges into the viewport", () => {
 
 test("small canvas keeps its original centered pan allowance", () => {
   const dims = [400, 200, 1000, 600] as const;
-  expect(clampCanvasView({ scale: 1, tx: -1e8, ty: -1e8 }, ...dims)).toEqual({ scale: 1, tx: 260, ty: 180 });
-  expect(clampCanvasView({ scale: 1, tx: 1e8, ty: 1e8 }, ...dims)).toEqual({ scale: 1, tx: 340, ty: 220 });
+  expect(clampCanvasView({ scale: 1, tx: -1e8, ty: -1e8 }, ...dims)).toEqual({
+    scale: 1,
+    tx: 260,
+    ty: 180,
+  });
+  expect(clampCanvasView({ scale: 1, tx: 1e8, ty: 1e8 }, ...dims)).toEqual({
+    scale: 1,
+    tx: 340,
+    ty: 220,
+  });
 });
 
 test("repeated zoom clamps scale and does not drift when reaching limits", () => {
@@ -155,33 +206,62 @@ describe("视图变换", () => {
 
 describe("矩形操作", () => {
   test("normalizeRect 反向拖拽", () => {
-    expect(normalizeRect(100, 200, 40, 50)).toEqual({ x: 40, y: 50, w: 60, h: 150 });
+    expect(normalizeRect(100, 200, 40, 50)).toEqual({
+      x: 40,
+      y: 50,
+      w: 60,
+      h: 150,
+    });
   });
 
   test("clampRectToImage 越界裁剪", () => {
-    expect(clampRectToImage({ x: -10, y: -10, w: 50, h: 50 }, 100, 100)).toEqual({
-      x: 0, y: 0, w: 40, h: 40,
+    expect(
+      clampRectToImage({ x: -10, y: -10, w: 50, h: 50 }, 100, 100),
+    ).toEqual({
+      x: 0,
+      y: 0,
+      w: 40,
+      h: 40,
     });
     expect(clampRectToImage({ x: 90, y: 90, w: 50, h: 50 }, 100, 100)).toEqual({
-      x: 90, y: 90, w: 10, h: 10,
+      x: 90,
+      y: 90,
+      w: 10,
+      h: 10,
     });
     expect(clampRectToImage({ x: 0, y: 0, w: 500, h: 500 }, 100, 100)).toEqual({
-      x: 0, y: 0, w: 100, h: 100,
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
     });
   });
 
   test("rectFromDrag 完整链路", () => {
     expect(rectFromDrag(1000, 1000, 300, 300, 800, 600)).toEqual({
-      x: 300, y: 300, w: 500, h: 300,
+      x: 300,
+      y: 300,
+      w: 500,
+      h: 300,
     });
   });
 
   test("resizeRect 角点拖拽", () => {
     const r = { x: 100, y: 100, w: 100, h: 100 };
     // se 手柄向右下拖 50
-    expect(resizeRect(r, "se", 50, 50, 8, 1000, 1000)).toEqual({ x: 100, y: 100, w: 150, h: 150 });
+    expect(resizeRect(r, "se", 50, 50, 8, 1000, 1000)).toEqual({
+      x: 100,
+      y: 100,
+      w: 150,
+      h: 150,
+    });
     // nw 手柄向左上拖 30，锚点为右下
-    expect(resizeRect(r, "nw", -30, -30, 8, 1000, 1000)).toEqual({ x: 70, y: 70, w: 130, h: 130 });
+    expect(resizeRect(r, "nw", -30, -30, 8, 1000, 1000)).toEqual({
+      x: 70,
+      y: 70,
+      w: 130,
+      h: 130,
+    });
   });
 
   test("resizeRect 强制最小尺寸（拖过对边）", () => {
@@ -207,7 +287,15 @@ describe("矩形操作", () => {
     const next = resizeRect(r, "e", -28, 0, 8, 1000, 1000);
     expect(next.w).toBe(8);
     // 图像本身小于最小尺寸 → 允许收缩到图像宽度
-    const tiny = resizeRect({ x: 0, y: 0, w: 4, h: 100 }, "e", -10, 0, 8, 5, 1000);
+    const tiny = resizeRect(
+      { x: 0, y: 0, w: 4, h: 100 },
+      "e",
+      -10,
+      0,
+      8,
+      5,
+      1000,
+    );
     expect(tiny.w).toBe(5);
   });
 
@@ -240,10 +328,16 @@ describe("矩形操作", () => {
 
   test("moveRect 钳制在图像内", () => {
     expect(moveRect({ x: 0, y: 0, w: 50, h: 50 }, -30, -30, 100, 100)).toEqual({
-      x: 0, y: 0, w: 50, h: 50,
+      x: 0,
+      y: 0,
+      w: 50,
+      h: 50,
     });
     expect(moveRect({ x: 0, y: 0, w: 50, h: 50 }, 100, 100, 100, 100)).toEqual({
-      x: 50, y: 50, w: 50, h: 50,
+      x: 50,
+      y: 50,
+      w: 50,
+      h: 50,
     });
   });
 });

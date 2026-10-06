@@ -21,19 +21,38 @@ export interface Box {
   desc: string;
 }
 
-export type ProviderId = "openrouter" | "bfl";
+export type ProviderId = "openrouter" | "bfl" | "comfy" | "runware";
+export type FamilyId = "flux" | "gpt" | "qwen";
+export type ParamValue = string | number | boolean | null;
 
 export interface GenerateParams {
-  resolution: string;
-  aspectRatio: string;
-  safetyTolerance: number | null;
+  [key: string]: ParamValue | undefined;
+  resolution?: string;
+  aspectRatio?: string;
+  safetyTolerance?: number | null;
   grounding?: boolean;
   version?: "latest";
+  quality?: string;
+  size?: string;
+  background?: string;
+  outputFormat?: string;
+  outputCompression?: number;
+  moderation?: string;
+  count?: number;
+  width?: number;
+  height?: number;
+  seed?: number | null;
+  negativePrompt?: string;
+  promptExtend?: boolean;
+  promptExtendMode?: string;
+  watermark?: boolean;
 }
 
 export interface ProviderStatus {
   openrouter: boolean;
   bfl: boolean;
+  comfy: boolean;
+  runware: boolean;
   sources?: Record<ProviderId, string>;
   settings?: Record<ProviderId, CredentialSettings>;
   storedKeys?: Record<ProviderId, boolean>;
@@ -54,7 +73,12 @@ export interface GenerateOutput {
   model: string;
   finalPrompt: string;
   images: OutputImage[];
-  usage: { cost?: number; total_tokens?: number } | null;
+  usage: {
+    cost?: number;
+    credits?: number;
+    total_tokens?: number;
+    [key: string]: unknown;
+  } | null;
   notes: string[];
 }
 
@@ -72,14 +96,19 @@ export interface HistoryItem {
   canvasHeight: number | null;
   inputFiles: string[];
   resultFiles: string[];
+  maskFile?: string | null;
   thumb: string | null;
-  usage: { cost?: number; total_tokens?: number } | null;
+  usage: GenerateOutput["usage"];
   cost: number | null;
   status: string;
-  recipe?: Omit<Draft, "refs"> & { refNames: string[]; refIds: string[] };
+  recipe?: Omit<Draft, "refs" | "mask"> & {
+    refNames: string[];
+    refIds: string[];
+    maskName?: string;
+  };
 }
 
-/** 参考图（第一张为画布主图 ref_image_0） */
+/** 有序参考图，其编辑和引用语义由模型定义。 */
 export interface WorkingImage {
   uid?: string;
   dataUrl: string;
@@ -93,18 +122,27 @@ export interface GenerateRequestPayload {
   model: string;
   finalPrompt: string;
   images: string[];
-  params: {
-    resolution?: string;
-    aspectRatio?: string;
-    safetyTolerance?: number;
-    grounding?: boolean;
-    version?: "latest";
-  };
+  params: GenerateParams;
+  /** FLUX 区域单独传给需要结构化区域的供应商。 */
+  instruction?: string;
+  regions?: LayoutRegion[];
+  mask?: string;
+  requestId?: string;
+}
+
+export interface LayoutRegion {
+  id: string;
+  description: string;
+  referenceIndex: number | null;
+  sourceBox: [number, number, number, number] | null;
+  targetBox: [number, number, number, number] | null;
 }
 
 export interface Draft {
   colorPool?: string[];
-  schema: 2;
+  schema: 3;
+  family: FamilyId;
+  modelId: string;
   refs: WorkingImage[];
   boxes: Box[];
   prompt: string;
@@ -114,9 +152,19 @@ export interface Draft {
   canvas: { w: number; h: number };
   compressEnabled: boolean;
   maxInputEdge: number;
+  mask: WorkingImage | null;
+  maskRects?: Rect[];
+}
+
+/** 每个模型家族独立保存草稿；切换工作区不覆盖其他家族。 */
+export interface WorkspaceSession {
+  schema: 1;
+  activeFamily: FamilyId;
+  workspaces: Partial<Record<FamilyId, Draft>>;
 }
 
 export interface Preferences {
+  defaultFamily?: FamilyId;
   sidebarWidthPercent: number;
   saveDirectory: string;
   theme: "system" | "light" | "dark";
