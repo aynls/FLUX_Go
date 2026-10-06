@@ -11,6 +11,8 @@ import type {
 } from "./lib/types";
 import { newDraft } from "./lib/workspace";
 import Canvas from "./components/Canvas";
+import { StrictMode } from "react";
+import { queuedGeneration } from "./app/generation";
 
 const dom = new Window({ url: "http://localhost:5173" });
 Object.assign(globalThis, {
@@ -37,8 +39,10 @@ Object.defineProperty(dom, "matchMedia", {
 });
 let initial: Draft | WorkspaceSession | null = null;
 let submitted: GenerateRequestPayload | null = null;
+let submissions: GenerateRequestPayload[] = [];
 let savedItem: HistoryItem | null = null;
 let finish: (out: GenerateOutput) => void = () => {};
+let failGeneration: (error: Error) => void = () => {};
 let failHistory = false;
 let historyItems: HistoryItem[] = [];
 let draftWrites: (Draft | WorkspaceSession)[] = [];
@@ -104,14 +108,20 @@ mock.module("./lib/api", () => ({
     onProgress?: typeof reportProgress,
   ) => {
     submitted = request;
+    submissions.push(request);
     reportProgress = onProgress ?? (() => {});
-    return new Promise<GenerateOutput>((resolve) => {
+    return new Promise<GenerateOutput>((resolve, reject) => {
       finish = resolve;
+      failGeneration = reject;
     });
   },
   historySave: async (item: HistoryItem) => {
     if (failHistory) throw new Error("disk full");
-    savedItem = item;
+    if (item.status === "ok") savedItem = item;
+    historyItems = [
+      ...historyItems.filter((it) => it.id !== item.id),
+      { ...item },
+    ];
     return item;
   },
   importImage: async (path: string) => ({
@@ -143,6 +153,7 @@ const { default: App } = await import("./App");
 beforeEach(() => {
   initial = null;
   submitted = null;
+  submissions = [];
   savedItem = null;
   failHistory = false;
   historyItems = [];
@@ -636,7 +647,9 @@ test("in-flight snapshot is immutable; result does not overwrite newer draft or 
       ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
     ).toBe(false),
   );
-  fireEvent.click(ui.getByRole("button", { name: /^(生成图像|应用编辑) ·/ }));
+  fireEvent.click(
+    ui.getByRole("button", { name: /^((生成图像|应用编辑) ·|请求已发送$)/ }),
+  );
   await waitFor(() => expect(submitted).not.toBeNull());
   fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
     target: { value: "next version while running" },
@@ -647,8 +660,10 @@ test("in-flight snapshot is immutable; result does not overwrite newer draft or 
     expect(ui.getByRole("heading", { name: /素材\s*2\/10/ })).toBeTruthy(),
   );
   expect(
-    ui.getByRole("button", { name: "任务进行中…" }).hasAttribute("disabled"),
-  ).toBe(true);
+    ui
+      .getByRole("button", { name: /^((生成图像|应用编辑) ·|请求已发送$)/ })
+      .hasAttribute("disabled"),
+  ).toBe(false);
   await act(async () => {
     finish(output);
   });
@@ -687,7 +702,9 @@ test("primary roles reach the request and native progress follows the active tas
   });
   fireEvent.click(ui.getByLabelText("素材操作 second.png"));
   fireEvent.click(ui.getAllByRole("button", { name: "设为编辑主图" }).at(-1)!);
-  fireEvent.click(ui.getByRole("button", { name: /^(生成图像|应用编辑) ·/ }));
+  fireEvent.click(
+    ui.getByRole("button", { name: /^((生成图像|应用编辑) ·|请求已发送$)/ }),
+  );
   await waitFor(() => expect(submitted).not.toBeNull());
   expect(submitted!.images[0]).toContain("second.png");
   expect(submitted!.finalPrompt).toContain(
@@ -771,7 +788,9 @@ test("continuing an edit replaces the primary, retains reference roles, and star
       ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
     ).toBe(false),
   );
-  fireEvent.click(ui.getByRole("button", { name: /^(生成图像|应用编辑) ·/ }));
+  fireEvent.click(
+    ui.getByRole("button", { name: /^((生成图像|应用编辑) ·|请求已发送$)/ }),
+  );
   await waitFor(() => expect(submitted).not.toBeNull());
   await act(async () => finish(output));
   await waitFor(() =>
@@ -934,7 +953,9 @@ test("a background generation stays in its task and starts editing without repla
       ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
     ).toBe(false),
   );
-  fireEvent.click(ui.getByRole("button", { name: /^生成图像 ·/ }));
+  fireEvent.click(
+    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
+  );
   await waitFor(() => expect(submitted).not.toBeNull());
   fireEvent.click(ui.getByRole("button", { name: "编辑" }));
   fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
@@ -963,10 +984,10 @@ test("a background generation stays in its task and starts editing without repla
   expect(
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
   ).toBe("draw a garden");
-  fireEvent.click(ui.getByRole("button", { name: /^生成图像 ·/ }));
-  await waitFor(() =>
-    expect(ui.getByRole("button", { name: "任务进行中…" })).toBeTruthy(),
+  fireEvent.click(
+    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
   );
+  await waitFor(() => expect(ui.getByText("等待结果")).toBeTruthy());
   await act(async () =>
     finish({ ...output, model: "openai/gpt-image-2.5-flare" }),
   );
@@ -980,18 +1001,189 @@ test("a background generation stays in its task and starts editing without repla
   expect(ui.queryByRole("button", { name: "对照" })).toBeNull();
 });
 
+test("queue saves requests immediately, cancels waiting work and runs FIFO snapshots", async () => {
+  initial = { ...newDraft(), prompt: "first scene" };
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui
+        .getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ })
+        .hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
+  );
+  await waitFor(() => expect(submissions).toHaveLength(1));
+  const firstId = historyItems.find((it) => it.prompt === "first scene")!.id;
+  expect(historyItems[0].status).toBe("running");
+  expect(submissions[0].requestId).toBe(firstId);
+  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
+    target: { value: "second scene" },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
+  );
+  await waitFor(() =>
+    expect(
+      historyItems.find((it) => it.prompt === "second scene")?.status,
+    ).toBe("queued"),
+  );
+  expect(submissions).toHaveLength(1);
+  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
+    target: { value: "third scene" },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
+  );
+  await waitFor(() => expect(historyItems).toHaveLength(3));
+  fireEvent.click(ui.getByRole("button", { name: "任务队列 · 3" }));
+  fireEvent.click(ui.getAllByRole("button", { name: "取消等待" })[0]);
+  await waitFor(() =>
+    expect(
+      historyItems.find((it) => it.prompt === "second scene")?.status,
+    ).toBe("cancelled"),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "关闭" }));
+  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
+    target: { value: "next unfinished draft" },
+  });
+  await act(async () => finish(output));
+  await waitFor(() => expect(submissions).toHaveLength(2));
+  expect(submissions[1].finalPrompt).toContain("third scene");
+  await act(async () => finish(output));
+  await waitFor(() =>
+    expect(historyItems.filter((it) => it.status === "ok")).toHaveLength(2),
+  );
+  expect(historyItems.find((it) => it.id === firstId)?.status).toBe("ok");
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("next unfinished draft");
+});
+
+test("restoring queued work under StrictMode submits once and does not rerun interrupted tasks", async () => {
+  const job = queuedGeneration({ ...newDraft(), prompt: "restore this queue" });
+  historyItems = [
+    job.item,
+    { ...job.item, id: "interrupted-job", status: "interrupted" },
+  ];
+  const ui = render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+  await waitFor(() => expect(submissions).toHaveLength(1));
+  expect(submissions[0].requestId).toBe(job.item.id);
+  await act(async () => finish(output));
+  await waitFor(() => expect(savedItem?.status).toBe("ok"));
+  expect(submissions).toHaveLength(1);
+  expect(historyItems.find((it) => it.id === "interrupted-job")?.status).toBe(
+    "interrupted",
+  );
+  ui.unmount();
+});
+
+test("a failed queue item does not retry and the next item still runs", async () => {
+  initial = { ...newDraft(), prompt: "failed first" };
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui
+        .getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ })
+        .hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
+  );
+  await waitFor(() => expect(submissions).toHaveLength(1));
+  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
+    target: { value: "successful second" },
+  });
+  fireEvent.click(
+    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
+  );
+  await waitFor(() => expect(historyItems).toHaveLength(2));
+  await act(async () => failGeneration(new Error("provider refused")));
+  await waitFor(() => expect(submissions).toHaveLength(2));
+  expect(historyItems.find((it) => it.prompt === "failed first")?.status).toBe(
+    "failed",
+  );
+  expect(submissions[1].finalPrompt).toContain("successful second");
+  await act(async () => finish(output));
+  await waitFor(() => expect(savedItem?.status).toBe("ok"));
+  expect(submissions).toHaveLength(2);
+});
+
+test("queue never calls a provider when the request record cannot be saved", async () => {
+  initial = { ...newDraft(), prompt: "must be durable first" };
+  failHistory = true;
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui
+        .getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ })
+        .hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
+  );
+  await waitFor(() => expect(ui.getByText(/加入队列失败/)).toBeTruthy());
+  expect(submissions).toHaveLength(0);
+  expect(historyItems).toHaveLength(0);
+});
+
+test("Comfy result and history omit missing charge information", async () => {
+  initial = {
+    ...newDraft(undefined, "qwen"),
+    provider: "comfy",
+    prompt: "a garden",
+  };
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui
+        .getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ })
+        .hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(
+    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
+  );
+  await waitFor(() => expect(submitted).not.toBeNull());
+  await act(async () =>
+    finish({
+      ...output,
+      provider: "comfy",
+      model: "qwen-image-3.0",
+      usage: {},
+    }),
+  );
+  await waitFor(() => expect(savedItem?.status).toBe("ok"));
+  expect(ui.queryByText(/实际.*未/)).toBeNull();
+  expect(ui.container.querySelector(".result-meta")?.textContent).not.toContain(
+    "Credits",
+  );
+  fireEvent.click(ui.getByRole("button", { name: "历史" }));
+  fireEvent.click(ui.getByText("a garden"));
+  expect(ui.queryByText("成本")).toBeNull();
+});
+
 test("history failure keeps result usable and retry saves without another generation", async () => {
   initial = { ...newDraft(), prompt: "test prompt" };
-  failHistory = true;
   const ui = render(<App />);
   await waitFor(() =>
     expect(
       ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
     ).toBe(false),
   );
-  fireEvent.click(ui.getByRole("button", { name: /^(生成图像|应用编辑) ·/ }));
+  fireEvent.click(
+    ui.getByRole("button", { name: /^((生成图像|应用编辑) ·|请求已发送$)/ }),
+  );
   await waitFor(() => expect(submitted).not.toBeNull());
   const request = submitted;
+  failHistory = true;
   await act(async () => {
     finish(output);
   });
@@ -1003,4 +1195,69 @@ test("history failure keeps result usable and retry saves without another genera
   fireEvent.click(ui.getByRole("button", { name: "重新保存历史" }));
   await waitFor(() => expect(savedItem).not.toBeNull());
   expect(submitted).toBe(request);
+});
+
+test("repeat count queues identical requests with independent random seeds and stable history ids", async () => {
+  initial = {
+    ...newDraft(undefined, "qwen"),
+    provider: "comfy",
+    prompt: "same scene",
+    params: { seed: null },
+  };
+  const ui = render(<App />);
+  const button = () =>
+    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ });
+  await waitFor(() => expect(button().hasAttribute("disabled")).toBe(false));
+  const count = ui.getByRole("spinbutton", {
+    name: "生成次数",
+  }) as HTMLInputElement;
+  expect(count.value).toBe("1");
+  fireEvent.change(count, { target: { value: "2" } });
+  fireEvent.click(button());
+  await waitFor(() => expect(historyItems).toHaveLength(2));
+  await waitFor(() => expect(submissions).toHaveLength(1));
+  expect(historyItems.filter((it) => it.status === "queued")).toHaveLength(1);
+  const seeds = historyItems.map((it) => it.params.seed);
+  expect(seeds.every((seed) => Number.isInteger(seed))).toBe(true);
+  expect(new Set(seeds).size).toBe(2);
+  expect(
+    historyItems.every((it) => it.recipe?.params.seed === it.params.seed),
+  ).toBe(true);
+  expect(new Set(historyItems.map((it) => it.id)).size).toBe(2);
+  fireEvent.change(count, { target: { value: "1" } });
+  await waitFor(() => expect(button().hasAttribute("disabled")).toBe(false));
+  fireEvent.click(button());
+  await waitFor(() => expect(historyItems).toHaveLength(3));
+  expect(submissions).toHaveLength(1);
+  await act(async () => finish(output));
+  await waitFor(() => expect(submissions).toHaveLength(2));
+  expect(submissions[1].params.seed).toBe(
+    historyItems.find((it) => it.id === submissions[1].requestId)?.params.seed,
+  );
+  await act(async () => finish(output));
+  await waitFor(() => expect(submissions).toHaveLength(3));
+  await act(async () => finish(output));
+  await waitFor(() =>
+    expect(historyItems.every((it) => it.status === "ok")).toBe(true),
+  );
+  expect(
+    submissions.every((req) => req.finalPrompt.includes("same scene")),
+  ).toBe(true);
+});
+
+test("fixed seeds are preserved and seedless routes do not gain unsupported seeds", () => {
+  const fixed = {
+    ...newDraft(undefined, "qwen"),
+    provider: "comfy" as const,
+    prompt: "fixed",
+    params: { seed: 42 },
+  };
+  const first = queuedGeneration(fixed),
+    second = queuedGeneration(fixed);
+  expect(first.item.params.seed).toBe(42);
+  expect(second.item.params.seed).toBe(42);
+  expect(first.item.id).not.toBe(second.item.id);
+  expect(
+    queuedGeneration({ ...newDraft(), prompt: "seedless" }).item.params.seed,
+  ).toBeUndefined();
 });

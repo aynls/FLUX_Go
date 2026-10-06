@@ -3,14 +3,11 @@ mod history;
 pub mod models;
 pub mod provider;
 
-use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
 
 use tauri::Manager;
 
 pub struct AppState {
-    /// 生成任务互斥标记：同一时刻只允许一个付费请求，防止重复计费
-    pub busy: AtomicBool,
     pub history: Mutex<Option<history::HistoryStore>>,
     pub draft_lock: Mutex<()>,
 }
@@ -18,7 +15,6 @@ pub struct AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self {
-            busy: AtomicBool::new(false),
             history: Mutex::new(None),
             draft_lock: Mutex::new(()),
         }

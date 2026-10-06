@@ -64,7 +64,7 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let url = format!("{endpoint}/{}/requests", model.wire_id());
-    let (_, submit) = transport::json(
+    let (_, submit, _, mut actual_credits) = transport::json_with_metadata(
         transport::client()
             .post(&url)
             .header("X-API-Key", key)
@@ -87,7 +87,7 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
     let deadline = Instant::now() + Duration::from_secs(900);
     let mut interval = Duration::from_secs(2);
     let mut read_failures = 0;
-    let (body, actual_credits) = loop {
+    let body = loop {
         tokio::time::sleep(interval).await;
         let read = transport::json_with_metadata(
             transport::client()
@@ -113,6 +113,9 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
             Err(e) => return Err(e.with_hint(format!("已提交任务 {id}；未自动重新生成。"))),
         };
         interval = retry_after.unwrap_or(Duration::from_secs(2));
+        if credits.is_some() {
+            actual_credits = credits;
+        }
         super::progress::report(
             if status == 200 {
                 "downloading"
@@ -128,7 +131,7 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
             body["status"].as_str(),
         );
         if status == 200 {
-            break (body, credits);
+            break body;
         }
         if matches!(body["status"].as_str(), Some("FAILED" | "CANCELLED")) {
             return Err(ProviderError::msg(format!(
@@ -142,6 +145,8 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
         }
     };
     let mut out = normalize(req, &body, Some(id)).await?;
+    out.usage["comfyRequestId"] = json!(id);
+    out.usage["comfyChargeReported"] = json!(actual_credits.is_some());
     if let Some(credits) = actual_credits {
         out.usage["credits"] = json!(credits);
     }
@@ -203,4 +208,75 @@ pub async fn normalize(req: &GenerateRequest, body: &Value, job: Option<&str>) -
             })
             .unwrap_or_default(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
+
+    #[tokio::test]
+    async fn charge_metadata_survives_submit_and_absent_collect_headers() {
+        for reported in [true, false] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let endpoint = format!("http://{}/v2/models", listener.local_addr().unwrap());
+            let server = std::thread::spawn(move || {
+                for (status, body) in [
+                    (201, json!({"request_id":"billing-test"})),
+                    (
+                        200,
+                        json!({"data":[{"b64_json":"YWJj"}], "usage":{"credits":999,"cost":99}}),
+                    ),
+                ] {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    let mut bytes = Vec::new();
+                    let mut chunk = [0u8; 4096];
+                    loop {
+                        let n = stream.read(&mut chunk).unwrap();
+                        assert!(n > 0);
+                        bytes.extend_from_slice(&chunk[..n]);
+                        if let Some(end) = bytes.windows(4).position(|v| v == b"\r\n\r\n") {
+                            let head = String::from_utf8_lossy(&bytes[..end]);
+                            let length: usize = head
+                                .lines()
+                                .find_map(|line| {
+                                    line.to_ascii_lowercase()
+                                        .strip_prefix("content-length:")
+                                        .map(|v| v.trim().parse().unwrap())
+                                })
+                                .unwrap_or(0);
+                            if bytes.len() >= end + 4 + length {
+                                break;
+                            }
+                        }
+                    }
+                    let text = body.to_string();
+                    let billing = if status == 201 && reported {
+                        "X-Comfy-Credits-Used: 12.75\r\n"
+                    } else {
+                        ""
+                    };
+                    write!(stream, "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{billing}Connection: close\r\n\r\n{text}", text.len()).unwrap();
+                }
+            });
+            let request: GenerateRequest = serde_json::from_value(json!({"provider":"comfy", "model":"gpt-image-2.5-flare", "finalPrompt":"test", "params":{"size":"1024x1024","outputFormat":"png","count":1}})).unwrap();
+            let result = generate_at(&request, "test-only-key", &endpoint)
+                .await
+                .unwrap();
+            server.join().unwrap();
+            assert_eq!(result.usage["comfyChargeReported"], reported);
+            assert_eq!(
+                result.usage["credits"],
+                if reported { json!(12.75) } else { Value::Null }
+            );
+            assert!(result.usage["cost"].is_null());
+            assert_eq!(result.usage["comfyRequestId"], "billing-test");
+        }
+    }
 }

@@ -109,6 +109,9 @@ export interface GenerationTask extends GenerationProgress {
 }
 
 export interface HistoryItem {
+  error?: string | null;
+  taskId?: string | null;
+  phase?: string | null;
   id: string;
   createdAt: number;
   provider: string;

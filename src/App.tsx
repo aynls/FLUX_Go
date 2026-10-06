@@ -1,3 +1,4 @@
+import { useGenerationQueue } from "./app/useGenerationQueue";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -7,7 +8,6 @@ import {
   GearSix,
   Plus,
 } from "@phosphor-icons/react";
-import Canvas from "./components/Canvas";
 import ResizableSidebar from "./components/ResizableSidebar";
 import HistoryPanel from "./components/HistoryPanel";
 import Settings from "./components/Settings";
@@ -16,7 +16,7 @@ import References from "./workspaces/shared/References";
 import { WorkspaceSidebar, WorkspaceStage } from "./workspaces";
 import { useWorkspace } from "./app/useWorkspace";
 import * as api from "./lib/api";
-import { imageSize, makeThumb } from "./lib/image";
+import { imageSize } from "./lib/image";
 import { exportDefaultPath } from "./lib/export";
 import {
   newDraft,
@@ -37,14 +37,9 @@ import type {
   HistoryItem,
   ProviderStatus,
   WorkingImage,
-  GenerationTask,
 } from "./lib/types";
 
-import {
-  executeGeneration,
-  getResultBase,
-  type SavedResult,
-} from "./app/generation";
+import { getResultBase, type SavedResult } from "./app/generation";
 import { ResultStage, ResultActions } from "./components/Results";
 import { updateFluxBoxes } from "./models/flux/regions";
 
@@ -73,9 +68,6 @@ export default function App() {
   const requestClose = useCallback(() => setCloseRequested(true), []);
   const submitting = useRef(false);
   const ws = useWorkspace(submitting, setNotice, requestClose);
-  const [generationTask, setGenerationTask] = useState<GenerationTask | null>(
-    null,
-  );
   const {
     prefs,
     setPrefs,
@@ -91,13 +83,17 @@ export default function App() {
   } = ws;
   const [selectedId, setSelected] = useState<string | null>(null);
   const [pStatus, setPStatus] = useState<ProviderStatus | null>(null);
-  const [busy, setBusy] = useState(false);
+
   const [historyError, setHistoryError] = useState("");
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [tab, setTab] = useState<"params" | "history">("params");
   const [settings, setSettings] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [requestFeedback, setRequestFeedback] = useState<{
+    key: string;
+    id: string;
+  } | null>(null);
   const [refPreview, setRefPreview] = useState<string | null>(null);
-  const [sourceBox, setSourceBox] = useState<string | null>(null);
   const [urlDialog, setUrlDialog] = useState(false),
     [imageUrl, setImageUrl] = useState("");
   const [importing, setImporting] = useState(false);
@@ -150,6 +146,22 @@ export default function App() {
       setHistoryError("历史读取失败：" + String(e));
     }
   }, []);
+  const queue = useGenerationQueue(
+    submitting,
+    (r) => {
+      storeResult(r);
+      // Queue completion never interrupts the canvas or the user's next request.
+      setNotice(
+        r.saved
+          ? "任务已完成，可从结果栏或历史查看"
+          : "任务已完成，历史未保存，请从结果区重新保存",
+      );
+    },
+    refreshHistory,
+    setNotice,
+  );
+  const generationTask = queue.task;
+  const busy = !!generationTask || queue.pending.length > 0;
   useEffect(() => {
     void refreshProviders().catch((e) =>
       setNotice("无法读取提供商状态：" + String(e)),
@@ -164,7 +176,6 @@ export default function App() {
         : "canvas",
     );
     setRefPreview(null);
-    setSourceBox(null);
   }, [activeKey]);
 
   const importBatch = useCallback(
@@ -294,7 +305,7 @@ export default function App() {
   }, [importBatch]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (!ready || settings || refPreview || sourceBox || urlDialog) return;
+      if (!ready || settings || refPreview || urlDialog) return;
       const typing =
         e.target instanceof HTMLElement &&
         (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) ||
@@ -362,10 +373,10 @@ export default function App() {
       setSavingResult(false);
     }
   };
-  const generate = async () => {
-    if (submitting.current || !ready || importing) return;
-    const snapshot = current.current,
-      compiled = compileDraft(snapshot);
+  const generate = async (count: number) => {
+    if (!ready || importing) return;
+    const snapshot = current.current;
+    const compiled = compileDraft(snapshot);
     const invalid = [
       ...validateDraft(snapshot),
       ...(compiled.error ? [compiled.error] : []),
@@ -374,55 +385,14 @@ export default function App() {
       setNotice(invalid.join("；"));
       return;
     }
-    submitting.current = true;
-    setBusy(true);
-    setGenerationTask({
-      family: snapshot.family,
-      intent: taskIntent(snapshot),
-      modelId: snapshot.modelId,
-      provider: snapshot.provider,
-      startedAt: Date.now(),
-      total: routeFor(snapshot)?.parameters.count
-        ? (snapshot.params.count ?? 1)
-        : 1,
-      phase: "preparing",
-    });
     try {
       await ws.persist(snapshot);
-      const r = await executeGeneration(snapshot, (progress) =>
-        setGenerationTask((task) => (task ? { ...task, ...progress } : null)),
-      );
-      const { item, files } = r;
-      storeResult(r);
-      if (workspaceKey(current.current) === workspaceKey(snapshot)) {
-        setView("result");
-        setOriginal(false);
-      }
-      try {
-        setGenerationTask((task) =>
-          task ? { ...task, phase: "saving" } : null,
-        );
-        item.thumb = await makeThumb(r.image.dataUrl);
-        await api.historySave(item, files);
-        markSaved(r);
-        await refreshHistory();
-      } catch (e) {
-        setNotice(
-          "生成成功，但历史未保存：" +
-            String(e) +
-            "。请使用结果区的「重新保存历史」。",
-        );
-      }
+      const id = await queue.enqueue(snapshot, count);
+      if (!id) return;
+      setRequestFeedback({ key: workspaceKey(snapshot), id });
+      setNotice("已加入任务队列，可以继续创建下一条请求");
     } catch (e) {
-      setNotice(
-        "生成失败：" +
-          (e instanceof Error ? e.message : String(e)) +
-          (e instanceof api.AppError && e.hint ? " · " + e.hint : ""),
-      );
-    } finally {
-      submitting.current = false;
-      setBusy(false);
-      setGenerationTask(null);
+      setNotice("加入队列失败：" + String(e));
     }
   };
   const useResult = (im: WorkingImage, edit: boolean) => {
@@ -570,9 +540,7 @@ export default function App() {
   };
   const changeBoxes = (boxes: Box[]) =>
     commit(updateFluxBoxes(current.current, boxes));
-  const reference = draft.refs.find((r) => r.uid === refPreview),
-    editingBox = draft.boxes.find((b) => b.uid === sourceBox),
-    source = draft.refs.find((r) => r.uid === editingBox?.sourceId);
+  const reference = draft.refs.find((r) => r.uid === refPreview);
   const resultBase = getResultBase(result);
   const references = (
     <References
@@ -590,22 +558,24 @@ export default function App() {
   return (
     <div className={"workbench workbench-" + draft.family}>
       <header className="app-header">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
-          <strong>LutriUI</strong>
-        </div>
-        <div className="task-tabs segmented" aria-label="创作任务">
-          {(["create", "edit"] as const).map((task) => (
-            <button
-              key={task}
-              aria-pressed={intent === task}
-              className={intent === task ? "active" : ""}
-              disabled={!ready || importing}
-              onClick={() => ws.switchIntent(task)}
-            >
-              {task === "create" ? "生成" : "编辑"}
-            </button>
-          ))}
+        <div className="header-identity">
+          <div className="brand">
+            <span className="brand-mark" aria-hidden="true" />
+            <strong>LutriUI</strong>
+          </div>
+          <div className="task-tabs segmented" aria-label="创作任务">
+            {(["create", "edit"] as const).map((task) => (
+              <button
+                key={task}
+                aria-pressed={intent === task}
+                className={intent === task ? "active" : ""}
+                disabled={!ready || importing}
+                onClick={() => ws.switchIntent(task)}
+              >
+                {task === "create" ? "生成" : "编辑"}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="family-tabs" role="tablist" aria-label="模型家族">
           {families.map((f) => (
@@ -637,6 +607,11 @@ export default function App() {
           ))}
         </div>
         <div className="row">
+          {(generationTask || queue.pending.length > 0) && (
+            <button onClick={() => setQueueOpen(true)}>
+              任务队列 · {queue.pending.length + (generationTask ? 1 : 0)}
+            </button>
+          )}
           {generationTask && tab === "history" && (
             <button
               onClick={() => {
@@ -723,10 +698,15 @@ export default function App() {
                 commit(renameBox(current.current, uid, id), true);
                 setSelected(id);
               }}
-              onSource={(b) => setSourceBox(b.uid!)}
               providerStatus={pStatus}
-              busy={busy || !ready || importing}
+              busy={queue.accepting || !queue.ready || !ready || importing}
               generationTask={generationTask}
+              queueCount={queue.pending.length}
+              sentRequestId={
+                requestFeedback?.key === activeKey
+                  ? requestFeedback.id
+                  : undefined
+              }
               onShowTask={() =>
                 generationTask &&
                 ws.switchWorkspace(
@@ -736,7 +716,7 @@ export default function App() {
               }
               finalPreview={preview.finalPrompt}
               errors={errors}
-              onGenerate={() => void generate()}
+              onGenerate={(count) => void generate(count)}
               onSettings={() => setSettings(true)}
             />
           ) : (
@@ -750,6 +730,7 @@ export default function App() {
               <HistoryPanel
                 saveDirectory={prefs.saveDirectory}
                 items={history}
+                onCancel={(id) => void queue.cancel(id)}
                 onRefresh={() => void refreshHistory()}
                 onUseAsInput={(item) => void historyAsInput(item)}
                 onRestoreEdit={(item) => void restoreHistory(item)}
@@ -860,7 +841,6 @@ export default function App() {
               onGestureStart={ws.beginGesture}
               onGestureEnd={ws.endGesture}
               onImportMask={() => void importMask()}
-              onSource={(b) => setSourceBox(b.uid!)}
             />
           ) : (
             <div className="result-work-area">
@@ -898,6 +878,45 @@ export default function App() {
             ×
           </button>
         </div>
+      )}
+      {queueOpen && (
+        <Modal title="任务队列" onClose={() => setQueueOpen(false)}>
+          <p className="help">
+            任务按提交顺序执行；可以继续准备和提交下一条请求。
+          </p>
+          {generationTask && (
+            <div className="queue-item">
+              <strong>
+                执行中 · {familyById(generationTask.family).label}
+              </strong>
+              <button
+                onClick={() => {
+                  ws.switchWorkspace(
+                    generationTask.family,
+                    generationTask.intent ?? "create",
+                  );
+                  setQueueOpen(false);
+                }}
+              >
+                查看工作区
+              </button>
+            </div>
+          )}
+          {queue.pending.map((item, i) => (
+            <div className="queue-item" key={item.id}>
+              <div>
+                <strong>等待执行 · {i + 1}</strong>
+                <p>{item.prompt}</p>
+              </div>
+              <button onClick={() => void queue.cancel(item.id)}>
+                取消等待
+              </button>
+            </div>
+          ))}
+          {!generationTask && !queue.pending.length && (
+            <p>队列已完成，结果保存在历史中。</p>
+          )}
+        </Modal>
       )}
       {settings && (
         <Settings
@@ -943,56 +962,6 @@ export default function App() {
           <p className="help">
             {reference.width}×{reference.height} px
           </p>
-        </Modal>
-      )}
-      {editingBox && source && (
-        <Modal
-          title={"编辑源区域 · " + editingBox.id + " · " + source.name}
-          large
-          onClose={() => setSourceBox(null)}
-        >
-          <p className="help">右键拖拽重画来源区域，左键拖动或缩放当前框</p>
-          <div className="source-editor">
-            <Canvas
-              image={source}
-              phantom={null}
-              boxes={
-                editingBox.srcRect
-                  ? [
-                      {
-                        ...editingBox,
-                        rect: editingBox.srcRect,
-                        srcRect: undefined,
-                      },
-                    ]
-                  : []
-              }
-              selectedId={editingBox.id}
-              tool="box"
-              onSelect={() => {}}
-              onGestureStart={ws.beginGesture}
-              onGestureEnd={ws.endGesture}
-              onCreateRect={(rect) =>
-                commit({
-                  ...current.current,
-                  boxes: current.current.boxes.map((b) =>
-                    b.uid === editingBox.uid ? { ...b, srcRect: rect } : b,
-                  ),
-                })
-              }
-              onChange={(boxes) => {
-                if (boxes[0])
-                  commit({
-                    ...current.current,
-                    boxes: current.current.boxes.map((b) =>
-                      b.uid === editingBox.uid
-                        ? { ...b, srcRect: boxes[0].rect }
-                        : b,
-                    ),
-                  });
-              }}
-            />
-          </div>
         </Modal>
       )}
       {urlDialog && (

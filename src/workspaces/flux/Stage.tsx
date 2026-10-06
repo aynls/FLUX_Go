@@ -40,7 +40,6 @@ export default function FluxStage(p: StageProps) {
               <>
                 <img src={selectedSource.dataUrl} alt="来源参考图" />
                 <span className="muted">{selectedSource.name}</span>
-                <button onClick={() => p.onSource?.(selected)}>调整来源</button>
               </>
             )}
           </div>

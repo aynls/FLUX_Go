@@ -26,14 +26,15 @@ export interface SidebarProps {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onRename: (uid: string, id: string) => void;
-  onSource: (box: Box) => void;
   providerStatus: ProviderStatus | null;
   busy: boolean;
   finalPreview: string;
   errors: string[];
-  onGenerate: () => void;
+  onGenerate: (count: number) => void;
   onSettings: () => void;
   generationTask?: GenerationTask | null;
+  queueCount?: number;
+  sentRequestId?: string;
   onShowTask?: () => void;
 }
 
@@ -392,34 +393,6 @@ export default function Sidebar(p: SidebarProps) {
                             ))}
                           </select>
                         </label>
-                        <button className="wide" onClick={() => p.onSource(b)}>
-                          调整来源区域
-                        </button>
-                        {(() => {
-                          const r = d.refs.find((r) => r.uid === b.sourceId);
-                          return r && b.srcRect ? (
-                            <RectFields
-                              label={
-                                "源区域 · 0–1000（来源 " +
-                                r.width +
-                                "×" +
-                                r.height +
-                                " px）"
-                              }
-                              rect={b.srcRect}
-                              width={r.width}
-                              height={r.height}
-                              onChange={(srcRect) =>
-                                updateBox({ ...b, srcRect })
-                              }
-                            />
-                          ) : null;
-                        })()}
-                        {b.role === "anchor" && (
-                          <p className="help">
-                            保留来源区域的相对位置，源与目标使用相同归一化坐标。
-                          </p>
-                        )}
                       </>
                     )}
                   </>

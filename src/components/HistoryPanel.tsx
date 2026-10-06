@@ -10,6 +10,7 @@ import { displayValue } from "../workspaces/shared/Controls";
 import { catalog } from "../models/catalog";
 
 interface Props {
+  onCancel?: (id: string) => void;
   saveDirectory: string;
   items: HistoryItem[];
   onRefresh: () => void;
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function HistoryPanel({
+  onCancel,
   saveDirectory,
   items,
   onRefresh,
@@ -33,6 +35,7 @@ export default function HistoryPanel({
       <HistoryDetail
         saveDirectory={saveDirectory}
         item={detail}
+        onCancel={() => onCancel?.(detail.id)}
         onBack={() => setDetailId(null)}
         onUseAsInput={(index = 0) => {
           onUseAsInput({ ...detail, resultFiles: [detail.resultFiles[index]] });
@@ -87,7 +90,7 @@ export default function HistoryPanel({
                   />
                 ) : (
                   <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded bg-zinc-800 text-[10px] text-zinc-500">
-                    无图
+                    {historyStatus(it)}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
@@ -110,7 +113,8 @@ export default function HistoryPanel({
                     {it.prompt || "（无提示词）"}
                   </p>
                   <span className="muted">
-                    {modelByAnyId(it.model)?.label ?? it.model}
+                    {modelByAnyId(it.model)?.label ?? it.model} ·{" "}
+                    {historyStatus(it)}
                   </span>
                 </div>
               </button>
@@ -123,6 +127,7 @@ export default function HistoryPanel({
 }
 
 function HistoryDetail({
+  onCancel,
   saveDirectory,
   item,
   onBack,
@@ -131,6 +136,7 @@ function HistoryDetail({
   onDelete,
   error,
 }: {
+  onCancel: () => void;
   saveDirectory: string;
   item: HistoryItem;
   onBack: () => void;
@@ -209,6 +215,7 @@ function HistoryDetail({
       )}
 
       <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+        <Meta label="任务状态" value={historyStatus(item)} />
         <Meta
           label="模式"
           value={item.mode === "edit" ? "图像编辑" : "文生图"}
@@ -225,18 +232,20 @@ function HistoryDetail({
           label="模型"
           value={modelByAnyId(item.model)?.label ?? item.model}
         />
-        <Meta
-          label="成本"
-          value={
-            item.provider === "comfy"
-              ? item.usage?.credits != null
-                ? `${item.usage.credits} Credits`
-                : "实际 Credits 未返回"
-              : item.cost !== null
-                ? `$${item.cost.toFixed(4)}`
-                : "-"
-          }
-        />
+        {(item.provider !== "comfy" || item.usage?.credits != null) && (
+          <Meta
+            label="成本"
+            value={
+              item.provider === "comfy"
+                ? item.usage?.credits != null
+                  ? `${item.usage.credits} Credits`
+                  : ""
+                : item.cost !== null
+                  ? `$${item.cost.toFixed(4)}`
+                  : "-"
+            }
+          />
+        )}
         <Meta
           label="Tokens"
           value={
@@ -251,6 +260,9 @@ function HistoryDetail({
         />
         <Meta label="包围盒" value={`${(item.boxes ?? []).length} 个`} />
       </div>
+      {item.error && <p className="error-text">{item.error}</p>}
+      {item.taskId && <p className="help">供应商任务：{item.taskId}</p>}
+      {item.status === "queued" && <button onClick={onCancel}>取消等待</button>}
 
       <div className="mt-3">
         <p className="mb-1 text-xs text-zinc-500">提示词</p>
@@ -361,6 +373,7 @@ function HistoryDetail({
         <button
           className="rounded-md border border-red-900/60 px-3 py-2 text-xs text-red-400 hover:border-red-700"
           onClick={onDelete}
+          disabled={item.status === "queued" || item.status === "running"}
         >
           <Trash size={12} /> 删除记录
         </button>
@@ -385,4 +398,27 @@ function Meta({ label, value }: { label: string; value: string }) {
       </span>
     </div>
   );
+}
+function historyStatus(item: HistoryItem) {
+  const phases: Record<string, string> = {
+    preparing: "准备素材",
+    submitting: "提交中",
+    queued: "供应商排队",
+    generating: "生成中",
+    waiting: "等待结果",
+    downloading: "下载结果",
+    reasoning: "处理中",
+    saving: "保存结果",
+  };
+  return item.status === "running"
+    ? (phases[item.phase ?? ""] ?? "执行中")
+    : ((
+        {
+          queued: "等待执行",
+          ok: "已完成",
+          failed: "失败",
+          cancelled: "已取消",
+          interrupted: "已中断",
+        } as Record<string, string>
+      )[item.status] ?? item.status);
 }

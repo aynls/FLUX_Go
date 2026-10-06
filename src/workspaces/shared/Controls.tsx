@@ -29,8 +29,10 @@ export interface WorkspaceControlsProps {
   errors: string[];
   finalPreview: string;
   onSettings: () => void;
-  onGenerate: () => void;
+  onGenerate: (count: number) => void;
   generationTask?: GenerationTask | null;
+  queueCount?: number;
+  sentRequestId?: string;
   onShowTask?: () => void;
 }
 export function RouteControls({
@@ -581,6 +583,35 @@ export function InputOptions({
 }
 export function GenerateFooter(p: WorkspaceControlsProps) {
   const d = p.draft;
+  const [repeatCount, setRepeatCount] = useState(1);
+  const [sent, setSent] = useState(false);
+  const [labelVisible, setLabelVisible] = useState(true);
+  const lastFeedback = useRef(p.sentRequestId);
+  const taskKey = `${d.family}:${taskIntent(d)}`;
+  useEffect(() => {
+    setSent(false);
+    setLabelVisible(true);
+    lastFeedback.current = p.sentRequestId;
+  }, [taskKey]);
+  useEffect(() => {
+    if (!p.sentRequestId || p.sentRequestId === lastFeedback.current) return;
+    lastFeedback.current = p.sentRequestId;
+    setLabelVisible(false);
+    const show = window.setTimeout(() => {
+      setSent(true);
+      setLabelVisible(true);
+    }, 90);
+    const fade = window.setTimeout(() => setLabelVisible(false), 1090);
+    const restore = window.setTimeout(() => {
+      setSent(false);
+      setLabelVisible(true);
+    }, 1180);
+    return () => {
+      window.clearTimeout(show);
+      window.clearTimeout(fade);
+      window.clearTimeout(restore);
+    };
+  }, [p.sentRequestId, taskKey]);
   const outputCount = fieldsFor(d).count ? (d.params.count ?? 1) : 1;
   const [elapsed, setElapsed] = useState(0);
   const startedAt = p.generationTask?.startedAt;
@@ -652,23 +683,44 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
           )}
         </div>
       )}
-      <button
-        className="primary wide"
-        disabled={
-          p.busy ||
-          !p.providerStatus?.[d.provider] ||
-          !!p.errors.length ||
-          !p.finalPreview
-        }
-        onClick={p.onGenerate}
-        aria-describedby={reason ? "generation-reason" : undefined}
-      >
-        {p.busy
-          ? job
-            ? "任务进行中…"
-            : "准备中…"
-          : `${taskIntent(d) === "edit" ? "应用编辑" : "生成图像"} · ${creditLabel ? "约 " + creditLabel : cost != null ? "约 $" + cost.toFixed(3) : outputCount + " 张"}`}
-      </button>
+      <div className="generate-submit-row">
+        <button
+          className="primary wide"
+          disabled={
+            p.busy ||
+            !p.providerStatus?.[d.provider] ||
+            !!p.errors.length ||
+            !p.finalPreview
+          }
+          onClick={() => p.onGenerate(repeatCount)}
+          aria-describedby={reason ? "generation-reason" : undefined}
+        >
+          <span
+            className="submit-label"
+            style={{ opacity: labelVisible ? 1 : 0 }}
+          >
+            {sent
+              ? "请求已发送"
+              : `${taskIntent(d) === "edit" ? "应用编辑" : "生成图像"} · ${creditLabel ? "约 " + creditLabel : cost != null ? "约 $" + cost.toFixed(3) : outputCount + " 张"}`}
+          </span>
+        </button>
+        <input
+          className="generate-repeat-count"
+          type="number"
+          aria-label="生成次数"
+          title="生成次数"
+          min={1}
+          max={20}
+          step={1}
+          value={repeatCount}
+          disabled={p.busy}
+          onChange={(e) => {
+            const value = Number(e.target.value);
+            setRepeatCount(Math.max(1, Math.min(20, Math.trunc(value) || 1)));
+          }}
+        />
+      </div>
+      {!!p.queueCount && <p className="help">等待执行 {p.queueCount} 条</p>}
       {reason && (
         <div id="generation-reason" className="generation-reason">
           <span>{reason}</span>

@@ -96,29 +96,37 @@ export function ResultActions(p: {
           ))}
         </div>
       )}
-      <div>
+      <div className="result-heading">
         <strong>{modelByAnyId(r.out.model)?.label ?? "最近生成"}</strong>
-        <span className="muted">
-          {providers.find((p) => p.id === r.out.provider)?.label ??
-            r.out.provider}{" "}
-          · {r.image.width}×{r.image.height} ·{" "}
-          {r.out.provider === "comfy"
-            ? r.out.usage?.credits != null
-              ? "实际 " + r.out.usage.credits + " Credits"
-              : "实际 Credits 未返回"
-            : r.item.cost !== null
-              ? "$" + r.item.cost.toFixed(4)
-              : r.out.usage?.credits != null
-                ? r.out.usage.credits + " Credits"
-                : "费用未返回"}{" "}
-          · {r.saved ? "已存历史" : "历史尚未保存"}
+        <span className="result-save-state">
+          {r.saved ? "已存历史" : "历史尚未保存"}
         </span>
       </div>
-      <div className="row">
-        <button onClick={p.onSave}>另存为</button>
-        <button onClick={p.onCopy}>复制图片</button>
-        <button onClick={() => p.onUse(r.image, false)}>添加为参考图</button>
-        <button onClick={() => p.onUse(r.image, true)}>
+      <div className="result-meta">
+        <span>
+          {providers.find((p) => p.id === r.out.provider)?.label ??
+            r.out.provider}
+        </span>
+        <span>
+          {r.image.width}×{r.image.height}
+        </span>
+        {r.out.provider === "comfy" ? (
+          r.out.usage?.credits != null && (
+            <span>{r.out.usage.credits} Credits</span>
+          )
+        ) : r.item.cost != null ? (
+          <span>${r.item.cost.toFixed(4)}</span>
+        ) : r.out.usage?.credits != null ? (
+          <span>{r.out.usage.credits} Credits</span>
+        ) : null}
+      </div>
+      <div className="result-operations">
+        <div className="result-secondary">
+          <button onClick={p.onSave}>另存为</button>
+          <button onClick={p.onCopy}>复制图片</button>
+          <button onClick={() => p.onUse(r.image, false)}>添加为参考图</button>
+        </div>
+        <button className="primary" onClick={() => p.onUse(r.image, true)}>
           {taskIntent(r.snapshot) === "edit" ? "继续编辑" : "用这张图开始编辑"}
         </button>
         {!r.saved && (

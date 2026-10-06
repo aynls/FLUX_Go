@@ -790,7 +790,7 @@ function BoxView({
           boxShadow: selected
             ? `0 0 0 ${1 / scale}px rgba(255,255,255,0.35)`
             : undefined,
-          background: selected ? `${color}14` : `${color}08`,
+          background: selected ? `${color}40` : `${color}08`,
         }}
       >
         {/* 标签条：ID + 协议坐标（随拖拽实时更新） */}
@@ -827,7 +827,7 @@ function BoxView({
             className="absolute inset-0"
             style={{
               padding: `${5 / scale}px ${6 / scale}px`,
-              fontSize: 13 / scale,
+              fontSize: 16 / scale,
               lineHeight: 1.4,
               color: "#f2f2f4",
               overflow: "hidden",

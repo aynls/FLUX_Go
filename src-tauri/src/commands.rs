@@ -1,7 +1,5 @@
 //! Tauri 命令：前端唯一入口。密钥不经过任何命令的返回值。
 
-use std::sync::atomic::Ordering;
-
 use base64::Engine;
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
@@ -265,30 +263,21 @@ pub fn history_storage(app: tauri::AppHandle) -> Result<String, String> {
         .to_string())
 }
 
-struct BusyGuard<'a>(&'a std::sync::atomic::AtomicBool);
-impl Drop for BusyGuard<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
-    }
-}
-
 #[tauri::command]
 pub async fn generate(
     app: tauri::AppHandle,
-    state: State<'_, AppState>,
     request: GenerateRequest,
 ) -> Result<GenerateOutput, String> {
-    if state
-        .busy
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return Err("已有生成任务进行中，请等待完成后再试（防止重复提交与重复计费）。".to_string());
-    }
-    let _guard = BusyGuard(&state.busy);
     let request_id = request.request_id.clone();
     let reporter: crate::provider::progress::Reporter = std::sync::Arc::new(
         move |phase, task_id, completed, status| {
+            if let Some(id) = request_id.as_deref() {
+                if let Ok(store) = app.state::<AppState>().history.lock() {
+                    if let Some(store) = store.as_ref() {
+                        let _ = store.progress(id, phase, task_id);
+                    }
+                }
+            }
             let _ = app.emit("generation-progress", serde_json::json!({"requestId": request_id, "phase": phase, "taskId": task_id, "completed": completed, "status": status}));
         },
     );

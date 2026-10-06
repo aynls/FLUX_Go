@@ -1,6 +1,7 @@
 import { generate } from "../lib/api";
 import { downscaleDataUrl, imageSize } from "../lib/image";
 import { buildRequest } from "../models";
+import { fieldsFor } from "../models/catalog";
 import { primaryImage, taskIntent } from "../lib/workspace";
 import type {
   Draft,
@@ -22,10 +23,60 @@ export interface SavedResult {
 export function getResultBase(result: SavedResult | null) {
   return result ? primaryImage(result.snapshot) : null;
 }
+/** Persist the immutable recipe and original inputs before any provider call. */
+export function queuedGeneration(snapshot: Draft) {
+  if (fieldsFor(snapshot).seed && snapshot.params.seed == null) {
+    const seed = crypto.getRandomValues(new Uint32Array(1))[0] & 0x7fffffff;
+    snapshot = { ...snapshot, params: { ...snapshot.params, seed } };
+  }
+  const { refs, mask, ...recipe } = snapshot;
+  const request = buildRequest(
+    snapshot,
+    snapshot.refs.map((r) => r.dataUrl),
+    mask?.dataUrl,
+  );
+  const item: HistoryItem = {
+    id: crypto.randomUUID(),
+    createdAt: Date.now(),
+    provider: snapshot.provider,
+    model: request.model,
+    mode: taskIntent(snapshot) === "edit" ? "edit" : "t2i",
+    prompt: snapshot.prompt,
+    finalPrompt: request.finalPrompt,
+    params: { ...request.params },
+    boxes: snapshot.boxes,
+    canvasWidth: snapshot.canvas.w,
+    canvasHeight: snapshot.canvas.h,
+    inputFiles: [],
+    resultFiles: [],
+    maskFile: null,
+    thumb: null,
+    usage: null,
+    cost: null,
+    status: "queued",
+    error: null,
+    recipe: {
+      ...recipe,
+      refNames: refs.map((r) => r.name),
+      refIds: refs.map((r) => r.uid!),
+      refPurposes: refs.map((r) => r.purpose),
+      refNotes: refs.map((r) => r.note),
+      maskName: mask?.name,
+    },
+  };
+  const files = refs.map((r, i) => ({
+    kind: "input",
+    name: "input_" + i,
+    data: r.dataUrl,
+  }));
+  if (mask) files.push({ kind: "mask", name: "mask", data: mask.dataUrl });
+  return { snapshot, item, files };
+}
 /** One immutable snapshot, one paid submission, all output images retained. */
 export async function executeGeneration(
   snapshot: Draft,
   onProgress?: (progress: GenerationProgress) => void,
+  queued?: HistoryItem,
 ): Promise<SavedResult> {
   onProgress?.({ phase: "preparing" });
   const images = await Promise.all(
@@ -42,6 +93,7 @@ export async function executeGeneration(
     : undefined;
   onProgress?.({ phase: "waiting" });
   const request = buildRequest(snapshot, images, mask);
+  if (queued) request.requestId = queued.id;
   const out = await generate(request, onProgress);
   if (!out.images[0]) throw new Error("服务返回成功，但没有图片");
   const image: WorkingImage = {
@@ -52,8 +104,8 @@ export async function executeGeneration(
   };
   const { refs, mask: originalMask, ...recipe } = snapshot;
   const item: HistoryItem = {
-    id: crypto.randomUUID(),
-    createdAt: Date.now(),
+    id: queued?.id ?? crypto.randomUUID(),
+    createdAt: queued?.createdAt ?? Date.now(),
     provider: out.provider,
     model: out.model,
     mode: taskIntent(snapshot) === "edit" ? "edit" : "t2i",

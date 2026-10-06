@@ -46,7 +46,7 @@ pub async fn json_with_metadata(
         .headers()
         .get("X-Comfy-Credits-Used")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<f64>().ok())
+        .and_then(|v| v.trim().parse::<f64>().ok())
         .filter(|n| n.is_finite() && *n >= 0.0);
     let retry_after = response
         .headers()

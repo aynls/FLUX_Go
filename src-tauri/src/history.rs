@@ -7,6 +7,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryItem {
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub phase: Option<String>,
     pub id: String,
     pub created_at: u64,
     pub provider: String,
@@ -54,7 +60,22 @@ pub struct HistoryStore {
 impl HistoryStore {
     pub fn new(dir: PathBuf) -> std::io::Result<Self> {
         std::fs::create_dir_all(dir.join("images"))?;
-        Ok(Self { dir })
+        let store = Self { dir };
+        if let Ok(mut items) = store.read_index() {
+            let mut changed = false;
+            for item in &mut items {
+                if item.status == "running" {
+                    item.status = "interrupted".into();
+                    item.error =
+                        Some("应用关闭时任务尚未完成；供应商可能仍在处理，未自动重新提交。".into());
+                    changed = true;
+                }
+            }
+            if changed {
+                store.write_index(&items).map_err(std::io::Error::other)?;
+            }
+        }
+        Ok(store)
     }
 
     fn index_path(&self) -> PathBuf {
@@ -102,6 +123,29 @@ impl HistoryStore {
         files: Vec<HistoryFileIn>,
     ) -> Result<HistoryItem, String> {
         validate_id(&item.id)?;
+        // Updates arrive with the absolute paths returned by list/save.
+        for paths in [&mut item.input_files, &mut item.result_files] {
+            for path in paths {
+                let p = std::path::Path::new(path);
+                if p.is_absolute() {
+                    *path = p
+                        .strip_prefix(&self.dir)
+                        .map_err(|_| "历史图片路径不属于本地历史目录")?
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                }
+            }
+        }
+        if let Some(path) = &mut item.mask_file {
+            let p = std::path::Path::new(path);
+            if p.is_absolute() {
+                *path = p
+                    .strip_prefix(&self.dir)
+                    .map_err(|_| "历史蒙版路径不属于本地历史目录")?
+                    .to_string_lossy()
+                    .replace('\\', "/");
+            }
+        }
         if item.id.trim().is_empty() {
             return Err("历史条目缺少 id".into());
         }
@@ -144,11 +188,32 @@ impl HistoryStore {
     pub fn delete(&self, id: &str) -> Result<(), String> {
         validate_id(id)?;
         let mut items = self.read_index()?;
+        if items
+            .iter()
+            .any(|it| it.id == id && matches!(it.status.as_str(), "queued" | "running"))
+        {
+            return Err("请先取消等待任务，或等待正在执行的任务完成后再删除".into());
+        }
         items.retain(|it| it.id != id);
         self.write_index(&items)?;
         let dir = self.dir.join("images").join(id);
         if dir.exists() {
             std::fs::remove_dir_all(&dir).map_err(|e| format!("删除历史图片失败: {e}"))?;
+        }
+        Ok(())
+    }
+
+    pub fn progress(&self, id: &str, phase: &str, task_id: Option<&str>) -> Result<(), String> {
+        let mut items = self.read_index()?;
+        if let Some(item) = items
+            .iter_mut()
+            .find(|it| it.id == id && it.status == "running")
+        {
+            item.phase = Some(phase.into());
+            if let Some(task_id) = task_id {
+                item.task_id = Some(task_id.into());
+            }
+            self.write_index(&items)?;
         }
         Ok(())
     }
@@ -247,6 +312,45 @@ mod tests {
         assert!(store.list().unwrap().is_empty());
         std::fs::remove_dir_all(dir).unwrap();
     }
+    #[test]
+    fn task_updates_preserve_paths_and_restart_does_not_resubmit_running_work() {
+        let dir = temp();
+        let store = HistoryStore::new(dir.clone()).unwrap();
+        let item: HistoryItem = serde_json::from_value(serde_json::json!({
+            "id":"queued_task", "createdAt":1, "provider":"comfy", "model":"qwen-image-3.0",
+            "mode":"t2i", "prompt":"snapshot", "finalPrompt":"snapshot", "params":{},
+            "boxes":[], "status":"queued"
+        }))
+        .unwrap();
+        let mut saved = store
+            .save(
+                item,
+                vec![HistoryFileIn {
+                    kind: "input".into(),
+                    name: "input_0".into(),
+                    data: "data:image/png;base64,aGVsbG8=".into(),
+                }],
+            )
+            .unwrap();
+        assert!(store.delete(&saved.id).is_err());
+        let original_paths = saved.input_files.clone();
+        saved.status = "running".into();
+        store.save(saved, vec![]).unwrap();
+        store
+            .progress("queued_task", "waiting", Some("remote-task"))
+            .unwrap();
+        let restored = HistoryStore::new(dir.clone())
+            .unwrap()
+            .list()
+            .unwrap()
+            .remove(0);
+        assert_eq!(restored.status, "interrupted");
+        assert_eq!(restored.task_id.as_deref(), Some("remote-task"));
+        assert_eq!(restored.input_files, original_paths);
+        assert!(restored.error.is_some());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn malformed_index_is_reported_and_traversal_is_rejected() {
         let dir = temp();
