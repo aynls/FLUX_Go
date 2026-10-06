@@ -1249,7 +1249,7 @@ test("queued batch restoration reuses persisted seeds and request ids without ne
   };
   historyItems = [job.item];
   const interrupted = {
-    ...job.item,
+    ...structuredClone(job.item),
     id: "interrupted-job",
     status: "interrupted",
   };
@@ -1267,11 +1267,18 @@ test("queued batch restoration reuses persisted seeds and request ids without ne
   expect(submissions[1].requestId).toBe("batch-second");
   expect(submissions[1].params.seed).toBe(22);
   await act(async () => finish(output));
-  await waitFor(() => expect(historyItems[0].status).toBe("ok"));
+  const restoredBatch = () => historyItems.find((it) => it.id === job.item.id)!;
+  await waitFor(() => expect(restoredBatch().status).toBe("ok"));
   expect(historyItems).toHaveLength(2);
-  expect(historyItems[0].id).toBe(job.item.id);
-  expect(historyItems[0].resultFiles).toHaveLength(2);
-  expect(historyItems.find((it) => it.id === interrupted.id)?.status).toBe(
-    "interrupted",
+  expect(restoredBatch().resultFiles).toHaveLength(2);
+  expect(
+    restoredBatch().batch?.requests.map((request) => request.status),
+  ).toEqual(["ok", "ok"]);
+  expect(submissions).toHaveLength(2);
+  expect(
+    submissions.every((request) => request.historyId === job.item.id),
+  ).toBe(true);
+  expect(historyItems.find((it) => it.id === interrupted.id)).toEqual(
+    interrupted,
   );
 });
