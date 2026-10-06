@@ -7,6 +7,7 @@ import {
   Trash,
   ArrowLeft,
   Eye,
+  Copy,
 } from "@phosphor-icons/react";
 import { save } from "@tauri-apps/plugin-dialog";
 import type { GalleryItem } from "../lib/types";
@@ -35,6 +36,7 @@ export default function Gallery(p: {
   const [deleteIds, setDeleteIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(120);
   const [query, setQuery] = useState("");
   const used = new Set(p.picker?.usedIds ?? []);
@@ -70,6 +72,7 @@ export default function Gallery(p: {
     );
   }, [p.items]);
   useEffect(() => setVisibleCount(120), [query, filter]);
+  useEffect(() => setCopiedId(null), [previewId]);
   const toggle = (id: string) => {
     setError("");
     setSelection((ids) =>
@@ -378,6 +381,18 @@ export default function Gallery(p: {
             >
               <ArrowLeft size={16} />
               返回图库
+            </button>
+            <button
+              disabled={locked || preview.pendingDelete}
+              onClick={() =>
+                void run(async () => {
+                  await api.copyImage((await api.galleryRead(preview.id)).dataUrl);
+                  setCopiedId(preview.id);
+                })
+              }
+            >
+              <Copy size={16} />
+              {copiedId === preview.id ? "已复制图片" : "复制图片"}
             </button>
             {p.picker ? (
               <button

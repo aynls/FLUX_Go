@@ -1670,9 +1670,11 @@ test("gallery import only adds owned assets; picker reuses assets in selection o
   const picker = within(dialog);
   fireEvent.click(picker.getByRole("button", { name: "选择图片 second.png" }));
   fireEvent.click(picker.getByRole("button", { name: "选择图片 first.png" }));
-  fireEvent.click(
-    picker.getByRole("button", { name: "添加为参考素材 · 2 张" }),
-  );
+  await act(async () => {
+    fireEvent.click(
+      picker.getByRole("button", { name: "添加为参考素材 · 2 张" }),
+    );
+  });
   await waitFor(() => expect(ui.queryByRole("dialog")).toBeNull());
   expect(galleryItems).toHaveLength(2);
   expect(
@@ -1685,6 +1687,38 @@ test("gallery import only adds owned assets; picker reuses assets in selection o
   ).toEqual(["second.png", "first.png"]);
   fireEvent.click(ui.getByTitle("撤销 Ctrl+Z"));
   expect(ui.getByRole("heading", { name: /素材\s*0\/10/ })).toBeTruthy();
+});
+
+test("gallery picker accepts image paste shortcuts without mutating references until confirmed", async () => {
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: "从图库选择" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "从图库选择" }));
+  const dialog = ui.getByRole("dialog", { name: "从图库选择" });
+  const { within } = await import("@testing-library/react");
+  const picker = within(dialog);
+  fireEvent.keyDown(picker.getByRole("searchbox", { name: "搜索图库" }), {
+    key: "v",
+    ctrlKey: true,
+  });
+  expect(galleryItems).toHaveLength(0);
+  fireEvent.keyDown(dialog, { key: "v", ctrlKey: true });
+  await waitFor(() => expect(galleryItems).toHaveLength(1));
+  await waitFor(() =>
+    expect(picker.getByRole("button", { name: "选择图片 clip" })).toBeTruthy(),
+  );
+  expect(ui.getByRole("heading", { name: /素材\s*0\/10/ })).toBeTruthy();
+  fireEvent.click(picker.getByRole("button", { name: "选择图片 clip" }));
+  await act(async () => {
+    fireEvent.click(
+      picker.getByRole("button", { name: "添加为参考素材 · 1 张" }),
+    );
+  });
+  await waitFor(() => expect(ui.queryByRole("dialog")).toBeNull());
+  expect(ui.getByRole("heading", { name: /素材\s*1\/10/ })).toBeTruthy();
 });
 
 test("gallery picker enforces remaining slots and already-used assets without changing selection order", async () => {
@@ -1748,7 +1782,9 @@ test("gallery deletion confirms, retains failed items for retry, and never calls
   );
   expect(galleryItems.map((i) => i.id)).toEqual(["b"]);
   failedDeletes.clear();
-  fireEvent.click(ui.getByRole("button", { name: "确认删除图片" }));
+  await act(async () => {
+    fireEvent.click(ui.getByRole("button", { name: "确认删除图片" }));
+  });
   await waitFor(() => expect(ui.queryByRole("dialog")).toBeNull());
   expect(galleryItems).toHaveLength(0);
 });

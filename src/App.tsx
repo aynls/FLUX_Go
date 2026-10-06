@@ -435,8 +435,7 @@ export default function App() {
         importing ||
         settings ||
         refPreview ||
-        urlDialog ||
-        document.querySelector("dialog[open]")
+        urlDialog
       )
         return;
       const typing =
@@ -463,7 +462,7 @@ export default function App() {
         redo();
         setSelected(null);
       }
-      if (!typing && e.ctrlKey && e.key.toLowerCase() === "v") {
+      if (!typing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
         e.preventDefault();
         importBatch([api.clipboardImage], "clipboard");
       }
