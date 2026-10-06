@@ -7,6 +7,7 @@ import type {
   WorkingImage,
   WorkspaceSession,
   TaskIntent,
+  WorkspaceKey,
 } from "./types";
 import { DEFAULT_PARAMS, phantomSize } from "./params";
 import { BOX_COLORS, drawBoxColor } from "./boxColors";
@@ -147,7 +148,22 @@ export function migrateSession(value: unknown): WorkspaceSession | null {
     workspaces[draft.family] = draft;
   }
   if (!workspaces[raw.activeFamily]) throw new Error("活动工作区缺失");
-  return { schema: 1, activeFamily: raw.activeFamily, workspaces };
+  const taskWorkspaces: NonNullable<WorkspaceSession["taskWorkspaces"]> = {};
+  for (const draft of Object.values(workspaces))
+    if (draft) taskWorkspaces[workspaceKey(draft)] = draft;
+  for (const [key, value] of Object.entries(raw.taskWorkspaces ?? {})) {
+    const draft = migrateDraft(value);
+    if (workspaceKey(draft) !== key) throw new Error("工作区任务不匹配");
+    taskWorkspaces[workspaceKey(draft)] = draft;
+  }
+  const active = workspaces[raw.activeFamily]!;
+  taskWorkspaces[workspaceKey(active)] = active;
+  return {
+    schema: 1,
+    activeFamily: raw.activeFamily,
+    workspaces,
+    taskWorkspaces,
+  };
 }
 export function withIds(d: Draft): Draft {
   let pool = [...(d.colorPool ?? [])].filter((c) =>
@@ -254,6 +270,9 @@ export function reorderRefs(d: Draft, refs: WorkingImage[]): Draft {
 }
 export function taskIntent(d: Draft): TaskIntent {
   return d.intent ?? (d.refs.length ? "edit" : "create");
+}
+export function workspaceKey(d: Draft): WorkspaceKey {
+  return `${d.family}:${taskIntent(d)}`;
 }
 export function primaryImage(d: Draft) {
   if (taskIntent(d) !== "edit") return null;

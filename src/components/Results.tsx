@@ -1,6 +1,7 @@
 import Canvas from "./Canvas";
 import { getResultBase, type SavedResult } from "../app/generation";
 import type { WorkingImage } from "../lib/types";
+import { taskIntent } from "../lib/workspace";
 import { modelByAnyId, providers } from "../models/catalog";
 
 export function ResultStage({
@@ -55,6 +56,8 @@ export function ResultStage({
 }
 export function ResultActions(p: {
   result: SavedResult;
+  attempts?: SavedResult[];
+  onAttempt?: (result: SavedResult) => void;
   saving: boolean;
   onSelect: (i: number) => void;
   onSave: () => void;
@@ -65,7 +68,21 @@ export function ResultActions(p: {
   const r = p.result;
   return (
     <div className="result-actions">
-      {r.out.images.length > 1 && (
+      {(p.attempts?.length ?? 0) > 1 && (
+        <div className="result-gallery" aria-label="本工作区的尝试">
+          {p.attempts!.map((attempt, i) => (
+            <button
+              key={attempt.item.id}
+              className={attempt.item.id === r.item.id ? "active" : ""}
+              aria-label={"查看尝试 " + (i + 1)}
+              onClick={() => p.onAttempt?.(attempt)}
+            >
+              <img src={attempt.image.dataUrl} alt={"尝试 " + (i + 1)} />
+            </button>
+          ))}
+        </div>
+      )}
+      {r.out.images.length > 0 && (
         <div className="result-gallery" aria-label="本次生成结果">
           {r.out.images.map((im, i) => (
             <button
@@ -101,7 +118,9 @@ export function ResultActions(p: {
         <button onClick={p.onSave}>另存为</button>
         <button onClick={p.onCopy}>复制图片</button>
         <button onClick={() => p.onUse(r.image, false)}>添加为参考图</button>
-        <button onClick={() => p.onUse(r.image, true)}>继续编辑这张</button>
+        <button onClick={() => p.onUse(r.image, true)}>
+          {taskIntent(r.snapshot) === "edit" ? "继续编辑" : "用这张图开始编辑"}
+        </button>
         {!r.saved && (
           <button disabled={p.saving} onClick={p.onRetry}>
             重新保存历史

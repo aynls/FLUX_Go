@@ -25,6 +25,8 @@ import {
   validateDraft,
   migrateDraft,
   taskIntent,
+  workspaceKey,
+  primaryImage,
   setPrimaryImage,
 } from "./lib/workspace";
 import { families, familyById, modelByAnyId, routeFor } from "./models/catalog";
@@ -32,7 +34,6 @@ import { compileDraft } from "./models";
 import { maskFromRects } from "./workspaces/gpt/mask";
 import type {
   Box,
-  FamilyId,
   HistoryItem,
   ProviderStatus,
   WorkingImage,
@@ -102,23 +103,42 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const importQueue = useRef(Promise.resolve());
   const importJobs = useRef(0);
-  const [results, setResults] = useState<
-    Partial<Record<FamilyId, SavedResult>>
+  const [results, setResults] = useState<Partial<Record<string, SavedResult>>>(
+    {},
+  );
+  const intent = taskIntent(draft);
+  const activeKey = workspaceKey(draft);
+  const result = results[activeKey] ?? null;
+  const [attempts, setAttempts] = useState<
+    Partial<Record<string, SavedResult[]>>
   >({});
-  const result = results[draft.family] ?? null;
   const [view, setView] = useState<"canvas" | "result" | "compare">("canvas");
   const [original, setOriginal] = useState(false),
     [savingResult, setSavingResult] = useState(false);
-  const storeResult = (r: SavedResult) =>
-    setResults((s) => ({ ...s, [r.snapshot.family]: r }));
-  const markSaved = (r: SavedResult) =>
-    setResults((s) => ({
+  const storeResult = (r: SavedResult) => {
+    const key = workspaceKey(r.snapshot);
+    setResults((s) => ({ ...s, [key]: r }));
+    setAttempts((s) => ({
       ...s,
-      [r.snapshot.family]:
-        s[r.snapshot.family]?.item.id === r.item.id
-          ? { ...s[r.snapshot.family]!, saved: true }
-          : { ...r, saved: true },
+      [key]: s[key]?.some((v) => v.item.id === r.item.id)
+        ? s[key]!.map((v) => (v.item.id === r.item.id ? r : v))
+        : [...(s[key] ?? []), r].slice(-20),
     }));
+  };
+  const markSaved = (r: SavedResult) => {
+    const key = workspaceKey(r.snapshot);
+    setResults((s) =>
+      s[key]?.item.id === r.item.id
+        ? { ...s, [key]: { ...s[key]!, saved: true } }
+        : s,
+    );
+    setAttempts((s) => ({
+      ...s,
+      [key]: (s[key] ?? []).map((v) =>
+        v.item.id === r.item.id ? { ...v, saved: true } : v,
+      ),
+    }));
+  };
   const refreshProviders = useCallback(async () => {
     setPStatus(await api.providerStatus());
   }, []);
@@ -138,10 +158,14 @@ export default function App() {
   }, [refreshProviders, refreshHistory]);
   useEffect(() => {
     setSelected(null);
-    setView("canvas");
+    setView(
+      intent === "create" && draft.family !== "flux" && result
+        ? "result"
+        : "canvas",
+    );
     setRefPreview(null);
     setSourceBox(null);
-  }, [draft.family]);
+  }, [activeKey]);
 
   const importBatch = useCallback(
     (loaders: (() => Promise<api.ImportedImage>)[]) => {
@@ -354,6 +378,7 @@ export default function App() {
     setBusy(true);
     setGenerationTask({
       family: snapshot.family,
+      intent: taskIntent(snapshot),
       modelId: snapshot.modelId,
       provider: snapshot.provider,
       startedAt: Date.now(),
@@ -369,7 +394,7 @@ export default function App() {
       );
       const { item, files } = r;
       storeResult(r);
-      if (current.current.family === snapshot.family) {
+      if (workspaceKey(current.current) === workspaceKey(snapshot)) {
         setView("result");
         setOriginal(false);
       }
@@ -401,7 +426,7 @@ export default function App() {
     }
   };
   const useResult = (im: WorkingImage, edit: boolean) => {
-    const d = current.current,
+    const d = edit ? ws.draftForIntent("edit") : current.current,
       max = routeFor(d)?.maxRefs ?? 0;
     if (!edit && d.refs.length >= max) {
       setNotice(`参考图已达 ${max} 张，请先移除一张`);
@@ -510,6 +535,7 @@ export default function App() {
           name: "生成结果 " + (index + 1),
         },
       });
+      setView("result");
     } catch (e) {
       setNotice("结果读取失败：" + String(e));
     }
@@ -568,6 +594,19 @@ export default function App() {
           <span className="brand-mark" aria-hidden="true" />
           <strong>LutriUI</strong>
         </div>
+        <div className="task-tabs segmented" aria-label="创作任务">
+          {(["create", "edit"] as const).map((task) => (
+            <button
+              key={task}
+              aria-pressed={intent === task}
+              className={intent === task ? "active" : ""}
+              disabled={!ready || importing}
+              onClick={() => ws.switchIntent(task)}
+            >
+              {task === "create" ? "生成" : "编辑"}
+            </button>
+          ))}
+        </div>
         <div className="family-tabs" role="tablist" aria-label="模型家族">
           {families.map((f) => (
             <button
@@ -601,7 +640,10 @@ export default function App() {
           {generationTask && tab === "history" && (
             <button
               onClick={() => {
-                ws.switchFamily(generationTask.family);
+                ws.switchWorkspace(
+                  generationTask.family,
+                  generationTask.intent ?? "create",
+                );
                 setTab("params");
               }}
             >
@@ -686,7 +728,11 @@ export default function App() {
               busy={busy || !ready || importing}
               generationTask={generationTask}
               onShowTask={() =>
-                generationTask && ws.switchFamily(generationTask.family)
+                generationTask &&
+                ws.switchWorkspace(
+                  generationTask.family,
+                  generationTask.intent ?? "create",
+                )
               }
               finalPreview={preview.finalPrompt}
               errors={errors}
@@ -717,47 +763,93 @@ export default function App() {
         >
           <div className="canvas-toolbar">
             <div className="row">
-              <button
-                className={view === "canvas" ? "active" : ""}
-                onClick={() => setView("canvas")}
-              >
-                {draft.family === "flux" ? "输出画布" : "创作工作区"}
-              </button>
-              <button
-                disabled={!result}
-                className={view === "result" ? "active" : ""}
-                onClick={() => setView("result")}
-              >
-                生成结果
-              </button>
-              <button
-                disabled={!result || !resultBase}
-                className={view === "compare" ? "active" : ""}
-                onClick={() => setView("compare")}
-              >
-                原图 / 结果对照
-              </button>
+              <strong>
+                {intent === "create"
+                  ? draft.family === "flux" && view === "canvas"
+                    ? "构图"
+                    : "生成预览"
+                  : "编辑图片"}
+              </strong>
+              {intent === "create" && draft.family === "flux" && result && (
+                <button
+                  onClick={() =>
+                    setView(view === "canvas" ? "result" : "canvas")
+                  }
+                >
+                  {view === "canvas" ? "查看生成结果" : "返回构图"}
+                </button>
+              )}
+              {intent === "edit" && result && (
+                <>
+                  <button
+                    className={view === "canvas" ? "active" : ""}
+                    onClick={() => setView("canvas")}
+                  >
+                    原图
+                  </button>
+                  <button
+                    className={view === "result" ? "active" : ""}
+                    onClick={() => setView("result")}
+                  >
+                    编辑结果
+                  </button>
+                  {resultBase && (
+                    <button
+                      className={view === "compare" ? "active" : ""}
+                      onClick={() => setView("compare")}
+                    >
+                      对照
+                    </button>
+                  )}
+                </>
+              )}
             </div>
-            {view === "canvas" && draft.family === "flux" ? (
-              <div className="row">
-                <span className="muted">
-                  构图 {draft.canvas.w}×{draft.canvas.h}
-                </span>
-              </div>
-            ) : (
-              view !== "canvas" && (
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={original}
-                    onChange={(e) => setOriginal(e.target.checked)}
-                  />
-                  查看原尺寸
-                </label>
-              )
-            )}
+            {view === "canvas" &&
+            draft.family === "flux" &&
+            intent === "create" ? (
+              <span className="muted">
+                {draft.canvas.w}×{draft.canvas.h}
+              </span>
+            ) : result && view !== "canvas" ? (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={original}
+                  onChange={(e) => setOriginal(e.target.checked)}
+                />
+                查看原尺寸
+              </label>
+            ) : null}
           </div>
-          {view === "canvas" ? (
+          {view === "canvas" &&
+          ((intent === "edit" && !primaryImage(draft)) ||
+            (intent === "create" && draft.family !== "flux")) ? (
+            <div className="result-work-area">
+              <div className="stage workspace-empty">
+                <strong>
+                  {intent === "edit"
+                    ? "添加要编辑的图片"
+                    : "描述你想生成的画面"}
+                </strong>
+                <p className="muted">
+                  {intent === "edit"
+                    ? "先指定编辑主图，再描述修改内容；参考图可以随后添加。"
+                    : "填写提示词并生成，结果会显示在这里。参考图可选。"}
+                </p>
+                {intent === "edit" && (
+                  <button disabled={importing} onClick={() => void openFiles()}>
+                    添加编辑主图
+                  </button>
+                )}
+                {intent === "create" && result && (
+                  <button onClick={() => setView("result")}>
+                    查看生成结果
+                  </button>
+                )}
+              </div>
+              {references}
+            </div>
+          ) : view === "canvas" ? (
             <WorkspaceStage
               draft={draft}
               references={references}
@@ -779,6 +871,11 @@ export default function App() {
           {result && (
             <ResultActions
               result={result}
+              attempts={attempts[activeKey] ?? []}
+              onAttempt={(r) => {
+                setResults((s) => ({ ...s, [activeKey]: r }));
+                setView("result");
+              }}
               saving={savingResult}
               onSelect={(i) => void chooseResult(i)}
               onSave={() => void saveResult()}

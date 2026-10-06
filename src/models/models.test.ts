@@ -163,6 +163,23 @@ test("v2 FLUX drafts migrate and future versions never overwrite local data", ()
     workspaces: { flux: migrated, gpt: newDraft(DEFAULT_PREFERENCES, "gpt") },
   });
   expect(session?.workspaces.flux?.prompt).toBe("older work");
+  const edit = { ...newDraft(), intent: "edit" as const, prompt: "edit work" };
+  const tasks = migrateSession({
+    schema: 1,
+    activeFamily: "flux",
+    workspaces: { flux: migrated },
+    taskWorkspaces: { "flux:create": migrated, "flux:edit": edit },
+  });
+  expect(tasks?.taskWorkspaces?.["flux:create"]?.prompt).toBe("older work");
+  expect(tasks?.taskWorkspaces?.["flux:edit"]?.prompt).toBe("edit work");
+  expect(() =>
+    migrateSession({
+      schema: 1,
+      activeFamily: "flux",
+      workspaces: { flux: migrated },
+      taskWorkspaces: { "flux:create": edit },
+    }),
+  ).toThrow("工作区任务不匹配");
   expect(() => migrateSession({ ...old, schema: 999 })).toThrow();
 });
 test("legacy overlay selection does not rewrite the actual API order or original prompt", () => {

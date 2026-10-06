@@ -10,7 +10,7 @@ import {
 } from "../../models/catalog";
 import { estimateCost } from "../../lib/params";
 import { estimateComfyCredits, formatCredits } from "../../models/pricing";
-import { sentSize, taskIntent, setTaskIntent } from "../../lib/workspace";
+import { sentSize, taskIntent } from "../../lib/workspace";
 import { useEffect, useRef, useState } from "react";
 import { gptSize } from "../../models/gpt";
 import type {
@@ -50,22 +50,7 @@ export function RouteControls({
   return (
     <section>
       <div className="section-heading">
-        <h2>任务</h2>
-      </div>
-      <div className="segmented" aria-label="任务模式">
-        {(["create", "edit"] as const).map((intent) => (
-          <button
-            key={intent}
-            aria-pressed={taskIntent(d) === intent}
-            disabled={intent === "create" && !!d.mask}
-            title={
-              intent === "create" && d.mask ? "请先移除编辑蒙版" : undefined
-            }
-            onClick={() => onChange(setTaskIntent(d, intent))}
-          >
-            {intent === "create" ? "生成新画面" : "编辑图片"}
-          </button>
-        ))}
+        <h2>模型与供应商</h2>
       </div>
       {models.length > 1 && (
         <label>
@@ -655,7 +640,8 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
               ? ` · ${job.completed}/${job.total} 张`
               : ""}
           </span>
-          {job.family !== d.family && (
+          {(job.family !== d.family ||
+            (job.intent ?? "create") !== taskIntent(d)) && (
             <button onClick={p.onShowTask}>返回任务工作区</button>
           )}
           {job.taskId && (
@@ -681,7 +667,7 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
           ? job
             ? "任务进行中…"
             : "准备中…"
-          : `生成 · ${creditLabel ? "约 " + creditLabel : cost != null ? "约 $" + cost.toFixed(3) : outputCount + " 张"}`}
+          : `${taskIntent(d) === "edit" ? "应用编辑" : "生成图像"} · ${creditLabel ? "约 " + creditLabel : cost != null ? "约 $" + cost.toFixed(3) : outputCount + " 张"}`}
       </button>
       {reason && (
         <div id="generation-reason" className="generation-reason">

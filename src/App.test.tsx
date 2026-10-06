@@ -137,9 +137,8 @@ mock.module("./lib/api", () => ({
   credentialCheck: async () => "verified",
   credentialConfigure: async () => {},
 }));
-const { render, fireEvent, waitFor, cleanup, act } = await import(
-  "@testing-library/react"
-);
+const { render, fireEvent, waitFor, cleanup, act } =
+  await import("@testing-library/react");
 const { default: App } = await import("./App");
 beforeEach(() => {
   initial = null;
@@ -182,16 +181,27 @@ test("right drag creates a FLUX box over existing boxes and handles; left drag o
         selectedId={box.id}
         tool="box"
         onSelect={() => {}}
-        onChange={(boxes) => { changed = boxes; }}
+        onChange={(boxes) => {
+          changed = boxes;
+        }}
       />,
     );
     const surface = ui.container.querySelector(".canvas-surface")!;
     Object.defineProperty(surface, "setPointerCapture", { value: () => {} });
     if (operation === "pan") fireEvent.keyDown(window, { code: "Space" });
-    fireEvent.pointerDown(surface, { button, pointerId: 1, clientX: x, clientY: y });
+    fireEvent.pointerDown(surface, {
+      button,
+      pointerId: 1,
+      clientX: x,
+      clientY: y,
+    });
     if (operation === "pan")
       expect((surface as HTMLElement).style.cursor).toBe("grabbing");
-    fireEvent.pointerMove(surface, { pointerId: 1, clientX: x + 30, clientY: y + 40 });
+    fireEvent.pointerMove(surface, {
+      pointerId: 1,
+      clientX: x + 30,
+      clientY: y + 40,
+    });
     fireEvent.pointerUp(surface, { button, pointerId: 1 });
     if (operation === "pan") fireEvent.keyUp(window, { code: "Space" });
     if (operation === "create") {
@@ -228,7 +238,12 @@ test("right drag redraws a source region and read-only canvases cannot create bo
     );
     const surface = ui.container.querySelector(".canvas-surface")!;
     Object.defineProperty(surface, "setPointerCapture", { value: () => {} });
-    fireEvent.pointerDown(surface, { button: 2, pointerId: 1, clientX: 50, clientY: 60 });
+    fireEvent.pointerDown(surface, {
+      button: 2,
+      pointerId: 1,
+      clientX: 50,
+      clientY: 60,
+    });
     fireEvent.pointerMove(surface, { pointerId: 1, clientX: 90, clientY: 110 });
     fireEvent.pointerUp(surface, { button: 2, pointerId: 1 });
     if (readOnly) expect(create).not.toHaveBeenCalled();
@@ -378,7 +393,7 @@ test("GPT native parameters are sent and all results can be selected and exporte
       ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
     ).toBe(false),
   );
-  fireEvent.click(ui.getByRole("button", { name: /^生成 · 约 .*Credits/ }));
+  fireEvent.click(ui.getByRole("button", { name: /^生成图像 · 约 .*Credits/ }));
   await waitFor(() => expect(submitted).not.toBeNull());
   expect(submitted!.model).toBe("gpt-image-2.5-flare");
   expect(submitted!.params.size).toBe("1024x1024");
@@ -418,7 +433,7 @@ test("background generation belongs to its family without replacing the new work
       ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
     ).toBe(false),
   );
-  fireEvent.click(ui.getByRole("button", { name: "生成 · 1 张" }));
+  fireEvent.click(ui.getByRole("button", { name: "生成图像 · 1 张" }));
   await waitFor(() => expect(submitted).not.toBeNull());
   fireEvent.click(ui.getByRole("tab", { name: "Qwen Image" }));
   fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
@@ -436,13 +451,9 @@ test("background generation belongs to its family without replacing the new work
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
   ).toBe("New Qwen work");
   expect(savedItem!.recipe!.family).toBe("gpt");
-  expect(
-    ui.getByRole("button", { name: "生成结果" }).hasAttribute("disabled"),
-  ).toBe(true);
+  expect(ui.queryByRole("button", { name: "查看结果 1" })).toBeNull();
   fireEvent.click(ui.getByRole("tab", { name: "GPT Image 2.5" }));
-  expect(
-    ui.getByRole("button", { name: "生成结果" }).hasAttribute("disabled"),
-  ).toBe(false);
+  expect(ui.getByRole("button", { name: "查看结果 1" })).toBeTruthy();
 });
 
 test("chosen export directory persists across app restart", async () => {
@@ -625,7 +636,7 @@ test("in-flight snapshot is immutable; result does not overwrite newer draft or 
       ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
     ).toBe(false),
   );
-  fireEvent.click(ui.getByRole("button", { name: /^生成 ·/ }));
+  fireEvent.click(ui.getByRole("button", { name: /^(生成图像|应用编辑) ·/ }));
   await waitFor(() => expect(submitted).not.toBeNull());
   fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
     target: { value: "next version while running" },
@@ -676,7 +687,7 @@ test("primary roles reach the request and native progress follows the active tas
   });
   fireEvent.click(ui.getByLabelText("素材操作 second.png"));
   fireEvent.click(ui.getAllByRole("button", { name: "设为编辑主图" }).at(-1)!);
-  fireEvent.click(ui.getByRole("button", { name: /^生成 ·/ }));
+  fireEvent.click(ui.getByRole("button", { name: /^(生成图像|应用编辑) ·/ }));
   await waitFor(() => expect(submitted).not.toBeNull());
   expect(submitted!.images[0]).toContain("second.png");
   expect(submitted!.finalPrompt).toContain(
@@ -760,13 +771,13 @@ test("continuing an edit replaces the primary, retains reference roles, and star
       ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
     ).toBe(false),
   );
-  fireEvent.click(ui.getByRole("button", { name: /^生成 ·/ }));
+  fireEvent.click(ui.getByRole("button", { name: /^(生成图像|应用编辑) ·/ }));
   await waitFor(() => expect(submitted).not.toBeNull());
   await act(async () => finish(output));
   await waitFor(() =>
-    expect(ui.getByRole("button", { name: "继续编辑这张" })).toBeTruthy(),
+    expect(ui.getByRole("button", { name: "继续编辑" })).toBeTruthy(),
   );
-  fireEvent.click(ui.getByRole("button", { name: "继续编辑这张" }));
+  fireEvent.click(ui.getByRole("button", { name: "继续编辑" }));
   expect(
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
   ).toBe("");
@@ -791,10 +802,12 @@ test("inactive route parameters do not change generation labels or the saved req
   const ui = render(<App />);
   await waitFor(() =>
     expect(
-      ui.getByRole("button", { name: "生成 · 1 张" }).hasAttribute("disabled"),
+      ui
+        .getByRole("button", { name: "生成图像 · 1 张" })
+        .hasAttribute("disabled"),
     ).toBe(false),
   );
-  fireEvent.click(ui.getByRole("button", { name: "生成 · 1 张" }));
+  fireEvent.click(ui.getByRole("button", { name: "生成图像 · 1 张" }));
   await waitFor(() => expect(submitted).not.toBeNull());
   expect(submitted!.params.count).toBeUndefined();
   await act(async () => finish(output));
@@ -803,7 +816,7 @@ test("inactive route parameters do not change generation labels or the saved req
   expect(savedItem!.recipe?.params.count).toBe(20);
 });
 
-test("route and task mode changes each have their own undo step", async () => {
+test("route changes undo within a task; task navigation preserves independent drafts", async () => {
   initial = {
     ...newDraft(undefined, "qwen"),
     provider: "runware",
@@ -829,11 +842,142 @@ test("route and task mode changes each have their own undo step", async () => {
     (ui.getByRole("spinbutton", { name: "生成张数" }) as HTMLInputElement)
       .value,
   ).toBe("20");
-  fireEvent.click(ui.getByRole("button", { name: "编辑图片" }));
+  fireEvent.click(ui.getByRole("button", { name: "编辑" }));
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("");
+  expect(
+    ui.getByRole("button", { name: "撤销 Ctrl+Z" }).hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
+    target: { value: "edit separately" },
+  });
+  fireEvent.click(ui.getByRole("button", { name: "生成" }));
+  expect(
+    ui.getByRole("button", { name: "生成" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("a poster");
+  fireEvent.click(ui.getByRole("button", { name: "编辑" }));
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("edit separately");
+});
+
+test("generation and editing keep independent inputs, parameters and undo across restart", async () => {
+  initial = { ...newDraft(undefined, "gpt"), prompt: "new scene" };
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "编辑" }));
+  expect(ui.getByRole("button", { name: "添加编辑主图" })).toBeTruthy();
+  expect(
+    ui.getByRole("button", { name: /^应用编辑 ·/ }).hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.click(ui.getByRole("button", { name: "添加编辑主图" }));
+  await waitFor(() =>
+    expect(ui.queryByRole("button", { name: "添加编辑主图" })).toBeNull(),
+  );
+  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
+    target: { value: "change the light" },
+  });
+  fireEvent.change(ui.getByRole("combobox", { name: "生成质量" }), {
+    target: { value: "high" },
+  });
+  fireEvent.click(ui.getByRole("button", { name: "生成" }));
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("new scene");
+  expect(ui.queryByAltText("来源参考图")).toBeNull();
+  fireEvent.click(ui.getByRole("button", { name: "编辑" }));
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("change the light");
+  expect(
+    (ui.getByRole("combobox", { name: "生成质量" }) as HTMLSelectElement).value,
+  ).toBe("high");
+  await waitFor(() =>
+    expect(
+      draftWrites.at(-1) &&
+        (draftWrites.at(-1) as WorkspaceSession).taskWorkspaces?.["gpt:edit"]
+          ?.prompt,
+    ).toBe("change the light"),
+  );
+  initial = draftWrites.at(-1)!;
+  ui.unmount();
+  const restarted = render(<App />);
+  await waitFor(() =>
+    expect(
+      (
+        restarted.getByRole("textbox", {
+          name: "提示词",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe("change the light"),
+  );
+  fireEvent.click(restarted.getByRole("button", { name: "生成" }));
+  expect(
+    (restarted.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement)
+      .value,
+  ).toBe("new scene");
+});
+
+test("a background generation stays in its task and starts editing without replacing generation", async () => {
+  initial = { ...newDraft(undefined, "gpt"), prompt: "draw a garden" };
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(ui.getByRole("button", { name: /^生成图像 ·/ }));
+  await waitFor(() => expect(submitted).not.toBeNull());
+  fireEvent.click(ui.getByRole("button", { name: "编辑" }));
+  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
+    target: { value: "separate edit" },
+  });
+  await act(async () =>
+    finish({ ...output, model: "openai/gpt-image-2.5-flare" }),
+  );
+  expect(ui.queryByRole("button", { name: "查看结果 1" })).toBeNull();
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("separate edit");
+  fireEvent.click(ui.getByRole("button", { name: "生成" }));
+  expect(ui.getByRole("button", { name: "用这张图开始编辑" })).toBeTruthy();
+  expect(ui.queryByRole("button", { name: "对照" })).toBeNull();
+  fireEvent.click(ui.getByRole("button", { name: "用这张图开始编辑" }));
+  expect(
+    ui.getByRole("button", { name: "编辑" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(ui.queryByRole("button", { name: "添加编辑主图" })).toBeNull();
   fireEvent.click(ui.getByRole("button", { name: "撤销 Ctrl+Z" }));
   expect(
-    ui.getByRole("button", { name: "生成新画面" }).getAttribute("aria-pressed"),
-  ).toBe("true");
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("separate edit");
+  fireEvent.click(ui.getByRole("button", { name: "生成" }));
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("draw a garden");
+  fireEvent.click(ui.getByRole("button", { name: /^生成图像 ·/ }));
+  await waitFor(() =>
+    expect(ui.getByRole("button", { name: "任务进行中…" })).toBeTruthy(),
+  );
+  await act(async () =>
+    finish({ ...output, model: "openai/gpt-image-2.5-flare" }),
+  );
+  await waitFor(() =>
+    expect(ui.getByRole("button", { name: "查看尝试 2" })).toBeTruthy(),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "查看尝试 1" }));
+  expect(ui.getByRole("button", { name: "查看尝试 1" }).className).toContain(
+    "active",
+  );
+  expect(ui.queryByRole("button", { name: "对照" })).toBeNull();
 });
 
 test("history failure keeps result usable and retry saves without another generation", async () => {
@@ -845,7 +989,7 @@ test("history failure keeps result usable and retry saves without another genera
       ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
     ).toBe(false),
   );
-  fireEvent.click(ui.getByRole("button", { name: /^生成 ·/ }));
+  fireEvent.click(ui.getByRole("button", { name: /^(生成图像|应用编辑) ·/ }));
   await waitFor(() => expect(submitted).not.toBeNull());
   const request = submitted;
   await act(async () => {

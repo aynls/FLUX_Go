@@ -24,12 +24,9 @@ export interface Box {
 export type ProviderId = "openrouter" | "bfl" | "comfy" | "runware";
 export type FamilyId = "flux" | "gpt" | "qwen";
 export type TaskIntent = "create" | "edit";
+export type WorkspaceKey = `${FamilyId}:${TaskIntent}`;
 export type ReferencePurpose =
-  | "reference"
-  | "style"
-  | "subject"
-  | "composition"
-  | "custom";
+  "reference" | "style" | "subject" | "composition" | "custom";
 export type ParamValue = string | number | boolean | null;
 
 export interface GenerateParams {
@@ -103,6 +100,7 @@ export interface GenerationProgress {
   completed?: number | null;
 }
 export interface GenerationTask extends GenerationProgress {
+  intent?: TaskIntent;
   family: FamilyId;
   modelId: string;
   provider: ProviderId;
@@ -192,11 +190,12 @@ export interface Draft {
   maskRects?: Rect[];
 }
 
-/** 每个模型家族独立保存草稿；切换工作区不覆盖其他家族。 */
+/** 各家族的生成与编辑任务独立保存草稿；workspaces 记录最近活动的任务。 */
 export interface WorkspaceSession {
   schema: 1;
   activeFamily: FamilyId;
   workspaces: Partial<Record<FamilyId, Draft>>;
+  taskWorkspaces?: Partial<Record<WorkspaceKey, Draft>>;
 }
 
 export interface Preferences {

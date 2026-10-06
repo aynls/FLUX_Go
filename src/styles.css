@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+@theme {
+  --text-xs: 0.8125rem;
+  --text-sm: 0.9375rem;
+}
+
 :root {
   color-scheme: light;
   --surface: #ffffff;
@@ -56,7 +61,7 @@ body {
   background: var(--surface);
   color: var(--text);
   font:
-    13px/1.5 "Segoe UI",
+    15px/1.5 "Segoe UI",
     "Microsoft YaHei",
     system-ui,
     sans-serif;
@@ -144,7 +149,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--muted);
   margin: 7px 0;
 }
@@ -158,17 +163,17 @@ p {
   margin: 0;
 }
 h2 {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 650;
   margin-bottom: 8px;
 }
 h3 {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 650;
   margin-bottom: 8px;
 }
 .help {
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.65;
   color: var(--muted);
   margin: 7px 0;
@@ -176,7 +181,7 @@ h3 {
 }
 .muted {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
 }
 .wide {
   width: 100%;
@@ -220,15 +225,28 @@ h3 {
   gap: 12px;
 }
 .family-tabs {
+  min-width: 0;
   display: flex;
   gap: 4px;
   min-width: 0;
+}
+.task-tabs {
+  flex-shrink: 0;
+}
+.workspace-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
 }
 .family-tabs button {
   gap: 8px;
   border-color: transparent;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 14px;
 }
 .family-icon {
   width: 20px;
@@ -260,7 +278,7 @@ h3 {
   mask: url("/brand/mark.svg") center / contain no-repeat;
 }
 .brand strong {
-  font-size: 15px;
+  font-size: 17px;
   letter-spacing: -0.3px;
 }
 .workspace {
@@ -334,7 +352,7 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted);
 }
 .credential-hint button {
@@ -347,7 +365,7 @@ h3 {
   margin-top: 7px;
 }
 .tags button {
-  font-size: 10px;
+  font-size: 12px;
   padding: 3px 7px;
 }
 .box-list {
@@ -441,7 +459,7 @@ h3 {
 }
 .box-card .row button {
   padding: 4px 7px;
-  font-size: 11px;
+  font-size: 13px;
 }
 details {
   border-top: 1px solid var(--border);
@@ -455,7 +473,7 @@ details {
 }
 summary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--muted);
 }
 pre {
@@ -477,7 +495,7 @@ pre {
   color: var(--danger);
   border-left: 2px solid var(--danger);
   padding: 8px;
-  font-size: 11px;
+  font-size: 13px;
   margin: 10px 0;
 }
 .generate-footer {
@@ -504,7 +522,7 @@ pre {
   border-bottom: 1px solid var(--border);
 }
 .canvas-toolbar button {
-  font-size: 12px;
+  font-size: 14px;
 }
 .stage {
   flex: 1;
@@ -567,20 +585,20 @@ pre {
   flex: 1;
 }
 .reference-meta strong {
-  font-size: 11px;
+  font-size: 13px;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
 }
 .reference-meta span {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
 }
 .reference-meta .row {
   gap: 4px;
 }
 .reference-meta button {
-  font-size: 10px;
+  font-size: 12px;
   padding: 3px 5px;
 }
 .result-actions {
@@ -594,7 +612,7 @@ pre {
   margin-bottom: 7px;
 }
 .result-actions button {
-  font-size: 11px;
+  font-size: 13px;
 }
 .comparison {
   display: grid;
@@ -615,7 +633,7 @@ pre {
 }
 .comparison figcaption {
   margin-bottom: 10px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--muted);
 }
 .comparison img {
@@ -651,7 +669,7 @@ pre {
   gap: 10px;
   align-items: center;
   color: var(--text);
-  font-size: 12px;
+  font-size: 14px;
 }
 .notice span {
   flex: 1;
@@ -683,7 +701,7 @@ pre {
   margin-bottom: 16px;
 }
 .modal-heading h2 {
-  font-size: 16px;
+  font-size: 18px;
   margin: 0;
 }
 .settings-content section {
@@ -696,7 +714,7 @@ pre {
 }
 .storage-path {
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: 13px;
   user-select: text;
   margin: 10px 0;
   color: var(--muted);
@@ -729,7 +747,7 @@ pre {
   border-bottom: 1px solid var(--border);
 }
 .model-stage-heading strong {
-  font-size: 12px;
+  font-size: 14px;
 }
 .gpt-editor,
 .qwen-composer {
@@ -776,7 +794,7 @@ pre {
 }
 .history-error {
   color: var(--danger);
-  font-size: 11px;
+  font-size: 13px;
   padding: 0 12px;
 }
 ::-webkit-scrollbar {
@@ -876,7 +894,7 @@ pre {
 :is(.flux-work-area, .gpt-work-area, .qwen-work-area, .result-work-area)
   .reference-strip
   button {
-  font-size: 11px;
+  font-size: 13px;
   padding: 4px 6px;
 }
 :is(.flux-work-area, .gpt-work-area, .qwen-work-area, .result-work-area)
@@ -945,7 +963,7 @@ button {
   border: 0;
   color: var(--muted);
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .segmented button[aria-pressed="true"] {
   background: var(--surface);
@@ -960,7 +978,7 @@ button {
   margin: 3px 0 12px;
 }
 .preset-row button {
-  font-size: 11px;
+  font-size: 13px;
   padding: 3px 8px;
 }
 .grow {
@@ -983,7 +1001,7 @@ button {
   display: flex;
   justify-content: space-between;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   padding: 8px 0;
 }
 .generation-reason {
@@ -992,15 +1010,15 @@ button {
   gap: 6px;
   justify-content: space-between;
   margin-top: 8px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted);
 }
 .generation-reason button {
-  font-size: 11px;
+  font-size: 13px;
   padding: 2px 6px;
 }
 .request-parameters {
-  font-size: 11px;
+  font-size: 13px;
   margin: 10px 0 16px;
 }
 .request-parameters > div {
@@ -1028,7 +1046,7 @@ button {
   justify-content: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 .reference-empty strong {
   font-weight: 500;
@@ -1058,7 +1076,7 @@ button {
   background: color-mix(in srgb, var(--accent) 9%, transparent);
   border-radius: 4px;
   padding: 2px 6px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
 }
 :is(.flux-work-area, .gpt-work-area, .qwen-work-area, .result-work-area)
@@ -1073,7 +1091,7 @@ button {
   object-fit: contain;
 }
 .reference-meta strong {
-  font-size: 12px;
+  font-size: 14px;
 }
 .reference-meta label {
   margin: 4px 0 0;
@@ -1235,10 +1253,10 @@ button {
 }
 .region-context button {
   margin-left: auto;
-  font-size: 11px;
+  font-size: 13px;
 }
 .generation-status {
-  font-size: 12px;
+  font-size: 14px;
   margin-bottom: 10px;
   display: flex;
   flex-direction: column;
@@ -1254,7 +1272,7 @@ button {
   font-variant-numeric: tabular-nums;
 }
 .generation-status > button {
-  font-size: 11px;
+  font-size: 13px;
   padding: 3px;
 }
 .generation-status details {
@@ -1263,7 +1281,7 @@ button {
   padding: 0;
 }
 .generation-status code {
-  font-size: 10px;
+  font-size: 12px;
   overflow-wrap: anywhere;
   user-select: text;
 }
@@ -1313,7 +1331,7 @@ button {
     flex: 1;
     justify-content: center;
     padding: 5px;
-    font-size: 11px;
+    font-size: 13px;
   }
   .settings-panel {
     padding: 16px;
