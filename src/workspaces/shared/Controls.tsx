@@ -1,3 +1,4 @@
+import { promptLength } from "../../models";
 import { displayValue } from "../../models/parameterLabels";
 export { displayValue } from "../../models/parameterLabels";
 import {
@@ -15,7 +16,7 @@ import {
 import { estimateCost } from "../../lib/params";
 import { estimateComfyCredits, formatCredits } from "../../models/pricing";
 import { sentSize, taskIntent } from "../../lib/workspace";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { gptSize } from "../../models/gpt";
 import type {
   Draft,
@@ -179,6 +180,7 @@ export function ParameterFields({
   onChange: (d: Draft) => void;
   keys: string[];
 }) {
+  const helpId = useId();
   const fields = fieldsFor(d);
   const values = { ...defaultsFor(d.modelId, d.provider), ...d.params };
   const change = (key: string, value: GenerateParams[string]) =>
@@ -196,176 +198,195 @@ export function ParameterFields({
         .map((key) => {
           const field = fields[key];
           const value = values[key];
-          if (field.kind === "enum" && field.values?.length === 1)
-            return (
-              <div className="fixed-field" key={key}>
-                <span>{field.label}</span>
-                <span>{displayValue(key, value ?? field.values[0])}</span>
-                {value != null && !field.values.includes(String(value)) && (
-                  <button onClick={() => change(key, field.values![0])}>
-                    恢复默认
-                  </button>
-                )}
-              </div>
-            );
-          if (key === "safetyTolerance")
+          const control = (() => {
+            if (field.kind === "enum" && field.values?.length === 1)
+              return (
+                <div className="fixed-field" key={key}>
+                  <span>{field.label}</span>
+                  <span>{displayValue(key, value ?? field.values[0])}</span>
+                  {value != null && !field.values.includes(String(value)) && (
+                    <button onClick={() => change(key, field.values![0])}>
+                      恢复默认
+                    </button>
+                  )}
+                </div>
+              );
+            if (key === "safetyTolerance")
+              return (
+                <label key={key}>
+                  {field.label}
+                  <select
+                    aria-label={field.label}
+                    value={value == null ? "default" : String(value)}
+                    onChange={(e) =>
+                      change(
+                        key,
+                        e.target.value === "default"
+                          ? null
+                          : Number(e.target.value),
+                      )
+                    }
+                  >
+                    <option value="default">供应商默认</option>
+                    {Array.from({ length: (field.max ?? 4) + 1 }, (_, n) => (
+                      <option key={n} value={n}>
+                        {n}
+                        {n === 0
+                          ? " · 最严格"
+                          : n === field.max
+                            ? " · 最宽松"
+                            : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              );
+            if (key === "seed")
+              return (
+                <div key={key} className="seed-field">
+                  <label>
+                    随机种子
+                    <select
+                      aria-label="种子模式"
+                      value={value == null ? "random" : "fixed"}
+                      onChange={(e) =>
+                        change(key, e.target.value === "random" ? null : 0)
+                      }
+                    >
+                      <option value="random">随机</option>
+                      <option value="fixed">固定种子</option>
+                    </select>
+                  </label>
+                  {value != null && (
+                    <div className="row">
+                      <label className="grow">
+                        种子值
+                        <input
+                          aria-label="种子值"
+                          type="number"
+                          min={field.min}
+                          max={field.max}
+                          value={Number(value)}
+                          onChange={(e) =>
+                            change(
+                              key,
+                              e.target.value === ""
+                                ? null
+                                : Number(e.target.value),
+                            )
+                          }
+                        />
+                      </label>
+                      <button
+                        title="生成一个随机种子并固定"
+                        onClick={() =>
+                          change(
+                            key,
+                            crypto.getRandomValues(new Uint32Array(1))[0] %
+                              2147483648,
+                          )
+                        }
+                      >
+                        换一个
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            if (field.kind === "size")
+              return (
+                <SizeField
+                  key={key}
+                  value={String(value ?? "")}
+                  allowAuto={!!field.allowAuto}
+                  onChange={(v) => change(key, v)}
+                />
+              );
+            if (field.kind === "boolean")
+              return (
+                <label className="check" key={key}>
+                  <input
+                    type="checkbox"
+                    checked={value === true}
+                    onChange={(e) => change(key, e.target.checked)}
+                  />
+                  {field.label}
+                </label>
+              );
             return (
               <label key={key}>
                 {field.label}
-                <select
-                  aria-label={field.label}
-                  value={value == null ? "default" : String(value)}
-                  onChange={(e) =>
-                    change(
-                      key,
-                      e.target.value === "default"
-                        ? null
-                        : Number(e.target.value),
-                    )
-                  }
-                >
-                  <option value="default">供应商默认</option>
-                  {Array.from({ length: (field.max ?? 4) + 1 }, (_, n) => (
-                    <option key={n} value={n}>
-                      {n}
-                      {n === 0
-                        ? " · 最严格"
-                        : n === field.max
-                          ? " · 最宽松"
-                          : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            );
-          if (key === "seed")
-            return (
-              <div key={key} className="seed-field">
-                <label>
-                  随机种子
+                {field.kind === "enum" ? (
                   <select
-                    aria-label="种子模式"
-                    value={value == null ? "random" : "fixed"}
-                    onChange={(e) =>
-                      change(key, e.target.value === "random" ? null : 0)
-                    }
+                    value={String(value ?? "")}
+                    onChange={(e) => change(key, e.target.value)}
                   >
-                    <option value="random">随机</option>
-                    <option value="fixed">固定种子</option>
-                  </select>
-                </label>
-                {value != null && (
-                  <div className="row">
-                    <label className="grow">
-                      种子值
-                      <input
-                        aria-label="种子值"
-                        type="number"
-                        min={field.min}
-                        max={field.max}
-                        value={Number(value)}
-                        onChange={(e) =>
-                          change(
-                            key,
-                            e.target.value === ""
-                              ? null
-                              : Number(e.target.value),
-                          )
+                    {value != null &&
+                      !field.values?.includes(String(value)) && (
+                        <option value={String(value)}>
+                          {String(value)} · 不适用
+                        </option>
+                      )}
+                    {field.values?.map((v) => (
+                      <option
+                        key={v}
+                        value={v}
+                        disabled={
+                          (key === "promptExtendMode" &&
+                            v === "agent" &&
+                            d.refs.length > 0) ||
+                          (key === "outputFormat" &&
+                            v === "jpeg" &&
+                            values.background === "transparent")
                         }
-                      />
-                    </label>
-                    <button
-                      title="生成一个随机种子并固定"
-                      onClick={() =>
-                        change(
-                          key,
-                          crypto.getRandomValues(new Uint32Array(1))[0] %
-                            2147483648,
-                        )
-                      }
-                    >
-                      换一个
-                    </button>
-                  </div>
+                      >
+                        {key === "moderation" && v === "low"
+                          ? "宽松"
+                          : displayValue(key, v)}
+                      </option>
+                    ))}
+                  </select>
+                ) : field.kind === "integer" ? (
+                  <input
+                    type="number"
+                    value={value == null ? "" : Number(value)}
+                    min={field.min}
+                    max={field.max}
+                    step={1}
+                    placeholder={field.nullable ? "使用默认 / 随机" : undefined}
+                    onChange={(e) =>
+                      change(
+                        key,
+                        e.target.value === "" ? null : Number(e.target.value),
+                      )
+                    }
+                  />
+                ) : (
+                  <textarea
+                    rows={3}
+                    value={String(value ?? "")}
+                    maxLength={field.maxLength}
+                    onChange={(e) => change(key, e.target.value)}
+                  />
                 )}
-              </div>
-            );
-          if (field.kind === "size")
-            return (
-              <SizeField
-                key={key}
-                value={String(value ?? "")}
-                allowAuto={!!field.allowAuto}
-                onChange={(v) => change(key, v)}
-              />
-            );
-          if (field.kind === "boolean")
-            return (
-              <label className="check" key={key}>
-                <input
-                  type="checkbox"
-                  checked={value === true}
-                  onChange={(e) => change(key, e.target.checked)}
-                />
-                {field.label}
               </label>
             );
+          })();
           return (
-            <label key={key}>
-              {field.label}
-              {field.kind === "enum" ? (
-                <select
-                  value={String(value ?? "")}
-                  onChange={(e) => change(key, e.target.value)}
-                >
-                  {value != null && !field.values?.includes(String(value)) && (
-                    <option value={String(value)}>
-                      {String(value)} · 不适用
-                    </option>
-                  )}
-                  {field.values?.map((v) => (
-                    <option
-                      key={v}
-                      value={v}
-                      disabled={
-                        (key === "promptExtendMode" &&
-                          v === "agent" &&
-                          d.refs.length > 0) ||
-                        (key === "outputFormat" &&
-                          v === "jpeg" &&
-                          values.background === "transparent")
-                      }
-                    >
-                      {key === "moderation" && v === "low"
-                        ? "宽松"
-                        : displayValue(key, v)}
-                    </option>
-                  ))}
-                </select>
-              ) : field.kind === "integer" ? (
-                <input
-                  type="number"
-                  value={value == null ? "" : Number(value)}
-                  min={field.min}
-                  max={field.max}
-                  step={1}
-                  placeholder={field.nullable ? "使用默认 / 随机" : undefined}
-                  onChange={(e) =>
-                    change(
-                      key,
-                      e.target.value === "" ? null : Number(e.target.value),
-                    )
-                  }
-                />
-              ) : (
-                <textarea
-                  rows={3}
-                  value={String(value ?? "")}
-                  maxLength={field.maxLength}
-                  onChange={(e) => change(key, e.target.value)}
-                />
+            <div
+              key={key}
+              className="parameter-field"
+              role="group"
+              aria-label={field.label}
+              aria-describedby={field.help ? `${helpId}-${key}` : undefined}
+            >
+              {control}
+              {field.help && (
+                <p className="help" id={`${helpId}-${key}`}>
+                  {field.help}
+                </p>
               )}
-            </label>
+            </div>
           );
         })}
     </div>
@@ -504,6 +525,8 @@ export function PromptEditor({
   onChange: (d: Draft) => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const feedbackId = useId();
+  const { length, min, max, error } = promptLength(d);
   const insert = (tag: string) => {
     const start = ref.current?.selectionStart ?? d.prompt.length,
       end = ref.current?.selectionEnd ?? start;
@@ -528,7 +551,8 @@ export function PromptEditor({
         ref={ref}
         aria-label="提示词"
         rows={d.family === "qwen" ? 4 : 5}
-        maxLength={32000}
+        aria-describedby={feedbackId}
+        aria-invalid={!!error}
         placeholder={
           d.family === "flux"
             ? "描述目标画面或修改内容…"
@@ -539,6 +563,17 @@ export function PromptEditor({
         value={d.prompt}
         onChange={(e) => onChange({ ...d, prompt: e.target.value })}
       />
+      <div
+        id={feedbackId}
+        className={error ? "prompt-limit error-text" : "prompt-limit muted"}
+      >
+        <span>
+          {error ?? (min > 1 ? `发送字符 · 至少 ${min}` : "发送字符")}
+        </span>
+        <span>
+          {length.toLocaleString()} / {max.toLocaleString()}
+        </span>
+      </div>
       {(d.refs.length > 0 || d.boxes.length > 0) && (
         <div className="tags">
           {d.refs.map((r, i) => (

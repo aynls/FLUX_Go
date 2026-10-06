@@ -31,6 +31,20 @@ export function compileDraft(d: Draft) {
     error: d.prompt.trim() ? null : "请输入提示词",
   };
 }
+/** Limits apply to the compiled instruction, including reference roles and regions. */
+export function promptLength(d: Draft) {
+  const length = Array.from(compileDraft(d).finalPrompt).length;
+  const route = routeFor(d);
+  const min = route?.minPrompt ?? 1,
+    max = route?.maxPrompt ?? 32000;
+  const error =
+    length > max
+      ? `编译后的提示词超过 ${max} 字符`
+      : length > 0 && length < min
+        ? `此路由提示词至少需要 ${min} 个字符`
+        : null;
+  return { length, min, max, error };
+}
 const validators = {
   flux: () => [],
   gpt: validateGpt,
@@ -50,11 +64,8 @@ export function validateModel(d: Draft) {
   if (d.intent === "create" && d.mask) errors.push("编辑蒙版需要编辑图片模式");
   if (d.intent === "edit" && d.baseId && d.refs[0]?.uid !== d.baseId)
     errors.push("主图须位于图片 1，请重新指定主图");
-  const length = Array.from(compileDraft(d).finalPrompt).length;
-  const maxPrompt = routeFor(d)?.maxPrompt ?? 32000;
-  if (length > maxPrompt) errors.push(`编译后的提示词超过 ${maxPrompt} 字符`);
-  if (length > 0 && length < (routeFor(d)?.minPrompt ?? 1))
-    errors.push(`此路由提示词至少需要 ${routeFor(d)?.minPrompt} 个字符`);
+  const prompt = promptLength(d);
+  if (prompt.error) errors.push(prompt.error);
   if (d.family !== "flux" && d.boxes.length && d.layoutEnabled !== false)
     errors.push("此模型不支持区域，请暂不使用区域或切换到 FLUX");
   if (d.family === "flux" && d.provider === "runware") {

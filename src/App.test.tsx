@@ -1937,3 +1937,42 @@ test("queued batch restoration reuses persisted seeds and request ids without ne
     interrupted,
   );
 });
+test("prompt limits follow the compiled route without truncating creative input", async () => {
+  const longPrompt = "🌿".repeat(3001);
+  initial = {
+    ...newDraft(undefined, "seedream"),
+    modelId: "seedream-5-pro",
+    prompt: longPrompt,
+  };
+  let ui!: ReturnType<typeof render>;
+  await act(async () => {
+    ui = render(<App />);
+  });
+  fireEvent.change(ui.getByRole("combobox", { name: "提供商" }), {
+    target: { value: "runware" },
+  });
+  const prompt = ui.getByRole("textbox", {
+    name: "提示词",
+  }) as HTMLTextAreaElement;
+  expect(prompt.value).toBe(longPrompt);
+  expect(prompt.getAttribute("maxlength")).toBeNull();
+  expect(prompt.getAttribute("aria-invalid")).toBe("true");
+  expect(ui.container.querySelector(".prompt-limit")?.textContent).toContain(
+    "3,001 / 3,000",
+  );
+  expect(
+    ui.getByRole("button", { name: /^生成图像 ·/ }).hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.change(prompt, { target: { value: "🌿".repeat(3000) } });
+  expect(prompt.getAttribute("aria-invalid")).toBe("false");
+  expect(
+    ui.getByRole("button", { name: /^生成图像 ·/ }).hasAttribute("disabled"),
+  ).toBe(false);
+  fireEvent.change(ui.getByRole("combobox", { name: "提供商" }), {
+    target: { value: "openrouter" },
+  });
+  expect(prompt.value).toBe("🌿".repeat(3000));
+  expect(ui.container.querySelector(".prompt-limit")?.textContent).toContain(
+    "3,000 / 32,000",
+  );
+});

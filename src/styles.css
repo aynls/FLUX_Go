@@ -1928,3 +1928,17 @@ button {
   flex: 1;
   overflow: hidden;
 }
+.prompt-limit {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 5px;
+  font-size: 12px;
+}
+.prompt-limit > span:last-child {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.parameter-field > .help {
+  margin: 5px 0 0;
+}
