@@ -49,6 +49,12 @@ import {
 import { ResultStage, ResultActions } from "./components/Results";
 import { updateFluxBoxes } from "./models/flux/regions";
 
+const FAMILY_ICONS = {
+  flux: "/flux.png",
+  gpt: "/openai.png",
+  qwen: "/qwen-color.png",
+};
+
 export default function App() {
   const [notice, setNotice] = useState("");
   useEffect(() => {
@@ -579,6 +585,17 @@ export default function App() {
                 setTab("params");
               }}
             >
+              <img
+                className={
+                  "family-icon" + (f.id === "qwen" ? "" : " monochrome")
+                }
+                src={FAMILY_ICONS[f.id]}
+                width={20}
+                height={20}
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+              />
               {f.label}
             </button>
           ))}

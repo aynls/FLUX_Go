@@ -225,9 +225,22 @@ h3 {
   min-width: 0;
 }
 .family-tabs button {
+  gap: 8px;
   border-color: transparent;
   white-space: nowrap;
   font-size: 12px;
+}
+.family-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+.family-icon.monochrome {
+  filter: brightness(0);
+}
+:root[data-theme="dark"] .family-icon.monochrome {
+  filter: brightness(0) invert(1);
 }
 .family-tabs button.active {
   background: var(--surface-alt);
