@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, mock, test } from "bun:test";
 import { Window } from "happy-dom";
 import type {
   Draft,
+  ProviderId,
   WorkspaceSession,
   GenerateOutput,
   GenerateRequestPayload,
@@ -16,7 +17,9 @@ import HistoryPanel from "./components/HistoryPanel";
 import Gallery from "./components/Gallery";
 import GenerationInfo, { searchDocument } from "./components/GenerationInfo";
 import { webUrl } from "./lib/links";
-import { StrictMode } from "react";
+import { StrictMode, useState } from "react";
+import { WorkspaceSidebar } from "./workspaces";
+import { catalog, fieldsFor, defaultsFor } from "./models/catalog";
 import { queuedGeneration } from "./app/generation";
 
 const dom = new Window({ url: "http://localhost:5173" });
@@ -2117,4 +2120,73 @@ test("source suggestions cannot execute provider HTML or open non-web URLs", () 
   );
   const frame = ui.getByTitle("Google 搜索建议");
   expect(frame.getAttribute("sandbox")).toBe("allow-same-origin");
+});
+test("every declared route parameter has a reachable creative control", () => {
+  for (const model of catalog.models)
+    for (const provider of Object.keys(model.routes) as ProviderId[]) {
+      const initialDraft = {
+        ...newDraft(undefined, model.family),
+        modelId: model.id,
+        provider,
+        params: defaultsFor(model.id, provider),
+      };
+      const fields = fieldsFor(initialDraft);
+      function Harness() {
+        const [draft, onChange] = useState(initialDraft);
+        return (
+          <WorkspaceSidebar
+            draft={draft}
+            onChange={onChange}
+            onReorder={() => {}}
+            selectedId={null}
+            onSelect={() => {}}
+            onRename={() => {}}
+            providerStatus={null}
+            busy={false}
+            finalPreview=""
+            errors={[]}
+            onGenerate={() => {}}
+            onSettings={() => {}}
+          />
+        );
+      }
+      const ui = render(<Harness />);
+      const seen = new Set<string>();
+      const collect = () =>
+        ui
+          .queryAllByRole("group")
+          .forEach((el) => seen.add(el.getAttribute("aria-label") ?? ""));
+      collect();
+      const mode = ui.queryByRole("combobox", { name: "尺寸模式" });
+      if (mode) {
+        fireEvent.change(mode, { target: { value: "auto" } });
+        collect();
+        fireEvent.change(mode, { target: { value: "custom" } });
+        collect();
+      }
+      const output = ui.queryByRole("combobox", { name: "输出格式" });
+      if (output && fields.outputFormat?.values?.includes("jpeg")) {
+        fireEvent.change(output, { target: { value: "jpeg" } });
+        collect();
+      }
+      const extend = ui.queryByRole("checkbox", {
+        name: fields.promptExtend?.label ?? "unused",
+      }) as HTMLInputElement | null;
+      if (extend && !extend.checked) {
+        fireEvent.click(extend);
+        collect();
+      }
+      for (const [key, field] of Object.entries(fields)) {
+        if (key === "count")
+          expect(ui.getByRole("spinbutton", { name: "生成张数" })).toBeTruthy();
+        else
+          expect({
+            model: model.id,
+            provider,
+            key,
+            visible: seen.has(field.label),
+          }).toEqual({ model: model.id, provider, key, visible: true });
+      }
+      ui.unmount();
+    }
 });
