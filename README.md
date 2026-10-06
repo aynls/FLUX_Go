@@ -2,6 +2,8 @@
 
 基于 Tauri、React 和 TypeScript 的桌面图像生成与编辑工作台。支持 FLUX.3 Image、GPT Image 2.5、Qwen Image、Gemini Image（Nano Banana 2 / Pro）和 Seedream 5.0（Pro / Lite / Flash），通过 OpenRouter、BFL、Comfy、Runware 或各家官方 API 调用。
 
+![alt text](image.png)
+
 ## 启动
 
 支持 Windows x64、Linux x64 和 Apple Silicon Mac。
