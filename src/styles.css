@@ -870,7 +870,7 @@ pre {
   border-top: 1px solid var(--border);
   min-height: 54px;
 }
-.mask-summary img {
+.mask-summary canvas {
   height: 42px;
   width: 48px;
   object-fit: contain;

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Canvas from "../../components/Canvas";
+import MaskThumbnail from "./MaskThumbnail";
 import { routeFor } from "../../models/catalog";
 import { outputEstimate, primaryImage } from "../../lib/workspace";
 import type { StageProps } from "../shared/Stage";
@@ -108,7 +109,7 @@ export default function GptStage(p: StageProps) {
         </div>
         {first && supported && (
           <div className="mask-summary">
-            {d.mask && <img src={d.mask.dataUrl} alt="编辑蒙版" />}
+            {d.mask && <MaskThumbnail image={first} mask={d.mask} />}
             <span className="muted">
               {d.mask ? "黑色为编辑区域" : "使用画笔或矩形标记编辑区域"}
             </span>

@@ -342,8 +342,8 @@ test("history keeps multiple results and restores the GPT mask into its own work
     ).toBe("true"),
   );
   expect(
-    ui.getByRole("img", { name: "编辑蒙版" }).getAttribute("src"),
-  ).toContain("first-mask.png");
+    ui.getByRole("img", { name: "主图与黑色编辑蒙版" }).tagName,
+  ).toBe("CANVAS");
   expect(
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
   ).toBe("masked edit");
