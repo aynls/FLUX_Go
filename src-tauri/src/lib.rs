@@ -33,8 +33,13 @@ pub fn run() {
         .manage(AppState::default())
         .setup(|app| {
             let dir = app.path().app_data_dir()?.join("workbench");
-            let store =
-                history::HistoryStore::new(dir).map_err(|e| format!("初始化历史存储失败: {e}"))?;
+            let store = history::HistoryStore::new(dir.clone())
+                .map_err(|e| format!("初始化历史存储失败: {e}"))?;
+            // Register the existing, resolved image roots before the WebView reads assets.
+            // Keep credentials, drafts and metadata outside the asset protocol scope.
+            let assets = app.asset_protocol_scope();
+            assets.allow_directory(dir.join("images"), true)?;
+            assets.allow_directory(dir.join("gallery/images"), true)?;
             provider::init_key_settings(&app.path().app_data_dir()?)?;
             *app.state::<AppState>().history.lock().unwrap() = Some(store);
             Ok(())
