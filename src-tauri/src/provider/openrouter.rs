@@ -93,6 +93,7 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
 pub async fn generate(req: &GenerateRequest) -> ProviderResult {
     let key = read_key()?;
     let payload = build_payload(req)?;
+    super::progress::report("waiting", None, None, None);
 
     let resp = client()
         .post(ENDPOINT)

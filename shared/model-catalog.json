@@ -106,7 +106,7 @@
       "kind": "enum"
     },
     "safetyTolerance": {
-      "label": "内容安全严格程度",
+      "label": "内容审核容忍度",
       "kind": "integer",
       "min": 0,
       "max": 4,
@@ -283,7 +283,7 @@
               ]
             },
             "safetyTolerance": {
-              "max": 6
+              "max": 4
             }
           },
           "docs": "https://openrouter.ai/api/v1/images/models/black-forest-labs/flux-3-image/endpoints"
@@ -388,12 +388,19 @@
             "grounding": {},
             "count": {
               "max": 20
+            },
+            "outputFormat": {},
+            "outputCompression": {
+              "min": 20,
+              "max": 99
             }
           },
           "docs": "https://runware.ai/docs/models/bfl-flux-3-image",
           "notes": "文生图需至少一个放置区域；自动比例仅在有参考图时使用。",
           "defaults": {
-            "count": 1
+            "count": 1,
+            "outputFormat": "png",
+            "outputCompression": 95
           },
           "minPrompt": 2
         }
@@ -475,7 +482,8 @@
           },
           "defaults": {
             "outputCompression": 95,
-            "count": 1
+            "count": 1,
+            "outputFormat": "png"
           },
           "docs": "https://runware.ai/docs/models/openai-gpt-image-2-5-flare",
           "minPrompt": 2
@@ -558,7 +566,8 @@
           },
           "defaults": {
             "outputCompression": 95,
-            "count": 1
+            "count": 1,
+            "outputFormat": "png"
           },
           "docs": "https://runware.ai/docs/models/openai-gpt-image-2-5-sunburst",
           "minPrompt": 2
@@ -607,8 +616,12 @@
           "maxRefs": 3,
           "mask": false,
           "parameters": {
-            "width": {},
-            "height": {},
+            "width": {
+              "nullable": true
+            },
+            "height": {
+              "nullable": true
+            },
             "seed": {},
             "negativePrompt": {},
             "count": {
@@ -636,12 +649,19 @@
               "max": 20
             },
             "promptExtend": {},
-            "promptExtendMode": {}
+            "promptExtendMode": {},
+            "outputFormat": {},
+            "outputCompression": {
+              "min": 20,
+              "max": 99
+            }
           },
           "maxPixels": 4194304,
           "docs": "https://runware.ai/docs/models/alibaba-qwen-image-3-0",
           "defaults": {
-            "count": 1
+            "count": 1,
+            "outputFormat": "png",
+            "outputCompression": 95
           }
         }
       }
@@ -688,8 +708,12 @@
           "maxRefs": 3,
           "mask": false,
           "parameters": {
-            "width": {},
-            "height": {},
+            "width": {
+              "nullable": true
+            },
+            "height": {
+              "nullable": true
+            },
             "seed": {},
             "negativePrompt": {},
             "count": {
@@ -717,12 +741,19 @@
               "max": 20
             },
             "promptExtend": {},
-            "promptExtendMode": {}
+            "promptExtendMode": {},
+            "outputFormat": {},
+            "outputCompression": {
+              "min": 20,
+              "max": 99
+            }
           },
           "maxPixels": 4194304,
           "docs": "https://runware.ai/docs/models/alibaba-qwen-image-3-0-pro",
           "defaults": {
-            "count": 1
+            "count": 1,
+            "outputFormat": "png",
+            "outputCompression": 95
           }
         }
       }

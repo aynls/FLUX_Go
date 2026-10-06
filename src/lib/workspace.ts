@@ -6,6 +6,7 @@ import type {
   Rect,
   WorkingImage,
   WorkspaceSession,
+  TaskIntent,
 } from "./types";
 import { DEFAULT_PARAMS, phantomSize } from "./params";
 import { BOX_COLORS, drawBoxColor } from "./boxColors";
@@ -33,16 +34,24 @@ export function newDraft(
   p = DEFAULT_PREFERENCES,
   family: FamilyId = p.defaultFamily ?? "flux",
 ): Draft {
-  const modelId = familyById(family).defaultModel;
-  const provider = modelById(modelId)?.routes[p.provider]
-    ? p.provider
+  const saved = p.familyDefaults?.[family];
+  const modelId =
+    modelById(saved?.modelId ?? "")?.family === family
+      ? saved!.modelId
+      : familyById(family).defaultModel;
+  const preferredProvider = saved?.provider ?? p.provider;
+  const provider = modelById(modelId)?.routes[preferredProvider]
+    ? preferredProvider
     : "openrouter";
   const params = {
     ...defaultsFor(modelId, provider),
     ...(family === "flux" ? p.params : {}),
+    ...saved?.params,
   };
   return {
     schema: 3,
+    intent: "create",
+    showBase: true,
     family,
     modelId,
     mask: null,
@@ -93,7 +102,7 @@ export function migrateDraft(value: unknown): Draft {
       !(ref.width > 0 && ref.height > 0)
     )
       throw new Error("草稿参考图无效");
-  return withIds({
+  const migrated = withIds({
     ...newDraft(DEFAULT_PREFERENCES, model.family),
     ...raw,
     schema: 3,
@@ -104,7 +113,19 @@ export function migrateDraft(value: unknown): Draft {
       ...raw.params,
     },
     mask: (raw.mask ?? null) as WorkingImage | null,
+    intent:
+      raw.intent === "create" || raw.intent === "edit" ? raw.intent : undefined,
   } as Draft);
+  // Legacy baseId was only a visual overlay. Preserve the old API order and prompt.
+  if (!migrated.intent)
+    return { ...migrated, baseId: migrated.refs[0]?.uid ?? null };
+  return taskIntent(migrated) === "edit" && migrated.refs.length
+    ? setPrimaryImage(
+        migrated,
+        migrated.refs.find((r) => r.uid === migrated.baseId)?.uid ??
+          migrated.refs[0].uid!,
+      )
+    : migrated;
 }
 export function migrateSession(value: unknown): WorkspaceSession | null {
   if (value == null) return null;
@@ -160,6 +181,40 @@ export function scaleRect(
     h: (r.h / from.h) * to.h,
   };
 }
+export function sourceOnCanvas(
+  r: Rect,
+  source: WorkingImage,
+  canvas: Draft["canvas"],
+): Rect {
+  const scale = Math.min(canvas.w / source.width, canvas.h / source.height);
+  return {
+    x: (canvas.w - source.width * scale) / 2 + r.x * scale,
+    y: (canvas.h - source.height * scale) / 2 + r.y * scale,
+    w: r.w * scale,
+    h: r.h * scale,
+  };
+}
+export function canvasToSource(
+  r: Rect,
+  source: WorkingImage,
+  canvas: Draft["canvas"],
+): Rect {
+  const scale = Math.min(canvas.w / source.width, canvas.h / source.height);
+  const x = Math.min(
+    source.width - 1,
+    Math.max(0, (r.x - (canvas.w - source.width * scale) / 2) / scale),
+  );
+  const y = Math.min(
+    source.height - 1,
+    Math.max(0, (r.y - (canvas.h - source.height * scale) / 2) / scale),
+  );
+  return {
+    x,
+    y,
+    w: Math.max(1, Math.min(source.width - x, r.w / scale)),
+    h: Math.max(1, Math.min(source.height - y, r.h / scale)),
+  };
+}
 export function resizeCanvas(d: Draft, canvas: Draft["canvas"]): Draft {
   return {
     ...d,
@@ -196,6 +251,46 @@ export function reorderRefs(d: Draft, refs: WorkingImage[]): Draft {
         : tag;
     }),
   };
+}
+export function taskIntent(d: Draft): TaskIntent {
+  return d.intent ?? (d.refs.length ? "edit" : "create");
+}
+export function primaryImage(d: Draft) {
+  if (taskIntent(d) !== "edit") return null;
+  return d.refs.find((r) => r.uid === d.baseId) ?? d.refs[0] ?? null;
+}
+/** Changing the primary image changes API order and remaps exact image tags together. */
+export function setPrimaryImage(d: Draft, uid: string): Draft {
+  const image = d.refs.find((r) => r.uid === uid);
+  if (!image) throw new Error("主图不存在");
+  if (d.mask && d.refs[0]?.uid !== uid)
+    throw new Error("请先移除当前主图的蒙版，再替换主图");
+  const next = {
+    ...reorderRefs(d, [image, ...d.refs.filter((r) => r.uid !== uid)]),
+    intent: "edit" as const,
+    baseId: uid,
+    showBase: true,
+    params: {
+      ...d.params,
+      ...(d.intent === "create" &&
+      fieldsFor(d).aspectRatio?.values?.includes("auto")
+        ? { aspectRatio: "auto" }
+        : {}),
+    },
+  };
+  return next.params.aspectRatio === "auto"
+    ? resizeCanvas(next, { w: image.width, h: image.height })
+    : next;
+}
+export function setTaskIntent(d: Draft, intent: TaskIntent): Draft {
+  if (intent === "create" && d.mask)
+    throw new Error("请先移除编辑蒙版，再生成新画面");
+  if (intent === "edit" && d.refs.length)
+    return setPrimaryImage(
+      d,
+      primaryImage({ ...d, intent })?.uid ?? d.refs[0].uid!,
+    );
+  return { ...d, intent, baseId: intent === "create" ? null : d.baseId };
 }
 export function sentSize(r: WorkingImage, enabled: boolean, edge: number) {
   const k = enabled ? Math.min(1, edge / Math.max(r.width, r.height)) : 1;
@@ -258,7 +353,16 @@ export function outputEstimate(d: Draft) {
         "4K": 4096,
       } as Record<string, number>
     )[d.params.resolution ?? "1K"] ?? 1024;
-  const ratio = d.canvas.w / d.canvas.h;
+  const automaticReference = d.refs[0];
+  const aspect = d.params.aspectRatio;
+  const pair =
+    aspect && aspect !== "auto" ? aspect.split(":").map(Number) : null;
+  const ratio =
+    pair?.length === 2 && pair.every((v) => v > 0)
+      ? pair[0] / pair[1]
+      : aspect === "auto" && automaticReference
+        ? automaticReference.width / automaticReference.height
+        : d.canvas.w / d.canvas.h;
   return {
     w: Math.round((edge * Math.sqrt(ratio)) / 16) * 16,
     h: Math.round(edge / Math.sqrt(ratio) / 16) * 16,

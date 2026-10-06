@@ -1,5 +1,5 @@
 import type { Box, Draft } from "../../lib/types";
-import { scaleRect } from "../../lib/workspace";
+import { scaleRect, canvasToSource } from "../../lib/workspace";
 /** Merge canvas gestures without moving source-image coordinates or removal regions. */
 export function updateFluxBoxes(d: Draft, boxes: Box[]): Draft {
   const merged = boxes.map((b) => {
@@ -8,7 +8,10 @@ export function updateFluxBoxes(d: Draft, boxes: Box[]): Draft {
     return prior
       ? {
           ...prior,
-          rect: b.rect,
+          rect: prior.role === "remove" ? prior.rect : b.rect,
+          ...(prior.role === "remove" && ref
+            ? { srcRect: canvasToSource(b.rect, ref, d.canvas) }
+            : {}),
           ...(prior.role === "anchor" && ref
             ? {
                 srcRect: scaleRect(b.rect, d.canvas, {
@@ -21,7 +24,11 @@ export function updateFluxBoxes(d: Draft, boxes: Box[]): Draft {
       : b;
   });
   const existing = d.boxes
-    .map((b) => (b.role === "remove" ? b : merged.find((x) => x.uid === b.uid)))
+    .map(
+      (b) =>
+        merged.find((x) => x.uid === b.uid) ??
+        (b.role === "remove" ? b : undefined),
+    )
     .filter((b): b is Box => !!b);
   return {
     ...d,

@@ -7,6 +7,7 @@ pub mod bfl;
 pub mod comfy;
 mod credentials;
 pub mod openrouter;
+pub mod progress;
 pub mod runware;
 pub mod transport;
 pub use credentials::*;

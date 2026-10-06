@@ -2,7 +2,7 @@ import type { Draft } from "../lib/types";
 import { fieldsFor } from "./catalog";
 
 export function gptSize(size: string | undefined) {
-  const match = /^(\d+)x(\d+)$/.exec(size ?? "");
+  const match = /^(\d+)\s*[xX×*]\s*(\d+)$/.exec((size ?? "").trim());
   return match ? { w: Number(match[1]), h: Number(match[2]) } : null;
 }
 export function validateGpt(d: Draft): string[] {

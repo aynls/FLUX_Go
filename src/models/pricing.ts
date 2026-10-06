@@ -19,6 +19,11 @@ export function estimateComfyCredits(
   }
   if (d.family === "qwen") {
     const q = prices.qwenCredits;
+    if (d.modelId.endsWith("-pro") && (p.width == null || p.height == null))
+      return {
+        min: q.pro1K * count + d.refs.length * q.reference,
+        max: q.pro2K * count + d.refs.length * q.reference,
+      };
     const output = d.modelId.endsWith("-pro")
       ? Number(p.width) * Number(p.height) > q.proThresholdPixels
         ? q.pro2K

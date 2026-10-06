@@ -23,6 +23,13 @@ export interface Box {
 
 export type ProviderId = "openrouter" | "bfl" | "comfy" | "runware";
 export type FamilyId = "flux" | "gpt" | "qwen";
+export type TaskIntent = "create" | "edit";
+export type ReferencePurpose =
+  | "reference"
+  | "style"
+  | "subject"
+  | "composition"
+  | "custom";
 export type ParamValue = string | number | boolean | null;
 
 export interface GenerateParams {
@@ -39,8 +46,8 @@ export interface GenerateParams {
   outputCompression?: number;
   moderation?: string;
   count?: number;
-  width?: number;
-  height?: number;
+  width?: number | null;
+  height?: number | null;
   seed?: number | null;
   negativePrompt?: string;
   promptExtend?: boolean;
@@ -81,6 +88,27 @@ export interface GenerateOutput {
   } | null;
   notes: string[];
 }
+export interface GenerationProgress {
+  requestId?: string;
+  phase:
+    | "preparing"
+    | "submitting"
+    | "queued"
+    | "reasoning"
+    | "generating"
+    | "waiting"
+    | "downloading"
+    | "saving";
+  taskId?: string | null;
+  completed?: number | null;
+}
+export interface GenerationTask extends GenerationProgress {
+  family: FamilyId;
+  modelId: string;
+  provider: ProviderId;
+  startedAt: number;
+  total: number;
+}
 
 export interface HistoryItem {
   id: string;
@@ -104,6 +132,8 @@ export interface HistoryItem {
   recipe?: Omit<Draft, "refs" | "mask"> & {
     refNames: string[];
     refIds: string[];
+    refPurposes?: (ReferencePurpose | undefined)[];
+    refNotes?: (string | undefined)[];
     maskName?: string;
   };
 }
@@ -115,6 +145,8 @@ export interface WorkingImage {
   width: number;
   height: number;
   name: string;
+  purpose?: ReferencePurpose;
+  note?: string;
 }
 
 export interface GenerateRequestPayload {
@@ -139,6 +171,10 @@ export interface LayoutRegion {
 }
 
 export interface Draft {
+  /** Older drafts infer intent from their inputs until migrated. */
+  intent?: TaskIntent;
+  showBase?: boolean;
+  routeSettings?: Record<string, GenerateParams>;
   colorPool?: string[];
   schema: 3;
   family: FamilyId;
@@ -164,6 +200,12 @@ export interface WorkspaceSession {
 }
 
 export interface Preferences {
+  familyDefaults?: Partial<
+    Record<
+      FamilyId,
+      { modelId: string; provider: ProviderId; params: GenerateParams }
+    >
+  >;
   defaultFamily?: FamilyId;
   sidebarWidthPercent: number;
   saveDirectory: string;

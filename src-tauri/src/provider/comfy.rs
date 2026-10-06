@@ -28,7 +28,10 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
         "qwen" => {
             let mut content: Vec<Value> = req.images.iter().map(|im| json!({"image":im})).collect();
             content.push(json!({"text":req.final_prompt}));
-            let mut parameters = json!({"size":format!("{}*{}", p.width.unwrap_or(1024), p.height.unwrap_or(1024)), "n":p.count.unwrap_or(1), "prompt_extend":p.prompt_extend.unwrap_or(true), "watermark":p.watermark.unwrap_or(false)});
+            let mut parameters = json!({"n":p.count.unwrap_or(1), "prompt_extend":p.prompt_extend.unwrap_or(true), "watermark":p.watermark.unwrap_or(false)});
+            if let (Some(width), Some(height)) = (p.width, p.height) {
+                parameters["size"] = json!(format!("{width}*{height}"));
+            }
             if let Some(seed) = p.seed {
                 parameters["seed"] = json!(seed);
             }
@@ -80,6 +83,7 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
         })
         .ok_or_else(|| ProviderError::msg("Comfy 提交响应缺少有效 request_id"))?;
     let result_url = format!("{url}/{id}");
+    super::progress::report("waiting", Some(id), None, None);
     let deadline = Instant::now() + Duration::from_secs(900);
     let mut interval = Duration::from_secs(2);
     let mut read_failures = 0;
@@ -109,6 +113,20 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
             Err(e) => return Err(e.with_hint(format!("已提交任务 {id}；未自动重新生成。"))),
         };
         interval = retry_after.unwrap_or(Duration::from_secs(2));
+        super::progress::report(
+            if status == 200 {
+                "downloading"
+            } else if body["status"].as_str() == Some("RUNNING") {
+                "generating"
+            } else if matches!(body["status"].as_str(), Some("QUEUED" | "PENDING")) {
+                "queued"
+            } else {
+                "waiting"
+            },
+            Some(id),
+            None,
+            body["status"].as_str(),
+        );
         if status == 200 {
             break (body, credits);
         }

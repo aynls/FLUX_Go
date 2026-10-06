@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_PARAMS, estimateCost, phantomSize, validateParams } from "./params";
+import {
+  DEFAULT_PARAMS,
+  estimateCost,
+  phantomSize,
+  validateParams,
+} from "./params";
 
 describe("params", () => {
   test("默认参数有效（编辑模式）", () => {
@@ -9,28 +14,57 @@ describe("params", () => {
   test("默认参数有效且支持自动比例文生图", () => {
     const errors = validateParams(DEFAULT_PARAMS, "t2i");
     expect(errors).toEqual([]);
-    expect(validateParams({ ...DEFAULT_PARAMS, aspectRatio: "auto" }, "t2i")).toEqual([]);
-    expect(validateParams({ ...DEFAULT_PARAMS, aspectRatio: "16:9" }, "t2i")).toEqual([]);
+    expect(
+      validateParams({ ...DEFAULT_PARAMS, aspectRatio: "auto" }, "t2i"),
+    ).toEqual([]);
+    expect(
+      validateParams({ ...DEFAULT_PARAMS, aspectRatio: "16:9" }, "t2i"),
+    ).toEqual([]);
   });
 
   test("非法分辨率与宽高比", () => {
-    expect(validateParams({ ...DEFAULT_PARAMS, resolution: "8K" }, "edit").length).toBe(1);
-    expect(validateParams({ ...DEFAULT_PARAMS, aspectRatio: "11:9" }, "edit").length).toBe(1);
+    expect(
+      validateParams({ ...DEFAULT_PARAMS, resolution: "8K" }, "edit").length,
+    ).toBe(1);
+    expect(
+      validateParams({ ...DEFAULT_PARAMS, aspectRatio: "11:9" }, "edit").length,
+    ).toBe(1);
   });
 
   test("safety_tolerance 校验", () => {
-    expect(validateParams({ ...DEFAULT_PARAMS, safetyTolerance: 3 }, "edit")).toEqual([]);
-    expect(validateParams({ ...DEFAULT_PARAMS, safetyTolerance: null }, "edit")).toEqual([]);
-    expect(validateParams({ ...DEFAULT_PARAMS, safetyTolerance: 7 }, "edit").length).toBe(1);
-    expect(validateParams({ ...DEFAULT_PARAMS, safetyTolerance: 2.5 }, "edit").length).toBe(1);
-    expect(validateParams({ ...DEFAULT_PARAMS, safetyTolerance: -1 }, "edit").length).toBe(1);
+    expect(
+      validateParams({ ...DEFAULT_PARAMS, safetyTolerance: 3 }, "edit"),
+    ).toEqual([]);
+    expect(
+      validateParams({ ...DEFAULT_PARAMS, safetyTolerance: null }, "edit"),
+    ).toEqual([]);
+    expect(
+      validateParams({ ...DEFAULT_PARAMS, safetyTolerance: 7 }, "edit").length,
+    ).toBe(1);
+    expect(
+      validateParams({ ...DEFAULT_PARAMS, safetyTolerance: 2.5 }, "edit")
+        .length,
+    ).toBe(1);
+    expect(
+      validateParams({ ...DEFAULT_PARAMS, safetyTolerance: -1 }, "edit").length,
+    ).toBe(1);
   });
 
   test("BFL 限制 safety 为 0–4，文生图允许 auto", () => {
     expect(validateParams(DEFAULT_PARAMS, "t2i", "bfl")).toEqual([]);
-    expect(validateParams({ ...DEFAULT_PARAMS, safetyTolerance: 4 }, "edit", "bfl")).toEqual([]);
-    expect(validateParams({ ...DEFAULT_PARAMS, safetyTolerance: 5 }, "edit", "bfl")).toHaveLength(1);
-    expect(validateParams({ ...DEFAULT_PARAMS, safetyTolerance: 5 }, "edit", "openrouter")).toEqual([]);
+    expect(
+      validateParams({ ...DEFAULT_PARAMS, safetyTolerance: 4 }, "edit", "bfl"),
+    ).toEqual([]);
+    expect(
+      validateParams({ ...DEFAULT_PARAMS, safetyTolerance: 5 }, "edit", "bfl"),
+    ).toHaveLength(1);
+    expect(
+      validateParams(
+        { ...DEFAULT_PARAMS, safetyTolerance: 5 },
+        "edit",
+        "openrouter",
+      ),
+    ).toHaveLength(1);
   });
 
   test("定价表完整且递增", () => {

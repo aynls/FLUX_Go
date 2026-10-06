@@ -59,6 +59,10 @@ export const families = catalog.families;
 export const providers = catalog.providers;
 export const modelById = (id: string) =>
   catalog.models.find((m) => m.id === id);
+export const modelByAnyId = (id: string) =>
+  catalog.models.find(
+    (m) => m.id === id || Object.values(m.routes).some((r) => r?.model === id),
+  );
 export const familyById = (id: FamilyId) => families.find((f) => f.id === id)!;
 export const routeFor = (d: Pick<Draft, "modelId" | "provider">) =>
   modelById(d.modelId)?.routes[d.provider];
@@ -106,11 +110,21 @@ export function changeRoute(
 ): Draft {
   const next = { ...d, provider, modelId };
   // Keep unsupported data (including masks and refs) for returning to the previous route.
-  // Invalid values remain visible and must be corrected before generation.
+  // Each route keeps its own values; new routes project shared values with visible feedback.
   const defaults = defaultsFor(modelId, provider);
-  const params = { ...defaults, ...d.params };
+  const routeKey = (id: string, p: ProviderId) => id + ":" + p;
+  const routeSettings = {
+    ...d.routeSettings,
+    [routeKey(d.modelId, d.provider)]: { ...d.params },
+  };
+  const params = {
+    ...defaults,
+    ...(routeSettings[routeKey(modelId, provider)] ?? d.params),
+  };
   for (const [key, field] of Object.entries(fieldsFor(next))) {
     const value = params[key];
+    if (field.kind === "integer" && value === null && !field.nullable)
+      params[key] = defaults[key];
     if (
       field.kind === "enum" &&
       value != null &&
@@ -129,7 +143,7 @@ export function changeRoute(
     if (field.kind === "size" && value === "auto" && !field.allowAuto)
       params[key] = defaults[key];
   }
-  return { ...next, params };
+  return { ...next, params, routeSettings };
 }
 export function validateFields(d: Draft): string[] {
   const route = routeFor(d);

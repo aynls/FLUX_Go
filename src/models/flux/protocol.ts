@@ -131,7 +131,7 @@ export function composePrompt(opts: {
     ids.add(b.id);
     if (!b.desc.trim()) return fail(`包围盒「${b.id}」缺少区域描述`);
     if (["move", "remove"].includes(b.role) && !b.srcRect) {
-      return fail(`包围盒「${b.id}」为移动角色，需要设置源区域`);
+      return fail(`区域「${b.id}」需要设置来源区域`);
     }
     if (opts.mode === "t2i" && ["move", "anchor", "remove"].includes(b.role))
       return fail(`区域「${b.id}」需要参考图`);

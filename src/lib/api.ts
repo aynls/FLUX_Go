@@ -1,6 +1,8 @@
 // Tauri 后端命令的类型化封装与错误解析。
 
 import { invoke, convertFileSrc, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import type { GenerationProgress } from "./types";
 import type {
   GenerateOutput,
   GenerateRequestPayload,
@@ -54,11 +56,20 @@ export const isDesktop = () => isTauri();
 
 export async function generate(
   request: GenerateRequestPayload,
+  onProgress?: (progress: GenerationProgress) => void,
 ): Promise<GenerateOutput> {
+  let off: (() => void) | undefined;
   try {
+    if (onProgress)
+      off = await listen<GenerationProgress>("generation-progress", (event) => {
+        if (event.payload.requestId === request.requestId)
+          onProgress(event.payload);
+      });
     return await invoke<GenerateOutput>("generate", { request });
   } catch (e) {
     throw parseBackendError(e);
+  } finally {
+    off?.();
   }
 }
 

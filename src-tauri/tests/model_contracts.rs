@@ -77,6 +77,28 @@ fn every_catalog_route_builds_a_provider_native_request() {
     }
 }
 #[test]
+fn qwen_auto_size_is_omitted_and_runware_output_options_are_mapped() {
+    let qwen = req("comfy", "qwen-image-3", json!({"width":null,"height":null}));
+    let payload = comfy::build_payload(&qwen).unwrap();
+    assert!(payload["parameters"].get("size").is_none());
+    for model in ["flux-3-image", "qwen-image-3"] {
+        let mut request = req(
+            "runware",
+            model,
+            json!({"outputFormat":"webp","outputCompression":90}),
+        );
+        if model == "flux-3-image" {
+            request.regions = serde_json::from_value(json!([{"id":"scene","description":"the scene","referenceIndex":null,"sourceBox":null,"targetBox":[0,0,1000,1000]}])).unwrap();
+        }
+        let payload =
+            runware::build_payload(&request, "50836053-a0ee-4cf5-b9d6-ae7c5d140ada").unwrap();
+        assert_eq!(payload[0]["outputFormat"], "WEBP");
+        assert_eq!(payload[0]["outputQuality"], 90);
+        request.params.output_compression = Some(100);
+        assert!(models::validate(&request).is_err());
+    }
+}
+#[test]
 fn unsupported_fields_and_reference_limits_fail_before_billing() {
     assert!(models::validate(&req("bfl", "gpt-image-2.5-flare", json!({}))).is_err());
     assert!(models::validate(&req(

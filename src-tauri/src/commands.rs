@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 
 use base64::Engine;
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::history::{HistoryFileIn, HistoryItem, HistoryStore};
 use crate::provider::{GenerateOutput, GenerateRequest};
@@ -274,6 +274,7 @@ impl Drop for BusyGuard<'_> {
 
 #[tauri::command]
 pub async fn generate(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     request: GenerateRequest,
 ) -> Result<GenerateOutput, String> {
@@ -285,9 +286,18 @@ pub async fn generate(
         return Err("已有生成任务进行中，请等待完成后再试（防止重复提交与重复计费）。".to_string());
     }
     let _guard = BusyGuard(&state.busy);
-    crate::provider::dispatch(&request)
-        .await
-        .map_err(|e| e.to_json())
+    let request_id = request.request_id.clone();
+    let reporter: crate::provider::progress::Reporter = std::sync::Arc::new(
+        move |phase, task_id, completed, status| {
+            let _ = app.emit("generation-progress", serde_json::json!({"requestId": request_id, "phase": phase, "taskId": task_id, "completed": completed, "status": status}));
+        },
+    );
+    crate::provider::progress::with_reporter(reporter, async {
+        crate::provider::progress::report("submitting", None, None, None);
+        crate::provider::dispatch(&request).await
+    })
+    .await
+    .map_err(|e| e.to_json())
 }
 
 #[derive(Debug, Serialize)]

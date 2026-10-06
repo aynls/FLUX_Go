@@ -143,6 +143,7 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
         .and_then(|v| v.as_str())
         .ok_or_else(|| ProviderError::msg("BFL 响应缺少 polling_url"))?
         .to_string();
+    super::progress::report("waiting", body["id"].as_str(), None, None);
 
     let deadline = std::time::Instant::now() + POLL_TIMEOUT;
     let result: Value = loop {
@@ -162,6 +163,18 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
             .get("status")
             .and_then(|v| v.as_str())
             .unwrap_or("");
+        super::progress::report(
+            match st {
+                "Pending" => "queued",
+                "Reasoning" => "reasoning",
+                "Generating" => "generating",
+                "Ready" => "downloading",
+                _ => "waiting",
+            },
+            body["id"].as_str(),
+            None,
+            Some(st),
+        );
         match st {
             "Ready" => break poll_body,
             "Error" | "Failed" | "Content Moderated" | "Request Moderated" | "Task Not Found" => {

@@ -18,8 +18,22 @@ export const RESOLUTIONS: ResolutionOption[] = [
 ];
 
 export const ASPECT_RATIOS: string[] = [
-  "21:9", "2:1", "16:9", "3:2", "7:5", "4:3", "5:4", "1:1",
-  "4:5", "3:4", "5:7", "2:3", "9:16", "1:2", "9:21", "auto",
+  "21:9",
+  "2:1",
+  "16:9",
+  "3:2",
+  "7:5",
+  "4:3",
+  "5:4",
+  "1:1",
+  "4:5",
+  "3:4",
+  "5:7",
+  "2:3",
+  "9:16",
+  "1:2",
+  "9:21",
+  "auto",
 ];
 
 export const DEFAULT_PARAMS: GenerateParams = {
@@ -51,7 +65,11 @@ export function phantomSize(aspectRatio: string): { w: number; h: number } {
   return { w, h: Math.round((w * b) / a) };
 }
 
-export function validateParams(p: GenerateParams, _mode: "edit" | "t2i", provider: ProviderId = "openrouter"): string[] {
+export function validateParams(
+  p: GenerateParams,
+  _mode: "edit" | "t2i",
+  _provider: ProviderId = "openrouter",
+): string[] {
   const errors: string[] = [];
   if (!RESOLUTIONS.some((r) => r.value === p.resolution)) {
     errors.push(`分辨率 ${p.resolution} 无效（允许 768/1K/1.5K/2K/4K）`);
@@ -62,7 +80,7 @@ export function validateParams(p: GenerateParams, _mode: "edit" | "t2i", provide
   if (p.version && p.version !== "latest") errors.push("模型版本仅支持 latest");
   if (p.safetyTolerance != null) {
     const v = p.safetyTolerance;
-    const max = provider === "bfl" ? 4 : 6;
+    const max = 4;
     if (!Number.isInteger(v) || v < 0 || v > max) {
       errors.push(`safety_tolerance 必须是 0–${max} 的整数，或留空`);
     }

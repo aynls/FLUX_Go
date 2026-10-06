@@ -20,6 +20,9 @@ pub fn build_payload(req: &GenerateRequest, task_id: &str) -> Result<Value, Prov
         _ => "PNG",
     };
     let mut task = json!({"taskType":"imageInference", "taskUUID":task_id, "model":m.wire_id(), "positivePrompt":req.final_prompt, "deliveryMethod":"async", "outputType":"URL", "outputFormat":format, "includeCost":true, "numberResults":p.count.unwrap_or(1)});
+    if format != "PNG" {
+        task["outputQuality"] = json!(p.output_compression.unwrap_or(95));
+    }
     if !req.images.is_empty() {
         task["inputs"] = json!({"referenceImages":req.images});
     }
@@ -132,12 +135,14 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
     )
     .await?;
     let mut results: BTreeMap<String, Value> = BTreeMap::new();
+    super::progress::report("waiting", Some(&id), Some(0), None);
     let deadline = Instant::now() + Duration::from_secs(900);
     let expected = req.params.count.unwrap_or(1) as usize;
     let mut notes = vec![format!("Runware 任务 {id}")];
     let mut interval = 2;
     loop {
         let terminal_error = collect_results(&body, &id, &mut results);
+        super::progress::report("waiting", Some(&id), Some(results.len()), None);
         if let Some(error) = terminal_error {
             if results.is_empty() {
                 return Err(ProviderError::msg(error).with_hint(format!("任务 {id}；未自动重试。")));
@@ -179,6 +184,7 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
         }
     }
     let mut images: Vec<OutputImage> = Vec::new();
+    super::progress::report("downloading", Some(&id), Some(results.len()), None);
     let mut cost = 0.0;
     let mut has_cost = false;
     for item in results.values() {
