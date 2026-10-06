@@ -11,6 +11,7 @@ import type {
 } from "./lib/types";
 import { newDraft } from "./lib/workspace";
 import Canvas from "./components/Canvas";
+import HistoryPanel from "./components/HistoryPanel";
 import { StrictMode } from "react";
 import { queuedGeneration } from "./app/generation";
 
@@ -45,6 +46,8 @@ let finish: (out: GenerateOutput) => void = () => {};
 let failGeneration: (error: Error) => void = () => {};
 let failHistory = false;
 let historyItems: HistoryItem[] = [];
+let deletedIds: string[] = [];
+let failedDeletes = new Set<string>();
 let draftWrites: (Draft | WorkspaceSession)[] = [];
 let exportPath = "";
 let reportProgress: (progress: GenerationProgress) => void = () => {};
@@ -139,7 +142,11 @@ mock.module("./lib/api", () => ({
   copyImage: async () => {},
   historyStorage: async () => "test-only",
   assetUrl: (s: string) => s,
-  historyDelete: async () => {},
+  historyDelete: async (id: string) => {
+    if (failedDeletes.has(id)) throw new Error("file locked");
+    deletedIds.push(id);
+    historyItems = historyItems.filter((it) => it.id !== id);
+  },
   saveDataUrl: async () => {},
   importUrl: async () => {},
   credentialSave: async () => {},
@@ -157,6 +164,8 @@ beforeEach(() => {
   savedItem = null;
   failHistory = false;
   historyItems = [];
+  deletedIds = [];
+  failedDeletes = new Set();
   draftWrites = [];
   exportPath = "";
   reportProgress = () => {};
@@ -1260,4 +1269,81 @@ test("fixed seeds are preserved and seedless routes do not gain unsupported seed
   expect(
     queuedGeneration({ ...newDraft(), prompt: "seedless" }).item.params.seed,
   ).toBeUndefined();
+});
+
+test("history quick deletion requires confirmation and cancellation keeps files", async () => {
+  const item = {
+    ...queuedGeneration({ ...newDraft(), prompt: "history sample" }).item,
+    status: "ok",
+  };
+  historyItems = [item];
+  let refreshed = 0;
+  const ui = render(
+    <HistoryPanel
+      items={historyItems}
+      saveDirectory=""
+      onRefresh={() => refreshed++}
+      onUseAsInput={() => {}}
+      onRestoreEdit={() => {}}
+    />,
+  );
+  fireEvent.click(ui.getByRole("button", { name: "删除第 1 条历史记录" }));
+  expect(ui.getByRole("dialog", { name: "确认删除历史记录" })).toBeTruthy();
+  expect(deletedIds).toHaveLength(0);
+  fireEvent.click(ui.getByRole("button", { name: "取消" }));
+  expect(deletedIds).toHaveLength(0);
+  expect(ui.queryByRole("dialog")).toBeNull();
+  fireEvent.click(ui.getByRole("button", { name: "删除第 1 条历史记录" }));
+  fireEvent.click(ui.getByRole("button", { name: "确认删除" }));
+  await waitFor(() => expect(deletedIds).toEqual([item.id]));
+  await waitFor(() => expect(refreshed).toBe(1));
+  expect(historyItems).toHaveLength(0);
+});
+
+test("history select all excludes active tasks and partial deletion preserves failed selections", async () => {
+  const make = (id: string, status: string) => ({
+    ...queuedGeneration({ ...newDraft(), prompt: id }).item,
+    id,
+    status,
+  });
+  historyItems = [
+    make("done", "ok"),
+    make("failed", "failed"),
+    make("waiting", "queued"),
+    make("running", "running"),
+  ];
+  failedDeletes.add("failed");
+  let refreshed = 0;
+  const props = {
+    saveDirectory: "",
+    onRefresh: () => refreshed++,
+    onUseAsInput: () => {},
+    onRestoreEdit: () => {},
+  };
+  const ui = render(<HistoryPanel {...props} items={historyItems} />);
+  fireEvent.click(ui.getByRole("button", { name: "批量删除" }));
+  expect(
+    ui
+      .getByRole("checkbox", { name: "选择第 3 条历史记录" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.click(ui.getByRole("button", { name: "全选" }));
+  expect(ui.getByText("已选 2 条")).toBeTruthy();
+  fireEvent.click(ui.getByRole("button", { name: "取消全选" }));
+  expect(ui.getByText("已选 0 条")).toBeTruthy();
+  fireEvent.click(ui.getByRole("button", { name: "全选" }));
+  fireEvent.click(ui.getByRole("button", { name: "删除所选" }));
+  expect(deletedIds).toHaveLength(0);
+  fireEvent.click(ui.getByRole("button", { name: "确认删除" }));
+  await waitFor(() => expect(refreshed).toBe(1));
+  expect(deletedIds).toEqual(["done"]);
+  expect(ui.getByRole("alert").textContent).toContain("1 条记录删除失败");
+  ui.rerender(<HistoryPanel {...props} items={historyItems} />);
+  expect(ui.getByText("已选 1 条")).toBeTruthy();
+  failedDeletes.clear();
+  fireEvent.click(ui.getByRole("button", { name: "删除所选" }));
+  fireEvent.click(ui.getByRole("button", { name: "确认删除" }));
+  await waitFor(() => expect(refreshed).toBe(2));
+  expect(deletedIds).toEqual(["done", "failed"]);
+  expect(historyItems.map((it) => it.id)).toEqual(["waiting", "running"]);
 });

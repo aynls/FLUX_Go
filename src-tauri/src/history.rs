@@ -196,10 +196,6 @@ impl HistoryStore {
         }
         items.retain(|it| it.id != id);
         self.write_index(&items)?;
-        let dir = self.dir.join("images").join(id);
-        if dir.exists() {
-            std::fs::remove_dir_all(&dir).map_err(|e| format!("删除历史图片失败: {e}"))?;
-        }
         Ok(())
     }
 
@@ -297,6 +293,16 @@ mod tests {
                         name: "input_1".into(),
                         data: "data:image/png;base64,aGVsbG8=".into(),
                     },
+                    HistoryFileIn {
+                        kind: "result".into(),
+                        name: "result_0".into(),
+                        data: "data:image/png;base64,aGVsbG8=".into(),
+                    },
+                    HistoryFileIn {
+                        kind: "mask".into(),
+                        name: "mask".into(),
+                        data: "data:image/png;base64,aGVsbG8=".into(),
+                    },
                 ],
             )
             .unwrap();
@@ -308,8 +314,23 @@ mod tests {
             serde_json::json!(["a", "b"])
         );
         assert_eq!(listed[0].recipe.as_ref().unwrap()["compressEnabled"], false);
+        let files: Vec<_> = saved
+            .input_files
+            .iter()
+            .chain(saved.result_files.iter())
+            .chain(saved.mask_file.iter())
+            .map(|path| (path.clone(), std::fs::read(path).unwrap()))
+            .collect();
         store.delete("recipe_test").unwrap();
         assert!(store.list().unwrap().is_empty());
+        for (path, bytes) in files {
+            assert_eq!(std::fs::read(path).unwrap(), bytes);
+        }
+        assert!(HistoryStore::new(dir.clone())
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty());
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]

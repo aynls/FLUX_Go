@@ -19,7 +19,10 @@ export default function Modal({
     <dialog
       ref={ref}
       className={large ? "modal large" : "modal"}
-      onCancel={onClose}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
       aria-label={title}
     >
       <div className="modal-heading">

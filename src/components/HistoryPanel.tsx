@@ -30,99 +30,244 @@ export default function HistoryPanel({
   const [detailId, setDetailId] = useState<string | null>(null);
   const detail = items.find((it) => it.id === detailId) ?? null;
 
-  if (detail) {
-    return (
-      <HistoryDetail
-        saveDirectory={saveDirectory}
-        item={detail}
-        onCancel={() => onCancel?.(detail.id)}
-        onBack={() => setDetailId(null)}
-        onUseAsInput={(index = 0) => {
-          onUseAsInput({ ...detail, resultFiles: [detail.resultFiles[index]] });
-          setDetailId(null);
-        }}
-        onRestoreEdit={() => {
-          onRestoreEdit(detail);
-          setDetailId(null);
-        }}
-        onDelete={async () => {
-          if (!window.confirm("确定删除这条历史记录及其图片文件？")) return;
-          try {
-            await historyDelete(detail.id);
-            setDetailId(null);
-            onRefresh();
-          } catch (e) {
-            setError("删除失败：" + String(e));
-          }
-        }}
-        error={error}
-      />
-    );
-  }
-
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-3 pt-3">
-        <span className="text-xs text-zinc-500">共 {items.length} 条</span>
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleteIds, setDeleteIds] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState(false);
+  const canDelete = (it: HistoryItem) =>
+    it.status !== "queued" && it.status !== "running";
+  const deletable = items.filter(canDelete);
+  const selected = deletable.filter((it) => selectedIds.has(it.id));
+  const toggle = (id: string) =>
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const confirmDelete = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setError("");
+    const failed: string[] = [];
+    const removed = new Set<string>();
+    try {
+      for (const id of deleteIds) {
+        try {
+          await historyDelete(id);
+          removed.add(id);
+        } catch (e) {
+          failed.push(String(e));
+        }
+      }
+      if (removed.has(detailId ?? "")) setDetailId(null);
+      setSelectedIds(
+        (previous) => new Set([...previous].filter((id) => !removed.has(id))),
+      );
+      setDeleteIds([]);
+      if (failed.length)
+        setError(`有 ${failed.length} 条记录删除失败：${failed[0]}`);
+      else {
+        setBatchMode(false);
+        setSelectedIds(new Set());
+      }
+      onRefresh();
+    } finally {
+      setDeleting(false);
+    }
+  };
+  const confirmation = deleteIds.length > 0 && (
+    <Modal
+      title="确认删除历史记录"
+      onClose={() => {
+        if (!deleting) setDeleteIds([]);
+      }}
+    >
+      <p>
+        确定删除 {deleteIds.length}{" "}
+        条历史记录？图片文件会保留，历史记录删除后无法撤销。
+      </p>
+      <div className="history-delete-actions">
+        <button disabled={deleting} onClick={() => setDeleteIds([])}>
+          取消
+        </button>
         <button
-          className="flex items-center gap-1 text-xs text-zinc-400 transition-colors hover:text-zinc-100"
-          onClick={onRefresh}
+          className="danger"
+          disabled={deleting}
+          onClick={() => void confirmDelete()}
         >
-          <ArrowClockwise size={11} /> 刷新
+          {deleting ? "删除中…" : "确认删除"}
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-3">
-        {items.length === 0 ? (
-          <p className="text-xs text-zinc-500">暂无生成记录</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {items.map((it) => (
-              <button
-                key={it.id}
-                className="flex gap-2.5 rounded-md border border-zinc-800/80 p-2 text-left transition-colors hover:border-zinc-600 hover:bg-white/[0.02]"
-                onClick={() => setDetailId(it.id)}
-              >
-                {it.thumb ? (
-                  <img
-                    src={it.thumb}
-                    alt=""
-                    className="h-14 w-14 shrink-0 rounded object-cover"
-                  />
-                ) : (
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded bg-zinc-800 text-[10px] text-zinc-500">
-                    {historyStatus(it)}
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
-                    <span className="rounded bg-zinc-800 px-1">
-                      {it.mode === "edit" ? "编辑" : "文生图"}
-                    </span>
-                    <span>{new Date(it.createdAt).toLocaleString()}</span>
-                    {(it.cost !== null || it.usage?.credits != null) && (
-                      <span className="text-emerald-500">
-                        {it.provider === "comfy"
-                          ? `${it.usage?.credits ?? "未返回"} Credits`
-                          : it.cost !== null
-                            ? `$${it.cost.toFixed(3)}`
-                            : "费用未返回"}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-zinc-300">
-                    {it.prompt || "（无提示词）"}
-                  </p>
-                  <span className="muted">
-                    {modelByAnyId(it.model)?.label ?? it.model} ·{" "}
-                    {historyStatus(it)}
-                  </span>
-                </div>
-              </button>
-            ))}
+    </Modal>
+  );
+  if (detail) {
+    return (
+      <>
+        <HistoryDetail
+          saveDirectory={saveDirectory}
+          item={detail}
+          onCancel={() => onCancel?.(detail.id)}
+          onBack={() => setDetailId(null)}
+          onUseAsInput={(index = 0) => {
+            onUseAsInput({
+              ...detail,
+              resultFiles: [detail.resultFiles[index]],
+            });
+            setDetailId(null);
+          }}
+          onRestoreEdit={() => {
+            onRestoreEdit(detail);
+            setDetailId(null);
+          }}
+          onDelete={() => {
+            setError("");
+            setDeleteIds([detail.id]);
+          }}
+          error={error}
+        />
+        {confirmation}
+      </>
+    );
+  }
+  return (
+    <>
+      <div className="flex h-full flex-col">
+        <div className="history-list-toolbar">
+          <span className="text-xs text-zinc-500">共 {items.length} 条</span>
+          <div className="row">
+            <button
+              disabled={!deletable.length && !batchMode}
+              onClick={() => {
+                setBatchMode(!batchMode);
+                setSelectedIds(new Set());
+                setError("");
+              }}
+            >
+              {batchMode ? "取消选择" : "批量删除"}
+            </button>
+            <button onClick={onRefresh}>
+              <ArrowClockwise size={14} /> 刷新
+            </button>
+          </div>
+        </div>
+        {batchMode && (
+          <div className="history-batch-toolbar">
+            <button
+              disabled={!deletable.length}
+              onClick={() =>
+                setSelectedIds(
+                  selected.length === deletable.length
+                    ? new Set()
+                    : new Set(deletable.map((it) => it.id)),
+                )
+              }
+            >
+              {selected.length > 0 && selected.length === deletable.length
+                ? "取消全选"
+                : "全选"}
+            </button>
+            <span className="muted">已选 {selected.length} 条</span>
+            <button
+              className="danger"
+              disabled={!selected.length}
+              onClick={() => setDeleteIds(selected.map((it) => it.id))}
+            >
+              删除所选
+            </button>
           </div>
         )}
+        {error && (
+          <p role="alert" className="error-text history-list-error">
+            {error}
+          </p>
+        )}
+        <div className="flex-1 overflow-y-auto p-3">
+          {items.length === 0 ? (
+            <p className="text-xs text-zinc-500">暂无生成记录</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {items.map((it, index) => (
+                <div
+                  key={it.id}
+                  className={
+                    "history-row" +
+                    (batchMode && selectedIds.has(it.id) ? " selected" : "")
+                  }
+                >
+                  {batchMode && (
+                    <input
+                      type="checkbox"
+                      aria-label={"选择第 " + (index + 1) + " 条历史记录"}
+                      checked={selectedIds.has(it.id) && canDelete(it)}
+                      disabled={!canDelete(it)}
+                      onChange={() => toggle(it.id)}
+                    />
+                  )}
+                  <button
+                    className="history-row-content"
+                    disabled={batchMode && !canDelete(it)}
+                    onClick={() =>
+                      batchMode ? toggle(it.id) : setDetailId(it.id)
+                    }
+                  >
+                    {it.thumb ? (
+                      <img
+                        src={it.thumb}
+                        alt=""
+                        className="h-14 w-14 shrink-0 rounded object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded bg-zinc-800 text-[10px] text-zinc-500">
+                        {historyStatus(it)}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+                        <span className="rounded bg-zinc-800 px-1">
+                          {it.mode === "edit" ? "编辑" : "文生图"}
+                        </span>
+                        <span>{new Date(it.createdAt).toLocaleString()}</span>
+                        {(it.cost !== null || it.usage?.credits != null) && (
+                          <span className="text-emerald-500">
+                            {it.provider === "comfy"
+                              ? `${it.usage?.credits ?? "未返回"} Credits`
+                              : it.cost !== null
+                                ? `$${it.cost.toFixed(3)}`
+                                : "费用未返回"}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-zinc-300">
+                        {it.prompt || "（无提示词）"}
+                      </p>
+                      <span className="muted">
+                        {modelByAnyId(it.model)?.label ?? it.model} ·{" "}
+                        {historyStatus(it)}
+                      </span>
+                    </div>
+                  </button>
+                  {!batchMode && canDelete(it) && (
+                    <button
+                      className="history-row-delete danger"
+                      aria-label={"删除第 " + (index + 1) + " 条历史记录"}
+                      title="删除记录"
+                      onClick={() => {
+                        setError("");
+                        setDeleteIds([it.id]);
+                      }}
+                    >
+                      <Trash size={18} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+      {confirmation}
+    </>
   );
 }
 
