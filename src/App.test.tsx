@@ -583,7 +583,7 @@ test("new image families expose official routes, color icons and independent rou
     Array.from(
       ui.getByRole("combobox", { name: "提供商" }).querySelectorAll("option"),
     ).map((option) => option.value),
-  ).toEqual(["openrouter", "google"]);
+  ).toEqual(["openrouter", "comfy", "runware", "google"]);
   expect(
     ui
       .getByRole("combobox", { name: "分辨率档位" })

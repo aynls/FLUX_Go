@@ -138,8 +138,66 @@ fn nano_banana_21_enforces_its_own_routes_and_preserves_edit_references() {
         request.params.resolution = Some("512".into());
         assert!(models::validate(&request).is_err());
     }
-    for provider in ["comfy", "runware"] {
+    for provider in ["bfl", "ark"] {
         assert!(models::validate(&req(provider, "gemini-nano-banana-2.1", json!({}))).is_err());
+    }
+}
+
+#[test]
+fn nano_banana_21_comfy_and_runware_encode_route_specific_controls() {
+    let mut request = req("comfy", "gemini-nano-banana-2.1", json!({
+        "resolution":"4K", "aspectRatio":"9:21", "outputFormat":"jpeg",
+        "thinkingLevel":"high", "includeThoughts":true, "responseText":true
+    }));
+    request.images = vec![png(false), png(true)];
+    let payload = comfy::build_payload(&request).unwrap();
+    assert_eq!(models::resolve(&request).unwrap().wire_id(), "vertexai/gemini-nano-banana-2.1");
+    assert_eq!(payload["generationConfig"]["imageConfig"], json!({
+        "imageSize":"4K", "aspectRatio":"9:21", "imageOutputOptions":{"mimeType":"image/jpeg"}
+    }));
+    assert_eq!(payload["generationConfig"]["thinkingConfig"], json!({"thinkingLevel":"HIGH","includeThoughts":true}));
+    assert_eq!(payload["generationConfig"]["responseModalities"], json!(["TEXT","IMAGE"]));
+    for (i, url) in request.images.iter().enumerate() {
+        assert_eq!(payload["contents"][0]["parts"][i]["inlineData"]["data"], url.split_once(',').unwrap().1);
+    }
+    request.params.search_mode = Some("web".into());
+    assert!(models::validate(&request).is_err());
+
+    request = req("runware", "gemini-nano-banana-2.1", json!({
+        "resolution":"4K", "aspectRatio":"8:1", "outputFormat":"webp", "outputCompression":90,
+        "thinkingLevel":"medium", "searchMode":"web_images", "seed":2147483647
+    }));
+    request.images = vec![png(false), png(true)];
+    let payload = runware::build_payload(&request, "test").unwrap();
+    assert_eq!(payload[0]["model"], "google:nano-banana@2.1");
+    assert_eq!(payload[0]["width"], 11712);
+    assert_eq!(payload[0]["height"], 1408);
+    assert_eq!(payload[0]["inputs"]["referenceImages"], json!(request.images));
+    assert_eq!(payload[0]["settings"], json!({"thinkingLevel":"medium","webSearch":true,"imageSearch":true}));
+    assert_eq!(payload[0]["outputFormat"], "WEBP");
+    assert_eq!(payload[0]["outputQuality"], 90);
+    assert_eq!(payload[0]["seed"], 2147483647_u64);
+    request.params.aspect_ratio = Some("auto".into());
+    let payload = runware::build_payload(&request, "test").unwrap();
+    assert_eq!(payload[0]["resolution"], "4K");
+    assert!(payload[0].get("width").is_none());
+    assert!(payload[0].get("height").is_none());
+    request.images.clear();
+    assert!(models::validate(&request).is_err());
+    request.params.aspect_ratio = Some("9:21".into());
+    assert!(models::validate(&request).is_err());
+    request.params.aspect_ratio = Some("1:1".into());
+    request.params.seed = Some(2147483648);
+    assert!(models::validate(&request).is_err());
+    for provider in ["comfy", "runware"] {
+        let mut request = req(provider, "gemini-nano-banana-2.1", json!({"resolution":"1K","aspectRatio":"1:1"}));
+        request.images = vec![png(false); 14];
+        models::validate(&request).unwrap();
+        request.images.push(png(false));
+        assert!(models::validate(&request).is_err());
+        request.images.clear();
+        request.params.resolution = Some("512".into());
+        assert!(models::validate(&request).is_err());
     }
 }
 

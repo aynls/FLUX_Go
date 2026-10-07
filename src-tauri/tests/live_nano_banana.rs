@@ -1,6 +1,6 @@
 //! Explicit opt-in verification; two paid requests through each production adapter.
 use lutriui_lib::provider::{
-    configured_key, google, init_key_settings, openrouter, parse_data_url, GenerateRequest,
+    comfy, configured_key, google, init_key_settings, openrouter, parse_data_url, runware, GenerateRequest,
 };
 use serde_json::json;
 
@@ -14,6 +14,18 @@ async fn nano_banana_21_generation_and_reference_edit() {
 #[ignore = "Two paid Google Nano Banana 2.1 requests including image search; requires explicit authorization"]
 async fn google_nano_banana_21_search_and_reference_edit() {
     verify("google").await;
+}
+
+#[tokio::test]
+#[ignore = "Two paid Comfy Nano Banana 2.1 requests; requires explicit authorization"]
+async fn comfy_nano_banana_21_generation_and_edit() {
+    verify("comfy").await;
+}
+
+#[tokio::test]
+#[ignore = "Two paid Runware Nano Banana 2.1 requests; requires explicit authorization"]
+async fn runware_nano_banana_21_generation_and_edit() {
+    verify("runware").await;
 }
 
 async fn verify(provider: &str) {
@@ -71,15 +83,18 @@ async fn verify(provider: &str) {
             } else {
                 "none"
             });
-        } else {
+        } else if provider == "openrouter" {
             params["count"] = json!(1);
+        } else {
+            params["thinkingLevel"] = json!("minimal");
         }
         let request: GenerateRequest=serde_json::from_value(json!({"provider":provider,"model":"gemini-nano-banana-2.1","finalPrompt":prompt,"images":input,"params":params})).unwrap();
         let started = std::time::Instant::now();
-        let result = if provider == "google" {
-            google::generate(&request).await
-        } else {
-            openrouter::generate(&request).await
+        let result = match provider {
+            "google" => google::generate(&request).await,
+            "comfy" => comfy::generate(&request).await,
+            "runware" => runware::generate(&request).await,
+            _ => openrouter::generate(&request).await,
         };
         let result = match result {
             Ok(result) => result,

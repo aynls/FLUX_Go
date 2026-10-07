@@ -85,6 +85,17 @@ pub fn build_payload(req: &GenerateRequest, task_id: &str) -> Result<Value, Prov
         "gemini" => {
             let aspect = p.aspect_ratio.as_deref().unwrap_or("1:1");
             let resolution = p.resolution.as_deref().unwrap_or("1K");
+            let mut settings = serde_json::Map::new();
+            if let Some(level) = &p.thinking_level {
+                settings.insert("thinkingLevel".into(), json!(level));
+            }
+            if let Some(mode) = p.search_mode.as_deref() {
+                settings.insert("webSearch".into(), json!(matches!(mode, "web" | "web_images")));
+                settings.insert("imageSearch".into(), json!(matches!(mode, "images" | "web_images")));
+            }
+            if !settings.is_empty() {
+                task["settings"] = Value::Object(settings);
+            }
             if aspect == "auto" {
                 task["resolution"] = json!(if resolution == "512" {
                     "0.5K"

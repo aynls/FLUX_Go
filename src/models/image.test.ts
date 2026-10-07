@@ -5,6 +5,24 @@ import { buildRequest, validateModel } from ".";
 import { estimateComfyCredits } from "./pricing";
 import type { ProviderId } from "../lib/types";
 
+test("Nano Banana 2.1 restores Comfy and Runware controls independently", () => {
+  const comfy = changeRoute(newDraft(undefined, "gemini"), "comfy", "gemini-nano-banana-2.1");
+  comfy.prompt = "A painted forest";
+  comfy.params = { ...comfy.params, aspectRatio: "9:21", thinkingLevel: "high", responseText: true };
+  expect(validateModel(comfy)).toEqual([]);
+  const runware = changeRoute(comfy, "runware");
+  expect(runware.params.aspectRatio).not.toBe("9:21");
+  expect(buildRequest(runware, []).params.responseText).toBeUndefined();
+  expect(buildRequest(runware, []).params.includeThoughts).toBeUndefined();
+  runware.params = { ...runware.params, resolution: "4K", aspectRatio: "8:1", searchMode: "images", seed: 123 };
+  expect(validateModel(runware)).toEqual([]);
+  expect(outputEstimate(runware)).toEqual({ w: 11712, h: 1408 });
+  expect(buildRequest(runware, []).params).toMatchObject({ searchMode: "images", seed: 123 });
+  expect(changeRoute(runware, "comfy").params).toEqual(comfy.params);
+  expect(changeRoute(changeRoute(runware, "comfy"), "runware").params).toEqual(runware.params);
+  expect(buildRequest(changeRoute(runware, "google"), []).params.seed).toBeUndefined();
+});
+
 test("new image models have valid defaults on every advertised route", () => {
   for (const model of catalog.models.filter((m) =>
     ["gemini", "seedream"].includes(m.family),
