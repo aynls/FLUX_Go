@@ -11,7 +11,7 @@ export default function GenerationGrid(p: {
       {!p.attempts.length && (
         <div className="gallery-empty">
           <strong>描述你想生成的画面</strong>
-          <p>候选图片会逐张显示在这里，选中后可以用任意编辑模型继续创作。</p>
+          <p>候选图片会逐张显示在这里</p>
         </div>
       )}
       {[...p.attempts].reverse().map((attempt) => (
