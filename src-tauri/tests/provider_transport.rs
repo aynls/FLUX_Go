@@ -250,6 +250,22 @@ async fn runware_polls_one_task_and_counts_repeated_results_once() {
     );
 }
 #[tokio::test]
+async fn runware_polling_rejection_keeps_provider_message_without_resubmitting() {
+    let id = "50836053-a0ee-4cf5-b9d6-ae7c5d140ada";
+    let (url, handle) = server(vec![
+        (200, json!({"data":[{"taskUUID":id}]})),
+        (400, json!({"errors":[{"taskUUID":id,"code":"invalidProviderContent","message":"Rejected by Google's content moderation system."}]})),
+    ]);
+    let error = runware::generate_at(&req("runware", 1), "test-only-key", &url).await.unwrap_err();
+    assert_eq!(error.status, Some(400));
+    assert!(error.message.contains("Google's content moderation"));
+    let requests = handle.join().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].1[0]["taskType"], "imageInference");
+    assert_eq!(requests[1].1[0]["taskType"], "getResponse");
+}
+
+#[tokio::test]
 async fn admission_error_does_not_resubmit_paid_generation() {
     let (url, handle) = server(vec![(
         402,

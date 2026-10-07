@@ -61,6 +61,7 @@ pub async fn json_with_metadata(
     if !(200..300).contains(&status) {
         let message = body
             .pointer("/error/message")
+            .or_else(|| body.pointer("/errors/0/message"))
             .or_else(|| body.get("message"))
             .or_else(|| body.get("detail"))
             .and_then(Value::as_str)

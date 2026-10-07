@@ -26,11 +26,11 @@ LutriUI 将模型契约、工作区和供应商传输分开。新增模型时，
 | FLUX.3 Image  | FLUX.3 Image    | OpenRouter、BFL、Comfy、Runware |
 | GPT Image 2.5 | Flare、Sunburst | OpenRouter、Comfy、Runware      |
 | Qwen Image    | 3.0、3.0 Pro    | OpenRouter、Comfy、Runware      |
-| Gemini Image  | Nano Banana 2.1 | OpenRouter、Google |
+| Gemini Image  | Nano Banana 2.1 | OpenRouter、Comfy、Runware、Google |
 | Gemini Image  | Nano Banana 2、Pro | OpenRouter、Comfy、Runware、Google |
 | Seedream      | 5.0 Pro、Lite、Flash | OpenRouter、Comfy、Runware、火山方舟、BytePlus |
 
-目录于 2026-10-06 根据公开 API 资料核对，2026-10-07 补充核对 Nano Banana 2.1 的 OpenRouter 与 Google 路由。账户权限、价格与供应商后续变更仍以供应商实际响应为准。
+目录于 2026-10-06 根据公开 API 资料核对，2026-10-07 补充核对 Nano Banana 2.1 的 OpenRouter、Google、Comfy 与 Runware 路由。账户权限、价格与供应商后续变更仍以供应商实际响应为准。
 
 ## 工作区与 API 差异
 
@@ -42,7 +42,9 @@ Qwen 工作区使用有序参考图和文字指令，支持 3.0 与 3.0 Pro。Op
 
 ## 任务与参考素材
 
-Gemini Image 使用有序参考图、分辨率和宽高比，三个版本均至多 14 张参考图，不开放蒙版。Nano Banana 2.1 的规范编号为 `gemini-nano-banana-2.1`，OpenRouter 编号为 `google/gemini-nano-banana-2.1`；两个路由均开放 1K/2K/4K 与 14 种比例，不支持 512，Google 另支持自动比例。OpenRouter 单次请求固定一张，多张生成由应用队列管理。默认模型仍为 Nano Banana 2，既有草稿和各路由参数继续保留。[Nano Banana 2.1](https://ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1)、[OpenRouter 路由](https://openrouter.ai/api/v1/images/models/google/gemini-nano-banana-2.1/endpoints)。
+Gemini Image 使用有序参考图、分辨率和宽高比，三个版本均至多 14 张参考图，不开放蒙版。Nano Banana 2.1 的规范编号为 `gemini-nano-banana-2.1`，OpenRouter 编号为 `google/gemini-nano-banana-2.1`；四个路由均开放 1K/2K/4K，不支持 512；OpenRouter、Google、Runware 开放 14 种固定比例，Comfy 另开放 9:21。除 OpenRouter 外均可选自动比例。OpenRouter 单次请求固定一张，多张生成由应用队列管理。默认模型仍为 Nano Banana 2，既有草稿和各路由参数继续保留。[Nano Banana 2.1](https://ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1)、[OpenRouter 路由](https://openrouter.ai/api/v1/images/models/google/gemini-nano-banana-2.1/endpoints)。
+
+Nano Banana 2.1 的 Comfy 编号为 `vertexai/gemini-nano-banana-2.1`，Runware 编号为 `google:nano-banana@2.1`。两者开放 minimal/medium/high 思考级别，默认 minimal；Comfy 另可返回思考摘要与文字说明，Runware 可分别开启网页与图片搜索。Comfy 的公开路由 schema 未列出搜索工具结构，暂不开放该控件。Runware 使用 2.1 独立的 42 档尺寸表，例如 4K 的 8:1 为 11712×1408，不复用 Nano Banana 2 的全景尺寸；种子范围为 0–2147483647。[Comfy schema](https://docs.comfy.org/router-schemas/vertexai/gemini-nano-banana-2.1.json)、[Runware 模型文档](https://runware.ai/docs/models/google-nano-banana-2-1)。
 
 Google 官方路由使用 `x-goog-api-key` 请求头与 `generateContent`，输出配置为 `generationConfig.responseFormat.image`，不发送 Vertex AI 专用的输出格式字段。Comfy 使用 Vertex AI 原生 `generationConfig.imageConfig`，开放 1K/2K/4K 与 PNG/JPEG。结果按内容字段提取，兼容 inlineData 与 fileData，思考阶段的图片不计入最终结果。Google 支持选择是否返回文字说明与思考摘要，逐图保存这些信息。Runware 使用各模型独立的官方尺寸表；自动比例需要参考图并发送分辨率预设，其他比例发送精确宽高，另外开放种子与输出压缩。Google 的 Nano Banana 2.1 可选 minimal/medium/high（默认 medium），Nano Banana 2 可选 minimal/high（默认 minimal），Pro 不提供级别控件。三个模型均可启用网页搜索，2.1 与 2 另可启用图片搜索；默认关闭。结果逐张保存来源页面链接、搜索词、搜索建议 HTML、文字与摘要，图库独立保留元数据，删除生成记录后仍可查看。来源链接只允许 HTTP(S)，通过系统浏览器打开；搜索建议保留样式，在禁止脚本的 iframe 中显示，不进入应用 DOM。当前编辑仍以有序参考图和单次指令发起，不维持供应商多轮会话。[Google API](https://ai.google.dev/gemini-api/docs/generate-content/image-generation)、[Comfy schema](https://docs.comfy.org/router-schemas/vertexai/gemini-3.1-flash-image.json)、[Runware](https://runware.ai/docs/models/google-nano-banana-2)。
 
@@ -91,3 +93,5 @@ Comfy 预估独立保存在 `shared/comfy-pricing.json`，记录核验日期与�
 5. 补充模型契约与交互测试。运行 `bun test`、`bun run build`、`cargo test --manifest-path src-tauri/Cargo.toml`，再构建桌面应用。
 
 自动验证覆盖参数投影、路由往返恢复、家族默认值、旧草稿迁移、区域坐标与留白、蒙版转换、多张结果和本地 HTTP 模拟。隔离浏览器使用本地测试替身验证主图切换、用途编译、移除区域、任务阶段、历史大图以及 1024×640 窗口中的固定导航；这些验证不调用付费 API。此前真实调用验证过 Runware Qwen 3.0 和 Comfy GPT Image 2.5 Flare，本轮交互优化未新增付费验证。本机桌面拖拽尚未验证。
+
+2026-10-07 新增 Nano Banana 2.1 的 Comfy、Runware 路由验证：前端 73 项测试与生产构建通过；离线契约覆盖两条路由的参数隔离、参考顺序、14 张上限、独立尺寸、种子边界和原生请求映射。真实 API 各成功生成一张 1024×1024 图片；随后各执行一次参考图编辑，均在任务提交后被上游内容审核拒绝，未重新生成。Runware 错误数组现保留具体原因，并以本地 HTTP 模拟覆盖轮询拒绝和不重复提交。此次没有进行桌面交互实测。
