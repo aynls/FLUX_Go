@@ -132,7 +132,7 @@ export default function HistoryPanel({
   }
   return (
     <>
-      <div className="flex h-full flex-col">
+      <div className="flex min-h-0 flex-1 flex-col">
         <div className="history-list-toolbar">
           <span className="text-xs text-zinc-500">共 {items.length} 条</span>
           <div className="row">
@@ -182,7 +182,7 @@ export default function HistoryPanel({
             {error}
           </p>
         )}
-        <div className="flex-1 overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {items.length === 0 ? (
             <p className="text-xs text-zinc-500">暂无生成记录</p>
           ) : (
@@ -323,7 +323,7 @@ function HistoryDetail({
   };
 
   return (
-    <div className="history-detail flex h-full flex-col overflow-y-auto p-3">
+    <div className="history-detail flex min-h-0 flex-1 flex-col overflow-y-auto p-3">
       <button
         className="history-back mb-2 self-start text-xs text-zinc-400 hover:text-zinc-200"
         onClick={onBack}
