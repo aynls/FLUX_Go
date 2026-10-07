@@ -23,6 +23,7 @@ pub fn default_env_name(provider: &str) -> &'static str {
         "google" => "GEMINI_API_KEY",
         "ark" => "ARK_API_KEY",
         "byteplus" => "BYTEPLUS_API_KEY",
+        "xai" => "XAI_API_KEY",
         _ => "OPENROUTER_API_KEY",
     }
 }
@@ -36,6 +37,7 @@ fn default_key_settings() -> HashMap<String, CredentialSettings> {
         "google",
         "ark",
         "byteplus",
+        "xai",
     ]
     .into_iter()
     .map(|p| {
@@ -92,7 +94,7 @@ pub fn key_settings(provider: &str) -> CredentialSettings {
 fn validate_key_settings(provider: &str, config: &CredentialSettings) -> Result<(), String> {
     if !matches!(
         provider,
-        "openrouter" | "bfl" | "comfy" | "runware" | "google" | "ark" | "byteplus"
+        "openrouter" | "bfl" | "comfy" | "runware" | "google" | "ark" | "byteplus" | "xai"
     ) {
         return Err("未知提供商".into());
     }
@@ -127,7 +129,7 @@ pub fn save_key_settings(provider: &str, config: CredentialSettings) -> Result<(
 pub fn credential_entry(provider: &str) -> Result<keyring::Entry, String> {
     if !matches!(
         provider,
-        "bfl" | "openrouter" | "comfy" | "runware" | "google" | "ark" | "byteplus"
+        "bfl" | "openrouter" | "comfy" | "runware" | "google" | "ark" | "byteplus" | "xai"
     ) {
         return Err("未知提供商".into());
     }
@@ -144,7 +146,7 @@ pub fn stored_key(provider: &str) -> Option<String> {
 pub fn configured_key(provider: &str) -> Option<String> {
     if !matches!(
         provider,
-        "openrouter" | "bfl" | "comfy" | "runware" | "google" | "ark" | "byteplus"
+        "openrouter" | "bfl" | "comfy" | "runware" | "google" | "ark" | "byteplus" | "xai"
     ) {
         return None;
     }

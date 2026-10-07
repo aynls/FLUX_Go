@@ -8,6 +8,7 @@ pub mod bfl;
 pub mod comfy;
 mod credentials;
 pub mod google;
+pub mod xai;
 pub mod openrouter;
 pub mod progress;
 pub mod runware;
@@ -181,6 +182,7 @@ pub async fn dispatch(req: &GenerateRequest) -> ProviderResult {
         "comfy" => comfy::generate(req).await,
         "runware" => runware::generate(req).await,
         "google" => google::generate(req).await,
+        "xai" => xai::generate(req).await,
         "ark" | "byteplus" => ark::generate(req).await,
         other => Err(ProviderError::msg(format!("未知提供商: {other}"))),
     }

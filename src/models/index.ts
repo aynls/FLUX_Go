@@ -51,6 +51,7 @@ const validators = {
   qwen: validateQwen,
   gemini: validateImage,
   seedream: validateImage,
+  grok: validateImage,
 };
 export function validateModel(d: Draft) {
   const errors = [...validateFields(d), ...validators[d.family](d)];
@@ -61,6 +62,8 @@ export function validateModel(d: Draft) {
   )
     errors.push("提示词引用了不存在的图片，请更新图片标签");
   if (d.intent === "edit" && !d.refs.length) errors.push("请添加编辑主图");
+  if (d.intent === "edit" && routeFor(d)?.maxRefs === 0)
+    errors.push("此路由仅支持文生图，编辑图片请切换供应商");
   if (d.intent === "create" && d.mask) errors.push("编辑蒙版需要编辑图片模式");
   if (d.intent === "edit" && d.baseId && d.refs[0]?.uid !== d.baseId)
     errors.push("主图须位于图片 1，请重新指定主图");

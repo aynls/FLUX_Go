@@ -29,6 +29,7 @@ LutriUI 将模型契约、工作区和供应商传输分开。新增模型时，
 | Gemini Image  | Nano Banana 2.1 | OpenRouter、Comfy、Runware、Google |
 | Gemini Image  | Nano Banana 2、Pro | OpenRouter、Comfy、Runware、Google |
 | Seedream      | 5.0 Pro、Lite、Flash | OpenRouter、Comfy、Runware、火山方舟、BytePlus |
+| Grok Imagine 2 | Image 2.0 | OpenRouter、Runware、Comfy、Grok 官方（xAI） |
 
 目录于 2026-10-06 根据公开 API 资料核对，2026-10-07 补充核对 Nano Banana 2.1 的 OpenRouter、Google、Comfy 与 Runware 路由。账户权限、价格与供应商后续变更仍以供应商实际响应为准。
 
@@ -39,6 +40,12 @@ FLUX 工作区保留参考图、来源区域和输出区域。BFL、Comfy 与 Op
 GPT Image 工作区使用主图、参考图列表、质量、背景和输出格式。Comfy 与 Runware 支持自定义尺寸和蒙版；OpenRouter 当前路由使用宽高比，暂未开放蒙版和任意尺寸。内部蒙版使用透明 PNG，完全透明区域用于编辑，尺寸与第一张参考图一致；Runware 适配器转换为白色编辑、黑色保留的蒙版。参考图与蒙版按同一比例缩放。尺寸、透明背景与 JPEG 的冲突在提交前校验。[OpenAI 文档](https://developers.openai.com/api/docs/guides/image-generation)、[Comfy schema](https://docs.comfy.org/router-schemas/openai/gpt-image-2.5-flare.json)、[Runware 文档](https://runware.ai/docs/models/openai-gpt-image-2-5-flare)。
 
 Qwen 工作区使用有序参考图和文字指令，支持 3.0 与 3.0 Pro。OpenRouter 路由开放分辨率、宽高比、种子与张数，参考图上限为 4；Comfy 和 Runware 使用像素尺寸、负面提示词和扩写控制，参考图上限为 3。Comfy 将尺寸编码为 `宽*高`；选择自动尺寸时省略该字段，并对 Pro 显示费用区间。Runware 使用独立宽高字段，并开放输出格式与压缩质量。有参考图时只支持 `direct` 扩写，关闭扩写时省略扩写方式。[OpenRouter 路由](https://openrouter.ai/api/v1/images/models/qwen/qwen-image-3/endpoints)、[Comfy schema](https://docs.comfy.org/router-schemas/qwen/qwen-image-3.0.json)、[Runware 文档](https://runware.ai/docs/models/alibaba-qwen-image-3-0)。
+
+Grok Imagine 2 的规范编号为 `grok-imagine-image-2.0`，四条路由均支持 1K/2K 与低/中质量，不开放种子、蒙版或 FLUX 区域。OpenRouter 使用 `x-ai/grok-imagine-image-2.0`，有序参考图最多 3 张；Runware 使用 `xai:grok-imagine@image-2.0`，同样最多 3 张，并开放 PNG/JPEG/WebP 与压缩质量。Runware 的质量映射到 `settings.quality`，固定比例按目录内独立的 26 档尺寸表发送宽高；自动比例仅在有参考图时可用，发送分辨率预设并省略宽高。[OpenRouter 路由](https://openrouter.ai/api/v1/images/models/x-ai/grok-imagine-image-2.0/endpoints)、[Runware 文档](https://runware.ai/docs/models/xai-grok-imagine-image-2-0)。
+
+Grok 官方使用 `XAI_API_KEY` 或系统凭据中的手动密钥，通过 Bearer 鉴权；连接检查读取 `/v1/models`。无参考图时调用 `/v1/images/generations`，有参考图时调用 `/v1/images/edits`，均发送 JSON；单图使用 `image` 对象，多图使用有序 `images` 数组，最多 5 张，主图仍位于第一位。官方另外开放自动质量、21:9 与 5:2 比例；自动质量当前文生图为 low、编辑为 medium。分辨率转换为小写 `1k/2k`，每次固定请求一张，批量由应用队列管理。结果兼容 URL 与 base64，保留审核拒绝原因；仅官方直连将实际 `cost_in_usd_ticks` 换算为美元，不推测缺失成本。[官方生成](https://docs.x.ai/developers/model-capabilities/images/generation)、[官方多图编辑](https://docs.x.ai/developers/model-capabilities/images/multi-image-editing)。
+
+Comfy 的 `xai/grok-imagine-image-2.0` Router schema 当前只接受文字，参考图上限设为 0，编辑任务在提交前被阻止并提示切换供应商，已有素材继续保留。该模型使用同步 `POST /v2/models/xai/grok-imagine-image-2.0`，携带幂等键并直接读取结果，不进入其他 Comfy 模型的任务轮询；模型字段明确设为 2.0，避免 schema 的旧默认模型。公开 schema 虽列出 high，但其说明仅确认 2.0 的 low/medium 档，因此不开放 high；同样不发送官方独有的 auto 质量。实际 Comfy Credits 仍只读取响应头，不将上游美元用量当作 Credits。上述能力于 2026-10-07 核对。[Comfy schema](https://docs.comfy.org/router-schemas/xai/grok-imagine-image-2.0.json)。
 
 ## 任务与参考素材
 

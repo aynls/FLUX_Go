@@ -1,6 +1,6 @@
 //! Local HTTP simulations validate admission, auth, polling and single submission.
 use base64::Engine;
-use lutriui_lib::provider::{ark, comfy, google, runware, GenerateRequest};
+use lutriui_lib::provider::{ark, comfy, google, runware, xai, GenerateRequest};
 use serde_json::{json, Value};
 use std::{
     io::{Read, Write},
@@ -88,6 +88,61 @@ fn server(responses: Vec<(u16, Value)>) -> (String, thread::JoinHandle<Vec<(Stri
 }
 fn req(provider: &str, count: u32) -> GenerateRequest {
     serde_json::from_value(json!({"provider":provider,"model":"gpt-image-2.5-flare","finalPrompt":"a simple icon","requestId":"50836053-a0ee-4cf5-b9d6-ae7c5d140ada","params":{"size":"1024x1024","outputFormat":"png","count":count}})).unwrap()
+}
+fn grok_req(provider: &str) -> GenerateRequest {
+    serde_json::from_value(json!({"provider":provider,"model":"grok-imagine-image-2.0","finalPrompt":"an otter reading","params":{"quality":"medium","resolution":"1K"}})).unwrap()
+}
+
+#[tokio::test]
+async fn grok_official_selects_json_generation_or_edit_endpoint_and_normalizes_cost() {
+    for count in [0, 1, 5] {
+        let im = png();
+        let (url, handle) = server(vec![(200, json!({"data":[{"b64_json":im.split_once(',').unwrap().1,"mime_type":"image/png"}],"usage":{"cost_in_usd_ticks":600000000}}))]);
+        let mut r = grok_req("xai");
+        r.images = vec![im;count];
+        let out = xai::generate_at(&r, "test-only-key", &format!("{url}/v1/images")).await.unwrap();
+        assert_eq!(out.images.len(), 1);
+        assert_eq!(out.images[0].media_type, "image/png");
+        assert_eq!(out.usage["cost"], 0.06);
+        let requests = handle.join().unwrap();
+        assert_eq!(requests.len(),1);
+        let path = if count == 0 {"generations"} else {"edits"};
+        assert!(requests[0].0.starts_with(&format!("POST /v1/images/{path} ")));
+        assert!(requests[0].0.to_lowercase().contains("authorization: bearer test-only-key"));
+        assert!(requests[0].0.to_lowercase().contains("content-type: application/json"));
+        assert_eq!(requests[0].1["n"],1);
+    }
+}
+
+#[tokio::test]
+async fn grok_comfy_direct_result_uses_idempotency_and_header_credits_without_polling() {
+    let (url, handle) = server(vec![(200, json!({"data":[{"url":png()}],"usage":{"cost_in_usd_ticks":600000000}}))]);
+    let out = comfy::generate_at(&grok_req("comfy"), "test-only-key", &format!("{url}/v2/models")).await.unwrap();
+    assert_eq!(out.images.len(),1);
+    assert_eq!(out.usage["credits"],12.75);
+    assert!(out.usage.get("cost").is_none());
+    let requests = handle.join().unwrap();
+    assert_eq!(requests.len(),1);
+    assert!(requests[0].0.starts_with("POST /v2/models/xai/grok-imagine-image-2.0 "));
+    assert!(requests[0].0.to_lowercase().contains("x-api-key: test-only-key"));
+    assert!(requests[0].0.to_lowercase().contains("idempotency-key:"));
+}
+
+#[tokio::test]
+async fn grok_moderation_and_empty_results_fail_without_resubmission() {
+    for provider in ["xai", "comfy"] {
+        for (status, body, expected) in [
+            (200,json!({"block_reason":"input moderation refused","usage":{}}),"input moderation refused"),
+            (200,json!({"data":[{}]}),"没有图片"),
+            (429,json!({"error":{"message":"rate limited"}}),"rate limited"),
+        ] {
+            let (url, handle) = server(vec![(status,body)]);
+            let r = grok_req(provider);
+            let result = if provider == "xai" { xai::generate_at(&r,"test-only-key",&url).await } else { comfy::generate_at(&r,"test-only-key",&url).await };
+            assert!(result.unwrap_err().message.contains(expected));
+            assert_eq!(handle.join().unwrap().len(),1);
+        }
+    }
 }
 #[tokio::test]
 async fn google_official_authenticates_in_header_and_sends_one_native_request() {

@@ -108,6 +108,9 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
         if m.family == "gemini" && mime == "image/gif" {
             return Err(ProviderError::msg("Gemini 参考图须为 PNG/JPEG/WebP"));
         }
+        if m.family == "grok" && mime == "image/gif" {
+            return Err(ProviderError::msg("Grok 参考图须为 PNG/JPEG/WebP"));
+        }
         if m.family == "flux"
             && matches!(req.provider.as_str(), "bfl" | "comfy")
             && bytes.len() > 20 * 1024 * 1024
@@ -154,7 +157,7 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
             ));
         }
     }
-    if m.family == "gemini"
+    if matches!(m.family, "gemini" | "grok")
         && req.provider == "runware"
         && req.params.aspect_ratio.as_deref() == Some("auto")
         && req.images.is_empty()

@@ -114,6 +114,20 @@ pub fn build_payload(req: &GenerateRequest, task_id: &str) -> Result<Value, Prov
                 task["seed"] = json!(seed);
             }
         }
+        "grok" => {
+            let aspect = p.aspect_ratio.as_deref().unwrap_or("1:1");
+            let resolution = p.resolution.as_deref().unwrap_or("1K");
+            task["settings"] = json!({"quality": p.quality.as_deref().unwrap_or("medium")});
+            if aspect == "auto" {
+                task["resolution"] = json!(resolution);
+            } else {
+                let key = m.route["dimensionsKey"].as_str().unwrap_or(m.id);
+                let pair = crate::models::catalog()["imageDimensions"][key][resolution][aspect]
+                    .as_array().ok_or_else(|| ProviderError::msg("Grok 分辨率或比例无效"))?;
+                task["width"] = pair[0].clone();
+                task["height"] = pair[1].clone();
+            }
+        }
         "seedream" => {
             if let Some(key) = m.route["dimensionsKey"].as_str() {
                 let pair = crate::models::catalog()["imageDimensions"][key]

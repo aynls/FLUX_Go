@@ -28,8 +28,9 @@ export type ProviderId =
   | "runware"
   | "google"
   | "ark"
-  | "byteplus";
-export type FamilyId = "flux" | "gpt" | "qwen" | "gemini" | "seedream";
+  | "byteplus"
+  | "xai";
+export type FamilyId = "flux" | "gpt" | "qwen" | "gemini" | "seedream" | "grok";
 export type TaskIntent = "create" | "edit";
 export type WorkspaceKey = TaskIntent;
 export type ReferencePurpose =
@@ -75,6 +76,7 @@ export interface ProviderStatus {
   google: boolean;
   ark: boolean;
   byteplus: boolean;
+  xai: boolean;
   sources?: Record<ProviderId, string>;
   settings?: Record<ProviderId, CredentialSettings>;
   storedKeys?: Record<ProviderId, boolean>;

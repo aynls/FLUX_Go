@@ -1,6 +1,6 @@
 # 项目说明
 
-LutriUI 是基于 Tauri、React、TypeScript 和 Rust 的桌面图像生成与编辑工作台，支持 FLUX.3 Image、GPT Image 2.5、Qwen Image、Gemini Image（Nano Banana 2.1 / 2 / Pro）和 Seedream 5.0（Pro / Lite / Flash）。供应商包括 OpenRouter、BFL、Comfy、Runware、Google、火山方舟与 BytePlus，各路由能力独立，计划开源。
+LutriUI 是基于 Tauri、React、TypeScript 和 Rust 的桌面图像生成与编辑工作台，支持 FLUX.3 Image、GPT Image 2.5、Qwen Image、Gemini Image（Nano Banana 2.1 / 2 / Pro）、Seedream 5.0（Pro / Lite / Flash）和 Grok Imagine Image 2.0。供应商包括 OpenRouter、BFL、Comfy、Runware、Google、火山方舟、BytePlus 与 Grok 官方，各路由能力独立，计划开源。
 
 使用说明见 [README.md](README.md)，模型能力、API 差异与模块边界见 [docs/architecture.md](docs/architecture.md)。FLUX 官方文档：[FLUX.3 Image](https://docs.bfl.ai/flux_3/flux3_image_overview)。其他路由的文档来源记录在 `shared/model-catalog.json`。
 

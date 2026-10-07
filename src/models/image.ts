@@ -38,7 +38,7 @@ export function validateImage(d: Draft): string[] {
       );
   }
   if (
-    d.family === "gemini" &&
+    ["gemini", "grok"].includes(d.family) &&
     d.provider === "runware" &&
     p.aspectRatio === "auto" &&
     !d.refs.length

@@ -18,6 +18,7 @@ pub struct ProviderStatus {
     pub google: bool,
     pub ark: bool,
     pub byteplus: bool,
+    pub xai: bool,
     pub sources: std::collections::HashMap<String, String>,
     pub settings: std::collections::HashMap<String, crate::provider::CredentialSettings>,
     pub stored_keys: std::collections::HashMap<String, bool>,
@@ -36,6 +37,7 @@ pub async fn provider_status() -> ProviderStatus {
         "google",
         "ark",
         "byteplus",
+        "xai",
     ] {
         let config = crate::provider::key_settings(p);
         let source = if config.source == "manual" {
@@ -55,6 +57,7 @@ pub async fn provider_status() -> ProviderStatus {
         google: crate::provider::configured_key("google").is_some(),
         ark: crate::provider::configured_key("ark").is_some(),
         byteplus: crate::provider::configured_key("byteplus").is_some(),
+        xai: crate::provider::configured_key("xai").is_some(),
         sources,
         settings,
         stored_keys,
@@ -109,6 +112,7 @@ pub async fn credential_check(provider: String) -> Result<String, String> {
         "bfl" => client
             .get("https://api.bfl.ai/v1/credits")
             .header("x-key", &key),
+        "xai" => client.get("https://api.x.ai/v1/models").bearer_auth(&key),
         "google" => client.get("https://generativelanguage.googleapis.com/v1/models").header("x-goog-api-key", &key),
         "ark" | "byteplus" => return Err("此供应商未提供已确认的免费密钥检查接口；请通过实际生成确认模型权限。".into()),
         "comfy" => client.get("https://cloud.comfy.org/api/user").header("X-API-Key", &key),

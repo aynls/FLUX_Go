@@ -50,6 +50,7 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
         }
         "gemini" => super::google::native_payload(req, true),
         "seedream" => super::ark::native_payload(req),
+        "grok" => super::xai::build_payload(req),
         _ => Err(ProviderError::msg("Comfy 尚未实现该模型家族的请求编码")),
     }
 }
@@ -65,9 +66,19 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
         .request_id
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let url = format!("{endpoint}/{}/requests", model.wire_id());
+    // Grok's documented Router surface returns the finished native result directly.
+    let direct = model.family == "grok";
+    let url = if direct {
+        format!("{endpoint}/{}", model.wire_id())
+    } else {
+        format!("{endpoint}/{}/requests", model.wire_id())
+    };
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(900))
+        .build()
+        .map_err(|_| ProviderError::msg("Comfy HTTP 客户端初始化失败"))?;
     let (_, submit, _, mut actual_credits) = transport::json_with_metadata(
-        transport::client()
+        client
             .post(&url)
             .header("X-API-Key", key)
             .header("Idempotency-Key", idempotency)
@@ -75,6 +86,15 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
         "Comfy",
     )
     .await?;
+    if direct {
+        super::progress::report("downloading", None, None, None);
+        let mut out = normalize(req, &submit, None).await?;
+        out.usage["comfyChargeReported"] = json!(actual_credits.is_some());
+        if let Some(credits) = actual_credits {
+            out.usage["credits"] = json!(credits);
+        }
+        return Ok(out);
+    }
     let id = submit["request_id"]
         .as_str()
         .filter(|id| {
@@ -191,6 +211,7 @@ pub async fn normalize(req: &GenerateRequest, body: &Value, job: Option<&str>) -
             images
         }
         "gemini" => super::google::images(body).await?,
+        "grok" => super::xai::images(body).await?,
         _ => return Err(ProviderError::msg("Comfy 结果格式未实现")),
     };
     let mut usage = body

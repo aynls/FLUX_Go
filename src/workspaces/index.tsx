@@ -12,6 +12,7 @@ const workspaces = {
   qwen: { Sidebar: QwenSidebar, Stage: QwenStage },
   gemini: { Sidebar: ImageSidebar, Stage: QwenStage },
   seedream: { Sidebar: ImageSidebar, Stage: QwenStage },
+  grok: { Sidebar: ImageSidebar, Stage: QwenStage },
 };
 export function WorkspaceSidebar(props: SidebarProps) {
   const Component = workspaces[props.draft.family].Sidebar;

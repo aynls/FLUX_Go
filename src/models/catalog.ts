@@ -203,7 +203,7 @@ export function validateFields(d: Draft): string[] {
   }
   if (d.refs.length > route.maxRefs)
     errors.push(
-      `此路由参考图最多 ${route.maxRefs} 张，当前 ${d.refs.length} 张`,
+      route.maxRefs === 0 ? "此路由仅支持文生图，请切换供应商以使用参考图" : `此路由参考图最多 ${route.maxRefs} 张，当前 ${d.refs.length} 张`,
     );
   if (d.mask && !route.mask)
     errors.push("此路由不支持蒙版，请移除蒙版或切换到 Comfy / Runware");

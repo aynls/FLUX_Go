@@ -58,6 +58,7 @@ export async function providerStatus(): Promise<ProviderStatus> {
       google: false,
       ark: false,
       byteplus: false,
+      xai: false,
     };
   return invoke<ProviderStatus>("provider_status");
 }

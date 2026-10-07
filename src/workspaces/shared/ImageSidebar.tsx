@@ -30,10 +30,10 @@ export default function ImageSidebar(p: WorkspaceControlsProps) {
               <p className="help">在提示词中描述画面比例，或选择自定义尺寸。</p>
             )}
         </section>
-        {fields.seed && (
+        {(fields.seed || fields.quality) && (
           <section>
             <h2>生成控制</h2>
-            <ParameterFields {...p} keys={["seed"]} />
+            <ParameterFields {...p} keys={["quality", "seed"]} />
           </section>
         )}
         {(fields.outputFormat || fields.watermark) && (

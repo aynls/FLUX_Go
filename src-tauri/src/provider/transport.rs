@@ -148,7 +148,7 @@ pub async fn openai_images(
             let fallback = format!("image/{default_format}");
             images.push(base64_image(
                 b64,
-                item["media_type"].as_str().unwrap_or(&fallback),
+                item["media_type"].as_str().or_else(|| item["mime_type"].as_str()).unwrap_or(&fallback),
             )?);
         } else if let Some(url) = item["url"].as_str() {
             images.push(download_image(url).await?);

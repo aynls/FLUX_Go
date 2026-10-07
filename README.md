@@ -1,6 +1,6 @@
 # LutriUI
 
-基于 Tauri、React 和 TypeScript 的桌面图像生成与编辑工作台。支持 FLUX.3 Image、GPT Image 2.5、Qwen Image、Gemini Image（Nano Banana 2.1 / 2 / Pro）和 Seedream 5.0（Pro / Lite / Flash），通过 OpenRouter、BFL、Comfy、Runware 或各家官方 API 调用。
+基于 Tauri、React 和 TypeScript 的桌面图像生成与编辑工作台。支持 FLUX.3 Image、GPT Image 2.5、Qwen Image、Gemini Image（Nano Banana 2.1 / 2 / Pro）、Seedream 5.0（Pro / Lite / Flash）和 Grok Imagine Image 2.0，通过 OpenRouter、BFL、Comfy、Runware 或各家官方 API 调用。
 
 ![alt text](image.png)
 
@@ -29,6 +29,7 @@ bun run app:dev
 
 - FLUX 支持区域构图与编辑；GPT Image 支持部分供应商的蒙版编辑；Qwen、Gemini Image 和 Seedream 支持多图参考与文字指令。
 - Google 官方路由可控制思考级别、联网搜索、文字说明与思考摘要；结果和图库预览保留参考来源与搜索建议。
+- Grok Imagine 2 支持 OpenRouter、Runware、Comfy 与 Grok 官方（`XAI_API_KEY`）；Comfy 仅文生图，其他路由支持参考图编辑。
 - Google 官方使用 Gemini API Key；Seedream 官方分为火山方舟（国内）与 BytePlus（国际），密钥分别配置和保存。
 - FLUX 使用鼠标右键拖拽新建包围盒，也可从已有框内部开始画新框；左键用于选择、移动和拖动手柄缩放已有框。按住空格后左键拖拽可平移视角，滚轮可缩放。
 - 批次逐张显示结果；可停止后续生成，已发出的请求仍会接收并保存，未发出的请求不再计入提交。

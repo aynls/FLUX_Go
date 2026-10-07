@@ -72,6 +72,12 @@
   "checkedAt": "2026-10-07",
   "providers": [
     {
+      "id": "xai",
+      "label": "Grok 官方（xAI）",
+      "envName": "XAI_API_KEY",
+      "keyUrl": "https://console.x.ai/"
+    },
+    {
       "id": "openrouter",
       "label": "OpenRouter",
       "envName": "OPENROUTER_API_KEY",
@@ -247,6 +253,19 @@
   },
   "families": [
     {
+      "id": "grok",
+      "label": "Grok Imagine 2",
+      "description": "文字生成与多图参考编辑",
+      "defaultModel": "grok-imagine-image-2.0",
+      "defaults": {
+        "resolution": "1K",
+        "aspectRatio": "1:1",
+        "quality": "medium",
+        "outputFormat": "png",
+        "outputCompression": 95
+      }
+    },
+    {
       "id": "flux",
       "label": "FLUX.3 Image",
       "description": "多参考图与区域编排",
@@ -325,6 +344,185 @@
     }
   ],
   "models": [
+    {
+      "id": "grok-imagine-image-2.0",
+      "family": "grok",
+      "label": "Grok Imagine Image 2.0",
+      "routes": {
+        "openrouter": {
+          "model": "x-ai/grok-imagine-image-2.0",
+          "maxRefs": 3,
+          "mask": false,
+          "parameters": {
+            "resolution": {
+              "values": [
+                "1K",
+                "2K"
+              ]
+            },
+            "aspectRatio": {
+              "values": [
+                "1:1",
+                "3:4",
+                "4:3",
+                "9:16",
+                "16:9",
+                "2:3",
+                "3:2",
+                "9:19.5",
+                "19.5:9",
+                "9:20",
+                "20:9",
+                "1:2",
+                "2:1",
+                "auto"
+              ]
+            },
+            "quality": {
+              "values": [
+                "low",
+                "medium"
+              ]
+            }
+          },
+          "docs": "https://openrouter.ai/api/v1/images/models/x-ai/grok-imagine-image-2.0/endpoints"
+        },
+        "runware": {
+          "model": "xai:grok-imagine@image-2.0",
+          "maxRefs": 3,
+          "mask": false,
+          "parameters": {
+            "resolution": {
+              "values": [
+                "1K",
+                "2K"
+              ]
+            },
+            "aspectRatio": {
+              "values": [
+                "1:1",
+                "3:4",
+                "4:3",
+                "9:16",
+                "16:9",
+                "2:3",
+                "3:2",
+                "9:19.5",
+                "19.5:9",
+                "9:20",
+                "20:9",
+                "1:2",
+                "2:1",
+                "auto"
+              ]
+            },
+            "quality": {
+              "values": [
+                "low",
+                "medium"
+              ]
+            },
+            "outputFormat": {
+              "values": [
+                "png",
+                "jpeg",
+                "webp"
+              ]
+            },
+            "outputCompression": {
+              "min": 20,
+              "max": 99
+            }
+          },
+          "dimensionsKey": "grok-imagine-image-2.0",
+          "docs": "https://runware.ai/docs/models/xai-grok-imagine-image-2-0"
+        },
+        "comfy": {
+          "model": "xai/grok-imagine-image-2.0",
+          "maxRefs": 0,
+          "mask": false,
+          "parameters": {
+            "resolution": {
+              "values": [
+                "1K",
+                "2K"
+              ]
+            },
+            "aspectRatio": {
+              "values": [
+                "1:1",
+                "3:4",
+                "4:3",
+                "9:16",
+                "16:9",
+                "2:3",
+                "3:2",
+                "9:19.5",
+                "19.5:9",
+                "9:20",
+                "20:9",
+                "1:2",
+                "2:1",
+                "auto"
+              ]
+            },
+            "quality": {
+              "values": [
+                "low",
+                "medium"
+              ]
+            }
+          },
+          "notes": "Comfy 此路由仅支持文生图；参考图编辑请切换到 OpenRouter、Runware 或 Grok 官方。",
+          "docs": "https://docs.comfy.org/router-schemas/xai/grok-imagine-image-2.0.json"
+        },
+        "xai": {
+          "model": "grok-imagine-image-2.0",
+          "maxRefs": 5,
+          "mask": false,
+          "parameters": {
+            "resolution": {
+              "values": [
+                "1K",
+                "2K"
+              ]
+            },
+            "aspectRatio": {
+              "values": [
+                "1:1",
+                "3:4",
+                "4:3",
+                "9:16",
+                "16:9",
+                "2:3",
+                "3:2",
+                "9:19.5",
+                "19.5:9",
+                "9:20",
+                "20:9",
+                "1:2",
+                "2:1",
+                "21:9",
+                "5:2",
+                "auto"
+              ]
+            },
+            "quality": {
+              "values": [
+                "auto",
+                "low",
+                "medium"
+              ],
+              "help": "自动档当前在文生图使用低质量、编辑使用中质量，费用按实际档位计算。"
+            }
+          },
+          "defaults": {
+            "quality": "auto"
+          },
+          "docs": "https://docs.x.ai/developers/model-capabilities/images/generation"
+        }
+      }
+    },
     {
       "id": "flux-3-image",
       "family": "flux",
@@ -2177,6 +2375,116 @@
     }
   ],
   "imageDimensions": {
+    "grok-imagine-image-2.0": {
+      "1K": {
+        "1:1": [
+          1024,
+          1024
+        ],
+        "3:4": [
+          864,
+          1152
+        ],
+        "4:3": [
+          1152,
+          864
+        ],
+        "9:16": [
+          720,
+          1280
+        ],
+        "16:9": [
+          1280,
+          720
+        ],
+        "2:3": [
+          832,
+          1248
+        ],
+        "3:2": [
+          1248,
+          832
+        ],
+        "9:19.5": [
+          576,
+          1248
+        ],
+        "19.5:9": [
+          1248,
+          576
+        ],
+        "9:20": [
+          576,
+          1280
+        ],
+        "20:9": [
+          1280,
+          576
+        ],
+        "1:2": [
+          704,
+          1408
+        ],
+        "2:1": [
+          1408,
+          704
+        ]
+      },
+      "2K": {
+        "1:1": [
+          2048,
+          2048
+        ],
+        "3:4": [
+          1776,
+          2368
+        ],
+        "4:3": [
+          2368,
+          1776
+        ],
+        "9:16": [
+          1584,
+          2816
+        ],
+        "16:9": [
+          2816,
+          1584
+        ],
+        "2:3": [
+          1664,
+          2496
+        ],
+        "3:2": [
+          2496,
+          1664
+        ],
+        "9:19.5": [
+          1344,
+          2912
+        ],
+        "19.5:9": [
+          2912,
+          1344
+        ],
+        "9:20": [
+          1440,
+          3200
+        ],
+        "20:9": [
+          3200,
+          1440
+        ],
+        "1:2": [
+          1456,
+          2912
+        ],
+        "2:1": [
+          2912,
+          1456
+        ]
+      }
+    },
     "gemini-nano-banana-2.1": {
       "1K": {
         "1:1": [

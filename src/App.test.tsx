@@ -121,6 +121,7 @@ mock.module("./lib/api", () => ({
     google: true,
     ark: true,
     byteplus: true,
+    xai: true,
   }),
   draftLoad: async () =>
     initial && "tasks" in initial

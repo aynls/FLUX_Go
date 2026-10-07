@@ -2,7 +2,7 @@
 use base64::Engine;
 use lutriui_lib::{
     models,
-    provider::{ark, comfy, google, openrouter, parse_data_url, runware, GenerateRequest},
+    provider::{ark, comfy, google, openrouter, parse_data_url, runware, xai, GenerateRequest},
 };
 use serde_json::{json, Value};
 
@@ -22,6 +22,81 @@ fn png(alpha: bool) -> String {
         "data:image/png;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(output.into_inner())
     )
+}
+#[test]
+fn grok_native_payloads_keep_route_capabilities_and_order() {
+    for provider in ["xai", "comfy", "openrouter", "runware"] {
+        let mut r = req(provider, "grok-imagine-image-2.0", json!({"resolution":"2K", "aspectRatio":"9:20", "quality":"low"}));
+        let a = png(false);
+        let b = png(true);
+        if provider != "comfy" { r.images = vec![a.clone(), b.clone()]; }
+        match provider {
+            "xai" | "comfy" => {
+                let p = if provider == "comfy" { comfy::build_payload(&r) } else { xai::build_payload(&r) }.unwrap();
+                assert_eq!(p["model"], "grok-imagine-image-2.0");
+                assert_eq!(p["resolution"], "2k");
+                assert_eq!(p["quality"], "low");
+                assert_eq!(p["n"], 1);
+                if provider == "xai" {
+                    assert_eq!(p["images"][0]["url"], a);
+                    assert_eq!(p["images"][1]["url"], b);
+                    assert!(p.get("image").is_none());
+                    r.images.truncate(1);
+                    let single = xai::build_payload(&r).unwrap();
+                    assert_eq!(single["image"]["url"], a);
+                    assert!(single.get("images").is_none());
+                } else {
+                    assert!(p.get("image").is_none());
+                    r.images.push(a);
+                    assert!(comfy::build_payload(&r).is_err());
+                }
+            }
+            "openrouter" => {
+                let p = openrouter::build_payload(&r).unwrap();
+                assert_eq!(p["model"], "x-ai/grok-imagine-image-2.0");
+                assert_eq!(p["resolution"], "2K");
+                assert_eq!(p["input_references"][0]["image_url"]["url"], a);
+                assert_eq!(p["input_references"][1]["image_url"]["url"], b);
+            }
+            _ => {
+                let p = runware::build_payload(&r, "task").unwrap();
+                assert_eq!(p[0]["model"], "xai:grok-imagine@image-2.0");
+                assert_eq!(p[0]["width"], 1440);
+                assert_eq!(p[0]["height"], 3200);
+                assert_eq!(p[0]["settings"]["quality"], "low");
+                assert_eq!(p[0]["inputs"]["referenceImages"], json!([a,b]));
+                assert!(p[0].get("resolution").is_none());
+                r.params.aspect_ratio = Some("auto".into());
+                let p = runware::build_payload(&r, "task").unwrap();
+                assert_eq!(p[0]["resolution"], "2K");
+                assert!(p[0].get("width").is_none());
+                r.images.clear();
+                assert!(runware::build_payload(&r, "task").is_err());
+            }
+        }
+    }
+}
+
+#[test]
+fn grok_rejects_unsupported_quality_refs_masks_and_fields() {
+    for (provider, limit) in [("xai",5),("openrouter",3),("runware",3),("comfy",0)] {
+        let mut r = req(provider, "grok-imagine-image-2.0", json!({"quality":"high"}));
+        assert!(models::validate(&r).is_err());
+        r.params.quality = Some("auto".into());
+        assert_eq!(models::validate(&r).is_ok(), provider == "xai");
+        r.params.quality = Some("medium".into());
+        r.images = vec![png(false); limit];
+        assert!(models::validate(&r).is_ok());
+        r.images.push(png(false));
+        assert!(models::validate(&r).is_err());
+        r.images.clear();
+        r.mask = Some(png(true));
+        assert!(models::validate(&r).is_err());
+        r.mask = None;
+        r.params.seed = Some(1);
+        assert!(models::validate(&r).is_err());
+    }
+    assert_eq!(lutriui_lib::provider::default_env_name("xai"), "XAI_API_KEY");
 }
 #[test]
 fn every_catalog_route_builds_a_provider_native_request() {
@@ -61,6 +136,7 @@ fn every_catalog_route_builds_a_provider_native_request() {
                 "bfl" => lutriui_lib::provider::bfl::build_payload(&request),
                 "comfy" => comfy::build_payload(&request),
                 "google" => google::build_payload(&request),
+                "xai" => xai::build_payload(&request),
                 "ark" | "byteplus" => ark::build_payload(&request),
                 "runware" => {
                     runware::build_payload(&request, "50836053-a0ee-4cf5-b9d6-ae7c5d140ada")
