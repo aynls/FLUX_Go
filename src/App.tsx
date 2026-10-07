@@ -7,6 +7,7 @@ import {
   ArrowClockwise,
   GearSix,
   Plus,
+  X,
 } from "@phosphor-icons/react";
 import ResizableSidebar from "./components/ResizableSidebar";
 import HistoryPanel from "./components/HistoryPanel";
@@ -128,6 +129,18 @@ export default function App() {
   const [view, setView] = useState<"canvas" | "result" | "compare">("canvas");
   const [resultPreview, setResultPreview] = useState(false);
   const resultSelectionEpoch = useRef(0);
+  const previewAttempts = attempts[activeKey] ?? [];
+  const canClosePreview = previewAttempts.every(
+    (attempt) => attempt.saved && attempt.item.status !== "running",
+  );
+  const closeGenerationPreview = () => {
+    ++resultSelectionEpoch.current;
+    currentResults.current = { ...currentResults.current, [activeKey]: undefined };
+    setResults(currentResults.current);
+    setAttempts((previous) => ({ ...previous, [activeKey]: [] }));
+    setResultPreview(false);
+    setView("canvas");
+  };
   const [original, setOriginal] = useState(false),
     [savingResult, setSavingResult] = useState(false);
   const storeResult = (r: SavedResult, preserveSelection = false) => {
@@ -1038,6 +1051,17 @@ export default function App() {
                 查看原尺寸
               </label>
             ) : null}
+            {ordinaryGeneration && previewAttempts.length > 0 && (
+              <button
+                aria-label="关闭生成预览"
+                title={canClosePreview ? "关闭预览，图片保留在图库" : "请等待任务完成并保存图片后关闭"}
+                disabled={!canClosePreview}
+                onClick={closeGenerationPreview}
+              >
+                <X size={16} />
+                关闭预览
+              </button>
+            )}
           </div>
           {ordinaryGeneration ? (
             <div className="result-work-area">

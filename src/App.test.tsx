@@ -746,6 +746,28 @@ test("ordinary generation has no canvas; composition is explicit, undoable, and 
   ).toBe("8");
 });
 
+test("closing generation preview restores empty state without deleting saved images or changing the draft", async () => {
+  initial = { ...newDraft(), prompt: "a quiet garden" };
+  const ui = render(<App />);
+  await waitFor(() => expect(ui.getByRole("button", { name: /^生成图像/ }).hasAttribute("disabled")).toBe(false));
+  fireEvent.click(ui.getByRole("button", { name: /^生成图像/ }));
+  await waitFor(() => expect(submissions).toHaveLength(1));
+  await act(async () => finish(output));
+  await waitFor(() => expect(ui.getByRole("button", { name: "关闭生成预览" }).hasAttribute("disabled")).toBe(false));
+  const savedCount = historyItems.length;
+  expect(savedCount).toBeGreaterThan(0);
+  fireEvent.click(ui.getByRole("button", { name: "关闭生成预览" }));
+  expect(ui.getByText("描述你想生成的画面")).toBeTruthy();
+  expect(ui.queryByAltText("候选图片 1")).toBeNull();
+  expect(ui.queryByRole("button", { name: "关闭生成预览" })).toBeNull();
+  expect((ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value).toBe("a quiet garden");
+  expect(historyItems).toHaveLength(savedCount);
+  fireEvent.click(ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }));
+  await waitFor(() => expect(submissions).toHaveLength(2));
+  await act(async () => finish(output));
+  await waitFor(() => expect(ui.getByAltText("候选图片 1")).toBeTruthy());
+});
+
 test("decoding a selected candidate cannot discard later batch outputs or reset the selection", async () => {
   initial = { ...newDraft(), prompt: "three candidates", repeatCount: 3 };
   const ui = render(<App />);
