@@ -561,9 +561,8 @@ test("new image families expose official routes, color icons and independent rou
       ui.getByRole("combobox", { name: "模型系列" }).hasAttribute("disabled"),
     ).toBe(false),
   );
-  fireEvent.change(ui.getByRole("combobox", { name: "模型系列" }), {
-    target: { value: "gemini" },
-  });
+  fireEvent.click(ui.getByRole("combobox", { name: "模型系列" }));
+  fireEvent.click(ui.getByRole("option", { name: "Gemini Image" }));
   expect(
     ui.container
       .querySelector(".model-family-control img")
@@ -596,9 +595,8 @@ test("new image families expose official routes, color icons and independent rou
     target: { value: "Google image" },
   });
   expect(ui.queryByRole("combobox", { name: "输出格式" })).toBeNull();
-  fireEvent.change(ui.getByRole("combobox", { name: "模型系列" }), {
-    target: { value: "seedream" },
-  });
+  fireEvent.click(ui.getByRole("combobox", { name: "模型系列" }));
+  fireEvent.click(ui.getByRole("option", { name: "Seedream" }));
   expect(
     ui.container
       .querySelector(".model-family-control img")
@@ -629,9 +627,8 @@ test("new image families expose official routes, color icons and independent rou
     (restarted.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement)
       .value,
   ).toBe("BytePlus image");
-  fireEvent.change(restarted.getByRole("combobox", { name: "模型系列" }), {
-    target: { value: "gemini" },
-  });
+  fireEvent.click(restarted.getByRole("combobox", { name: "模型系列" }));
+  fireEvent.click(restarted.getByRole("option", { name: "Gemini Image" }));
   expect(
     (restarted.getByRole("combobox", { name: "模型版本" }) as HTMLSelectElement)
       .value,
@@ -1006,9 +1003,8 @@ test("family default model and parameters apply only to new work", async () => {
   expect(
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
   ).toBe("keep this draft");
-  fireEvent.change(ui.getByRole("combobox", { name: "模型系列" }), {
-    target: { value: "gpt" },
-  });
+  fireEvent.click(ui.getByRole("combobox", { name: "模型系列" }));
+  fireEvent.click(ui.getByRole("option", { name: "GPT Image 2.5" }));
   expect(
     (ui.getByRole("combobox", { name: "模型版本" }) as HTMLSelectElement).value,
   ).toBe("gpt-image-2.5-sunburst");
@@ -1192,9 +1188,8 @@ test("cross-model editing keeps the main image, prompt and mask, and model chang
         .value,
     ).toBe("make it snow"),
   );
-  fireEvent.change(ui.getByRole("combobox", { name: "模型系列" }), {
-    target: { value: "gemini" },
-  });
+  fireEvent.click(ui.getByRole("combobox", { name: "模型系列" }));
+  fireEvent.click(ui.getByRole("option", { name: "Gemini Image" }));
   expect(
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
   ).toBe("make it snow");
@@ -1413,9 +1408,8 @@ test("stopping an eight-image batch preserves current outputs and releases a cro
   await act(async () => finish(output));
   await waitFor(() => expect(submissions).toHaveLength(2));
   fireEvent.click(ui.getByRole("button", { name: "用这张图开始编辑" }));
-  fireEvent.change(ui.getByRole("combobox", { name: "模型系列" }), {
-    target: { value: "gemini" },
-  });
+  fireEvent.click(ui.getByRole("combobox", { name: "模型系列" }));
+  fireEvent.click(ui.getByRole("option", { name: "Gemini Image" }));
   fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
     target: { value: "change the sky" },
   });

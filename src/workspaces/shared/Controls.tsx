@@ -1,3 +1,4 @@
+import FamilySelect from "../../components/FamilySelect";
 import { promptLength } from "../../models";
 import { displayValue } from "../../models/parameterLabels";
 export { displayValue } from "../../models/parameterLabels";
@@ -11,7 +12,6 @@ import {
   changeRoute,
   routeFor,
   singleImageDraft,
-  families,
 } from "../../models/catalog";
 import { estimateCost } from "../../lib/params";
 import { estimateComfyCredits, formatCredits } from "../../models/pricing";
@@ -26,14 +26,6 @@ import type {
   GenerationTask,
   FamilyId,
 } from "../../lib/types";
-const FAMILY_ICONS: Record<FamilyId, string> = {
-  flux: "/flux.png",
-  gpt: "/openai.png",
-  qwen: "/qwen-color.png",
-  gemini: "/nano-banana.png",
-  seedream: "/seeddream.png",
-};
-
 export interface WorkspaceControlsProps {
   draft: Draft;
   onChange: (draft: Draft) => void;
@@ -79,29 +71,7 @@ export function RouteControls({
       {onFamilyChange && (
         <label>
           模型系列
-          <div className="model-family-control">
-            <img
-              className={
-                "family-icon" +
-                (["flux", "gpt"].includes(d.family) ? " monochrome" : "")
-              }
-              src={FAMILY_ICONS[d.family]}
-              alt=""
-              aria-hidden="true"
-            />
-            <select
-              aria-label="模型系列"
-              value={d.family}
-              disabled={busy}
-              onChange={(e) => onFamilyChange(e.target.value as FamilyId)}
-            >
-              {families.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <FamilySelect value={d.family} disabled={busy} onChange={onFamilyChange} />
         </label>
       )}
       {models.length > 1 && (
