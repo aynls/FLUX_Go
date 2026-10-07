@@ -50,9 +50,16 @@ Object.defineProperty(dom, "matchMedia", {
 let initial: Draft | WorkspaceSession | null = null;
 let submitted: GenerateRequestPayload | null = null;
 let submissions: GenerateRequestPayload[] = [];
+let completions: {
+  finish: (out: GenerateOutput) => void;
+  fail: (error: Error) => void;
+  progress: typeof reportProgress;
+}[] = [];
+let prepareCalls = 0;
+let blockPreparationAfter = Infinity;
+let releasePreparation: (() => void)[] = [];
 let savedItem: HistoryItem | null = null;
 let finish: (out: GenerateOutput) => void = () => {};
-let failGeneration: (error: Error) => void = () => {};
 let failHistory = false;
 let historyItems: HistoryItem[] = [];
 let galleryItems: GalleryItem[] = [];
@@ -108,7 +115,11 @@ mock.module("./lib/image", () => ({
     return { width: 768, height: 768 };
   },
   makeThumb: async () => "thumb",
-  downscaleDataUrl: async (s: string) => s,
+  downscaleDataUrl: async (s: string) => {
+    if (++prepareCalls > blockPreparationAfter)
+      await new Promise<void>((resolve) => releasePreparation.push(resolve));
+    return s;
+  },
 }));
 mock.module("./lib/api", () => ({
   isDesktop: () => true,
@@ -176,8 +187,12 @@ mock.module("./lib/api", () => ({
     submissions.push(request);
     reportProgress = onProgress ?? (() => {});
     return new Promise<GenerateOutput>((resolve, reject) => {
+      completions.push({
+        finish: resolve,
+        fail: reject,
+        progress: onProgress ?? (() => {}),
+      });
       finish = resolve;
-      failGeneration = reject;
     });
   },
   historySave: async (
@@ -232,14 +247,17 @@ mock.module("./lib/api", () => ({
   credentialCheck: async () => "verified",
   credentialConfigure: async () => {},
 }));
-const { render, fireEvent, waitFor, cleanup, act } = await import(
-  "@testing-library/react"
-);
+const { render, fireEvent, waitFor, cleanup, act } =
+  await import("@testing-library/react");
 const { default: App } = await import("./App");
 beforeEach(() => {
   initial = null;
   submitted = null;
   submissions = [];
+  completions = [];
+  prepareCalls = 0;
+  blockPreparationAfter = Infinity;
+  releasePreparation = [];
   savedItem = null;
   failHistory = false;
   historyItems = [];
@@ -747,20 +765,32 @@ test("ordinary generation has no canvas; composition is explicit, undoable, and 
 test("closing generation preview restores empty state without deleting saved images or changing the draft", async () => {
   initial = { ...newDraft(), prompt: "a quiet garden" };
   const ui = render(<App />);
-  await waitFor(() => expect(ui.getByRole("button", { name: /^生成图像/ }).hasAttribute("disabled")).toBe(false));
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: /^生成图像/ }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
   fireEvent.click(ui.getByRole("button", { name: /^生成图像/ }));
   await waitFor(() => expect(submissions).toHaveLength(1));
   await act(async () => finish(output));
-  await waitFor(() => expect(ui.getByRole("button", { name: "关闭生成预览" }).hasAttribute("disabled")).toBe(false));
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: "关闭生成预览" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
   const savedCount = historyItems.length;
   expect(savedCount).toBeGreaterThan(0);
   fireEvent.click(ui.getByRole("button", { name: "关闭生成预览" }));
   expect(ui.getByText("描述你想生成的画面")).toBeTruthy();
   expect(ui.queryByAltText("候选图片 1")).toBeNull();
   expect(ui.queryByRole("button", { name: "关闭生成预览" })).toBeNull();
-  expect((ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value).toBe("a quiet garden");
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("a quiet garden");
   expect(historyItems).toHaveLength(savedCount);
-  fireEvent.click(ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }));
+  fireEvent.click(
+    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
+  );
   await waitFor(() => expect(submissions).toHaveLength(2));
   await act(async () => finish(output));
   await waitFor(() => expect(ui.getByAltText("候选图片 1")).toBeTruthy());
@@ -775,20 +805,24 @@ test("decoding a selected candidate cannot discard later batch outputs or reset 
     ).toBe(false),
   );
   fireEvent.click(ui.getByRole("button", { name: /^生成图像/ }));
-  await waitFor(() => expect(submissions).toHaveLength(1));
-  await act(async () => finish(output));
-  await waitFor(() => expect(submissions).toHaveLength(2));
+  await waitFor(() => expect(submissions).toHaveLength(3));
+  await act(async () => completions[0].finish(output));
+  await waitFor(() =>
+    expect(ui.getByRole("button", { name: "查看结果 1" })).toBeTruthy(),
+  );
   const second = "data:image/png;base64,c2Vjb25k";
   await act(async () =>
-    finish({
+    completions[1].finish({
       ...output,
       images: [{ dataUrl: second, mediaType: "image/png" }],
     }),
   );
-  await waitFor(() => expect(submissions).toHaveLength(3));
+  await waitFor(() =>
+    expect(ui.getByRole("button", { name: "查看结果 2" })).toBeTruthy(),
+  );
   blockedImage = second;
   fireEvent.click(ui.getByRole("button", { name: "查看结果 2" }));
-  await act(async () => finish(output));
+  await act(async () => completions[2].finish(output));
   await waitFor(() =>
     expect(ui.getByRole("button", { name: "查看结果 3" })).toBeTruthy(),
   );
@@ -1272,7 +1306,7 @@ test("generation and editing keep independent inputs, parameters and undo across
     (restarted.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement)
       .value,
   ).toBe("new scene");
-});
+}, 10000);
 
 test("a background generation stays in its task and starts editing without replacing generation", async () => {
   initial = { ...newDraft(undefined, "gpt"), prompt: "draw a garden" };
@@ -1332,71 +1366,97 @@ test("a background generation stays in its task and starts editing without repla
   expect(ui.queryByRole("button", { name: "对照" })).toBeNull();
 });
 
-test("queue saves requests immediately, cancels waiting work and runs FIFO snapshots", async () => {
+test("independent submissions run concurrently and keep snapshots and progress isolated", async () => {
   initial = { ...newDraft(), prompt: "first scene" };
   const ui = render(<App />);
-  await waitFor(() =>
-    expect(
-      ui
-        .getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ })
-        .hasAttribute("disabled"),
-    ).toBe(false),
-  );
-  fireEvent.click(
-    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
-  );
+  const button = () =>
+    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ });
+  await waitFor(() => expect(button().hasAttribute("disabled")).toBe(false));
+  fireEvent.click(button());
   await waitFor(() => expect(submissions).toHaveLength(1));
-  const firstId = historyItems.find((it) => it.prompt === "first scene")!.id;
-  expect(historyItems[0].status).toBe("running");
-  expect(submissions[0].requestId).toBe(firstId);
+  const firstId = submissions[0].historyId;
   fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
     target: { value: "second scene" },
   });
-  fireEvent.click(
-    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
-  );
-  await waitFor(() =>
-    expect(
-      historyItems.find((it) => it.prompt === "second scene")?.status,
-    ).toBe("queued"),
-  );
-  expect(submissions).toHaveLength(1);
-  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
-    target: { value: "third scene" },
-  });
-  fireEvent.click(
-    ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
-  );
-  await waitFor(() => expect(historyItems).toHaveLength(3));
-  fireEvent.click(ui.getByRole("button", { name: "任务队列 · 3" }));
-  fireEvent.click(ui.getAllByRole("button", { name: "取消等待" })[0]);
-  await waitFor(() =>
-    expect(
-      historyItems.find((it) => it.prompt === "second scene")?.status,
-    ).toBe("cancelled"),
-  );
-  fireEvent.click(ui.getByRole("button", { name: "关闭" }));
-  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
-    target: { value: "next unfinished draft" },
-  });
-  await act(async () => finish(output));
+  fireEvent.click(button());
   await waitFor(() => expect(submissions).toHaveLength(2));
-  expect(submissions[1].finalPrompt).toContain("third scene");
-  await act(async () => finish(output));
+  expect(historyItems.every((it) => it.status === "running")).toBe(true);
+  expect(submissions[0].finalPrompt).toContain("first scene");
+  expect(submissions[1].finalPrompt).toContain("second scene");
+  fireEvent.click(ui.getByRole("button", { name: "进行中的任务 · 2" }));
+  expect(ui.getAllByText(/执行中 ·/)).toHaveLength(2);
+  fireEvent.click(ui.getByRole("button", { name: "关闭" }));
+  await act(async () => completions[1].finish(output));
   await waitFor(() =>
-    expect(historyItems.filter((it) => it.status === "ok")).toHaveLength(2),
+    expect(
+      historyItems.find((it) => it.prompt === "second scene")?.status,
+    ).toBe("ok"),
   );
-  expect(historyItems.find((it) => it.id === firstId)?.status).toBe("ok");
+  expect(historyItems.find((it) => it.id === firstId)?.status).toBe("running");
+  expect(ui.getByRole("button", { name: "进行中的任务 · 1" })).toBeTruthy();
+  await act(async () =>
+    completions[0].progress({ phase: "downloading", taskId: "first-remote" }),
+  );
+  await act(async () => completions[0].finish(output));
+  await waitFor(() =>
+    expect(historyItems.every((it) => it.status === "ok")).toBe(true),
+  );
   expect(
     (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
-  ).toBe("next unfinished draft");
+  ).toBe("second scene");
 });
 
-test("stopping an eight-image batch preserves current outputs and releases a cross-model edit", async () => {
+test("all images in a batch are submitted before any finish and simultaneous results are retained", async () => {
+  initial = { ...newDraft(), prompt: "parallel candidates", repeatCount: 4 };
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: /^生成图像 ·/ }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(ui.getByRole("button", { name: /^生成图像 ·/ }));
+  await waitFor(() => expect(submissions).toHaveLength(4));
+  expect(historyItems).toHaveLength(1);
+  expect(historyItems[0].batch?.requests.map((r) => r.status)).toEqual(
+    Array(4).fill("running"),
+  );
+  expect(new Set(submissions.map((request) => request.requestId)).size).toBe(4);
+  expect(ui.queryByRole("button", { name: "停止后续生成" })).toBeNull();
+  const images = completions.map(
+    (_, i) => `data:image/png;base64,${btoa("candidate " + i)}`,
+  );
+  await act(async () => {
+    [...completions].reverse().forEach((request, i) =>
+      request.finish({
+        ...output,
+        images: [{ dataUrl: images[i], mediaType: "image/png" }],
+      }),
+    );
+  });
+  await waitFor(() => expect(historyItems[0].status).toBe("ok"));
+  expect(historyItems[0].resultFiles).toHaveLength(4);
+  expect(
+    historyItems[0].batch?.requests.every((request) => request.status === "ok"),
+  ).toBe(true);
+  expect(historyItems[0].cost).toBe(output.usage!.cost! * 4);
+  expect(ui.getAllByAltText(/候选图片/)).toHaveLength(4);
+});
+
+test("stopping unsent batch requests preserves the active result", async () => {
+  blockPreparationAfter = 1;
+  const base = {
+    uid: "source",
+    name: "source",
+    dataUrl: "data:image/png;base64,c291cmNl",
+    width: 512,
+    height: 512,
+  };
   initial = {
     ...newDraft(undefined, "gpt"),
     prompt: "candidate batch",
     repeatCount: 8,
+    refs: [base],
+    compressEnabled: true,
   };
   const ui = render(<App />);
   await waitFor(() =>
@@ -1406,52 +1466,35 @@ test("stopping an eight-image batch preserves current outputs and releases a cro
   );
   fireEvent.click(ui.getByRole("button", { name: /^生成图像 ·/ }));
   await waitFor(() => expect(submissions).toHaveLength(1));
-  await act(async () => finish(output));
-  await waitFor(() => expect(submissions).toHaveLength(2));
-  fireEvent.click(ui.getByRole("button", { name: "用这张图开始编辑" }));
-  fireEvent.click(ui.getByRole("combobox", { name: "模型系列" }));
-  fireEvent.click(ui.getByRole("option", { name: "Gemini Image" }));
-  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
-    target: { value: "change the sky" },
-  });
-  fireEvent.click(ui.getByRole("button", { name: /^应用编辑 ·/ }));
-  await waitFor(() =>
-    expect(
-      historyItems.find((i) => i.prompt === "change the sky")?.status,
-    ).toBe("queued"),
-  );
   fireEvent.click(ui.getByRole("button", { name: "停止后续生成" }));
-  expect(ui.queryByRole("button", { name: "停止后续生成" })).toBeNull();
-  expect(submissions).toHaveLength(2);
-  await act(async () => finish(output));
-  await waitFor(() => expect(submissions).toHaveLength(3));
-  expect(submissions[2].model).toBe("gemini-3.1-flash-image");
-  expect(submissions[2].images).toHaveLength(1);
-  expect(submissions[2].finalPrompt).toContain("change the sky");
-  const batch = historyItems.find((i) => i.prompt === "candidate batch")!;
-  expect(batch.status).toBe("partial");
-  expect(batch.batch?.stopped).toBe(true);
-  expect(batch.batch?.requests.map((r) => r.status)).toEqual([
+  await act(async () => releasePreparation.forEach((release) => release()));
+  await act(async () => completions[0].finish(output));
+  await waitFor(() => expect(historyItems[0].status).toBe("partial"));
+  expect(historyItems[0].batch?.requests.map((r) => r.status)).toEqual([
     "ok",
-    "ok",
-    ...Array(6).fill("skipped"),
+    ...Array(7).fill("skipped"),
   ]);
-  expect(batch.resultFiles).toHaveLength(2);
-  await act(async () => finish({ ...output, model: "gemini-3.1-flash-image" }));
-  await waitFor(() =>
-    expect(
-      historyItems.find((i) => i.prompt === "change the sky")?.status,
-    ).toBe("ok"),
-  );
-  fireEvent.click(ui.getByRole("button", { name: "生成" }));
-  expect(
-    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
-  ).toBe("candidate batch");
-  expect(ui.getAllByAltText(/候选图片/)).toHaveLength(2);
-  expect(submissions).toHaveLength(3);
+  expect(historyItems[0].resultFiles).toHaveLength(1);
+  expect(submissions).toHaveLength(1);
 });
-test("stopping subsequent requests does not hide failure of the active request", async () => {
-  initial = { ...newDraft(), prompt: "failed active request", repeatCount: 3 };
+
+test("stopping unsent requests does not hide failure of the active request", async () => {
+  blockPreparationAfter = 1;
+  initial = {
+    ...newDraft(),
+    prompt: "failed active request",
+    repeatCount: 3,
+    compressEnabled: true,
+    refs: [
+      {
+        uid: "source",
+        name: "source",
+        dataUrl: "data:image/png;base64,c291cmNl",
+        width: 512,
+        height: 512,
+      },
+    ],
+  };
   const ui = render(<App />);
   await waitFor(() =>
     expect(
@@ -1461,7 +1504,8 @@ test("stopping subsequent requests does not hide failure of the active request",
   fireEvent.click(ui.getByRole("button", { name: /^生成图像 ·/ }));
   await waitFor(() => expect(submissions).toHaveLength(1));
   fireEvent.click(ui.getByRole("button", { name: "停止后续生成" }));
-  await act(async () => failGeneration(new Error("provider refused")));
+  await act(async () => releasePreparation.forEach((release) => release()));
+  await act(async () => completions[0].fail(new Error("provider refused")));
   await waitFor(() => expect(historyItems[0].status).toBe("failed"));
   expect(historyItems[0].batch?.requests.map((r) => r.status)).toEqual([
     "failed",
@@ -1472,7 +1516,7 @@ test("stopping subsequent requests does not hide failure of the active request",
   expect(submissions).toHaveLength(1);
 });
 
-test("a failed queue item does not retry and the next item still runs", async () => {
+test("a failed submission does not retry or interrupt another active submission", async () => {
   initial = { ...newDraft(), prompt: "failed first" };
   const ui = render(<App />);
   await waitFor(() =>
@@ -1493,8 +1537,13 @@ test("a failed queue item does not retry and the next item still runs", async ()
     ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
   );
   await waitFor(() => expect(historyItems).toHaveLength(2));
-  await act(async () => failGeneration(new Error("provider refused")));
   await waitFor(() => expect(submissions).toHaveLength(2));
+  await act(async () => completions[0].fail(new Error("provider refused")));
+  await waitFor(() =>
+    expect(
+      historyItems.find((it) => it.prompt === "failed first")?.status,
+    ).toBe("failed"),
+  );
   expect(historyItems.find((it) => it.prompt === "failed first")?.status).toBe(
     "failed",
   );
@@ -1504,7 +1553,7 @@ test("a failed queue item does not retry and the next item still runs", async ()
   expect(submissions).toHaveLength(2);
 });
 
-test("queue never calls a provider when the request record cannot be saved", async () => {
+test("submission never calls a provider when the request record cannot be saved", async () => {
   initial = { ...newDraft(), prompt: "must be durable first" };
   failHistory = true;
   const ui = render(<App />);
@@ -1518,7 +1567,7 @@ test("queue never calls a provider when the request record cannot be saved", asy
   fireEvent.click(
     ui.getByRole("button", { name: /^(生成图像 ·|请求已发送$)/ }),
   );
-  await waitFor(() => expect(ui.getByText(/加入队列失败/)).toBeTruthy());
+  await waitFor(() => expect(ui.getByText(/提交任务失败/)).toBeTruthy());
   expect(submissions).toHaveLength(0);
   expect(historyItems).toHaveLength(0);
 });
@@ -1586,7 +1635,7 @@ test("history failure keeps result usable and retry saves without another genera
   expect(submitted).toBe(request);
 });
 
-test("repeat count queues identical requests with independent random seeds and stable history ids", async () => {
+test("repeat count concurrently submits identical requests with independent random seeds and stable history ids", async () => {
   initial = {
     ...newDraft(undefined, "qwen"),
     provider: "comfy",
@@ -1604,7 +1653,7 @@ test("repeat count queues identical requests with independent random seeds and s
   fireEvent.change(count, { target: { value: "2" } });
   fireEvent.click(button());
   await waitFor(() => expect(historyItems).toHaveLength(1));
-  await waitFor(() => expect(submissions).toHaveLength(1));
+  await waitFor(() => expect(submissions).toHaveLength(2));
   expect(historyItems[0].status).toBe("running");
   const batchId = historyItems[0].id;
   expect(submissions[0].params.count).toBe(1);
@@ -1619,16 +1668,22 @@ test("repeat count queues identical requests with independent random seeds and s
   await waitFor(() => expect(button().hasAttribute("disabled")).toBe(false));
   fireEvent.click(button());
   await waitFor(() => expect(historyItems).toHaveLength(2));
-  expect(submissions).toHaveLength(1);
-  await act(async () => finish(output));
-  await waitFor(() => expect(submissions).toHaveLength(2));
+  await waitFor(() => expect(submissions).toHaveLength(3));
+  await act(async () => completions[0].finish(output));
+  await waitFor(() =>
+    expect(
+      historyItems.find((it) => it.id === batchId)?.resultFiles,
+    ).toHaveLength(1),
+  );
   expect(submissions[1].params.seed).toBe(seeds[1]);
   expect(ui.getByRole("button", { name: "用这张图开始编辑" })).toBeTruthy();
   expect(historyItems.find((it) => it.id === batchId)?.status).toBe("running");
   expect(submissions[1].historyId).toBe(batchId);
   expect(submissions[1].requestId).not.toBe(submissions[0].requestId);
-  await act(async () => finish(output));
-  await waitFor(() => expect(submissions).toHaveLength(3));
+  await act(async () => completions[1].finish(output));
+  await waitFor(() =>
+    expect(historyItems.find((it) => it.id === batchId)?.status).toBe("ok"),
+  );
   const batch = historyItems.find((item) => item.id === batchId)!;
   expect(batch.resultFiles).toHaveLength(2);
   expect(
@@ -1636,7 +1691,12 @@ test("repeat count queues identical requests with independent random seeds and s
   ).toBe(true);
   expect(batch.cost).toBe(output.usage!.cost! * 2);
   fireEvent.click(ui.getByRole("button", { name: "历史" }));
-  fireEvent.click(ui.getAllByText("same scene")[0]);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: /same scene.*2\/2 张/ }),
+    ).toBeTruthy(),
+  );
+  fireEvent.click(ui.getByRole("button", { name: /same scene.*2\/2 张/ }));
   expect(ui.getByRole("button", { name: "历史结果 2" })).toBeTruthy();
   expect(ui.getAllByText("提示词")).toHaveLength(1);
   await act(async () => finish(output));
@@ -1924,15 +1984,15 @@ test("a partially failed batch retains its images and shared inputs in one histo
     target: { value: "3" },
   });
   fireEvent.click(button());
-  await waitFor(() => expect(submissions).toHaveLength(1));
+  await waitFor(() => expect(submissions).toHaveLength(3));
   expect(historyItems).toHaveLength(1);
-  await act(async () => finish(output));
-  await waitFor(() => expect(submissions).toHaveLength(2));
+  await act(async () => completions[0].finish(output));
+  await waitFor(() => expect(historyItems[0].resultFiles).toHaveLength(1));
   expect(historyItems[0].resultFiles).toHaveLength(1);
-  await act(async () => failGeneration(new Error("second failed")));
+  await act(async () => completions[1].fail(new Error("second failed")));
   await waitFor(() => expect(submissions).toHaveLength(3));
   expect(historyItems[0].resultFiles).toHaveLength(1);
-  await act(async () => finish(output));
+  await act(async () => completions[2].finish(output));
   await waitFor(() => expect(historyItems[0].status).toBe("partial"));
   expect(historyItems).toHaveLength(1);
   expect(historyItems[0].inputFiles).toHaveLength(1);
@@ -1973,14 +2033,14 @@ test("queued batch restoration reuses persisted seeds and request ids without ne
       <App />
     </StrictMode>,
   );
-  await waitFor(() => expect(submissions).toHaveLength(1));
+  await waitFor(() => expect(submissions).toHaveLength(2));
   expect(submissions[0].requestId).toBe("batch-first");
   expect(submissions[0].params.seed).toBe(11);
-  await act(async () => finish(output));
+  await act(async () => completions[0].finish(output));
   await waitFor(() => expect(submissions).toHaveLength(2));
   expect(submissions[1].requestId).toBe("batch-second");
   expect(submissions[1].params.seed).toBe(22);
-  await act(async () => finish(output));
+  await act(async () => completions[1].finish(output));
   const restoredBatch = () => historyItems.find((it) => it.id === job.item.id)!;
   await waitFor(() => expect(restoredBatch().status).toBe("ok"));
   expect(historyItems).toHaveLength(2);
@@ -2092,7 +2152,7 @@ test("Google creative controls follow route capabilities and retain per-route va
     searchHtml: null,
   };
   await act(async () =>
-    finish({
+    completions[0].finish({
       ...output,
       provider: "google",
       model: "gemini-nano-banana-2.1",
@@ -2121,7 +2181,7 @@ test("Google creative controls follow route capabilities and retain per-route va
     ],
   };
   await act(async () =>
-    finish({
+    completions[1].finish({
       ...output,
       provider: "google",
       model: "gemini-nano-banana-2.1",

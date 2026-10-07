@@ -37,7 +37,6 @@ export interface SidebarProps {
   onGenerate: (count: number) => void;
   onSettings: () => void;
   generationTask?: GenerationTask | null;
-  queueCount?: number;
   sentRequestId?: string;
   onShowTask?: () => void;
   onStopRemaining?: () => void;

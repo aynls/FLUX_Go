@@ -37,7 +37,6 @@ export interface WorkspaceControlsProps {
   onSettings: () => void;
   onGenerate: (count: number) => void;
   generationTask?: GenerationTask | null;
-  queueCount?: number;
   sentRequestId?: string;
   onShowTask?: () => void;
   onStopRemaining?: () => void;
@@ -800,7 +799,6 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
           }}
         />
       </div>
-      {!!p.queueCount && <p className="help">等待执行 {p.queueCount} 条</p>}
       {reason && (
         <div id="generation-reason" className="generation-reason">
           <span>{reason}</span>

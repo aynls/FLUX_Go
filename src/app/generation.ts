@@ -79,6 +79,7 @@ export async function executeGeneration(
   onProgress?: (progress: GenerationProgress) => void,
   queued?: HistoryItem,
   requestId?: string,
+  beforeSubmit?: () => Promise<void>,
 ): Promise<SavedResult> {
   onProgress?.({ phase: "preparing" });
   const images = await Promise.all(
@@ -99,6 +100,7 @@ export async function executeGeneration(
     request.requestId = requestId ?? queued.id;
     request.historyId = queued.id;
   }
+  await beforeSubmit?.();
   const out = await generate(request, onProgress);
   if (!out.images[0]) throw new Error("服务返回成功，但没有图片");
   const image: WorkingImage = {

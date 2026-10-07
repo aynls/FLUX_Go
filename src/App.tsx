@@ -1,4 +1,4 @@
-import { useGenerationQueue } from "./app/useGenerationQueue";
+import { useGenerationTasks } from "./app/useGenerationTasks";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -102,7 +102,7 @@ export default function App() {
   const galleryContext = useRef(false);
   galleryContext.current = galleryOpen || galleryPicker;
   const [settings, setSettings] = useState(false);
-  const [queueOpen, setQueueOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
   const [requestFeedback, setRequestFeedback] = useState<{
     key: string;
     id: string;
@@ -135,7 +135,10 @@ export default function App() {
   );
   const closeGenerationPreview = () => {
     ++resultSelectionEpoch.current;
-    currentResults.current = { ...currentResults.current, [activeKey]: undefined };
+    currentResults.current = {
+      ...currentResults.current,
+      [activeKey]: undefined,
+    };
     setResults(currentResults.current);
     setAttempts((previous) => ({ ...previous, [activeKey]: [] }));
     setResultPreview(false);
@@ -227,12 +230,12 @@ export default function App() {
       setGalleryError("图库读取失败：" + String(e));
     }
   }, []);
-  const queue = useGenerationQueue(
+  const generation = useGenerationTasks(
     submitting,
     (r) => {
       storeResult(r, true);
       if (r.item.status === "running") return;
-      // Queue completion never interrupts the canvas or the user's next request.
+      // Task completion never interrupts the canvas or the user's next request.
       setNotice(
         r.saved
           ? r.item.status === "partial"
@@ -244,8 +247,8 @@ export default function App() {
     refreshHistory,
     setNotice,
   );
-  const generationTask = queue.task;
-  const busy = !!generationTask || queue.pending.length > 0;
+  const generationTask = generation.task;
+  const busy = generation.tasks.length > 0;
   useEffect(() => {
     void refreshProviders().catch((e) =>
       setNotice("无法读取提供商状态：" + String(e)),
@@ -435,14 +438,7 @@ export default function App() {
       )
         return;
 
-      if (
-        !ready ||
-        importing ||
-        settings ||
-        refPreview ||
-        urlDialog
-      )
-        return;
+      if (!ready || importing || settings || refPreview || urlDialog) return;
       const typing =
         e.target instanceof HTMLElement &&
         (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) ||
@@ -540,11 +536,11 @@ export default function App() {
     }
     try {
       await ws.persist(snapshot);
-      const id = await queue.enqueue(snapshot, count);
+      const id = await generation.submit(snapshot, count);
       if (!id) return;
       setRequestFeedback({ key: workspaceKey(snapshot), id });
     } catch (e) {
-      setNotice("加入队列失败：" + String(e));
+      setNotice("提交任务失败：" + String(e));
     }
   };
   const useResult = async (
@@ -854,9 +850,9 @@ export default function App() {
           </div>
         </div>
         <div className="row">
-          {(generationTask || queue.pending.length > 0) && (
-            <button onClick={() => setQueueOpen(true)}>
-              任务队列 · {queue.pending.length + (generationTask ? 1 : 0)}
+          {generation.tasks.length > 0 && (
+            <button onClick={() => setTasksOpen(true)}>
+              进行中的任务 · {generation.tasks.length}
             </button>
           )}
           {generationTask && tab === "history" && (
@@ -952,10 +948,11 @@ export default function App() {
                 setSelected(id);
               }}
               providerStatus={pStatus}
-              busy={queue.accepting || !queue.ready || !ready || importing}
+              busy={
+                generation.accepting || !generation.ready || !ready || importing
+              }
               generationTask={generationTask}
-              onStopRemaining={queue.stopRemaining}
-              queueCount={queue.pending.length}
+              onStopRemaining={() => generation.stopRemaining()}
               sentRequestId={
                 requestFeedback?.key === activeKey
                   ? requestFeedback.id
@@ -981,7 +978,7 @@ export default function App() {
               <HistoryPanel
                 saveDirectory={prefs.saveDirectory}
                 items={history}
-                onCancel={(id) => void queue.cancel(id)}
+                onCancel={(id) => generation.stopRemaining(id)}
                 onRefresh={() => void refreshHistory()}
                 onUseAsInput={(item) => void historyAsInput(item)}
                 onRestoreEdit={(item) => void restoreHistory(item)}
@@ -1054,7 +1051,11 @@ export default function App() {
             {ordinaryGeneration && previewAttempts.length > 0 && (
               <button
                 aria-label="关闭生成预览"
-                title={canClosePreview ? "关闭预览，图片保留在图库" : "请等待任务完成并保存图片后关闭"}
+                title={
+                  canClosePreview
+                    ? "关闭预览，图片保留在图库"
+                    : "请等待任务完成并保存图片后关闭"
+                }
                 disabled={!canClosePreview}
                 onClick={closeGenerationPreview}
               >
@@ -1155,21 +1156,22 @@ export default function App() {
           </button>
         </div>
       )}
-      {queueOpen && (
-        <Modal title="任务队列" onClose={() => setQueueOpen(false)}>
-          <p className="help">
-            任务按提交顺序执行；可以继续准备和提交下一条请求。
-          </p>
-          {generationTask && (
-            <div className="queue-item">
+      {tasksOpen && (
+        <Modal title="进行中的任务" onClose={() => setTasksOpen(false)}>
+          <p className="help">各次提交和批次内的多张图片并发生成。</p>
+          {generation.tasks.map((generationTask) => (
+            <div className="queue-item" key={generationTask.id}>
               <strong>
                 执行中 · {familyById(generationTask.family).label}
               </strong>
+              <p>{generationTask.prompt}</p>
               {generationTask.stopRequested ? (
                 <span>后续请求已停止，等待当前结果。</span>
               ) : (
                 (generationTask.remainingRequests ?? 0) > 0 && (
-                  <button onClick={queue.stopRemaining}>
+                  <button
+                    onClick={() => generation.stopRemaining(generationTask.id)}
+                  >
                     停止此批次后续请求
                   </button>
                 )
@@ -1177,27 +1179,14 @@ export default function App() {
               <button
                 onClick={() => {
                   ws.switchIntent(generationTask.intent ?? "create");
-                  setQueueOpen(false);
+                  setTasksOpen(false);
                 }}
               >
                 查看工作区
               </button>
             </div>
-          )}
-          {queue.pending.map((item, i) => (
-            <div className="queue-item" key={item.id}>
-              <div>
-                <strong>等待执行 · {i + 1}</strong>
-                <p>{item.prompt}</p>
-              </div>
-              <button onClick={() => void queue.cancel(item.id)}>
-                取消等待
-              </button>
-            </div>
           ))}
-          {!generationTask && !queue.pending.length && (
-            <p>队列已完成，图片已保存在图库中。</p>
-          )}
+          {!generation.tasks.length && <p>任务已完成，图片已保存在图库中。</p>}
         </Modal>
       )}
       {settings && (

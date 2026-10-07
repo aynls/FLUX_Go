@@ -344,7 +344,9 @@ function HistoryDetail({
           />
         </button>
       )}
-      {!resultSrc && item.resultFiles.length > 0 && <p className="help">这张结果图片已从图库删除，生成参数仍然保留。</p>}
+      {!resultSrc && item.resultFiles.length > 0 && (
+        <p className="help">这张结果图片已从图库删除，生成参数仍然保留。</p>
+      )}
       {item.resultFiles.length > 1 && (
         <div className="result-gallery mt-2" aria-label="历史生成结果">
           {item.resultFiles.map((path, i) => (
@@ -354,7 +356,11 @@ function HistoryDetail({
               aria-label={"历史结果 " + (i + 1)}
               onClick={() => setResultIndex(i)}
             >
-              {path ? <img src={assetUrl(path)} alt={"历史结果 " + (i + 1)} /> : <span className="help">图片已删除</span>}
+              {path ? (
+                <img src={assetUrl(path)} alt={"历史结果 " + (i + 1)} />
+              ) : (
+                <span className="help">图片已删除</span>
+              )}
             </button>
           ))}
         </div>
@@ -414,7 +420,10 @@ function HistoryDetail({
       </div>
       {item.error && <p className="error-text">{item.error}</p>}
       {item.taskId && <p className="help">供应商任务：{item.taskId}</p>}
-      {item.status === "queued" && <button onClick={onCancel}>取消等待</button>}
+      {(item.status === "queued" || item.status === "running") &&
+        item.batch?.requests.some((request) => request.status === "queued") && (
+          <button onClick={onCancel}>停止尚未发送的请求</button>
+        )}
 
       <div className="mt-3">
         <p className="mb-1 text-xs text-zinc-500">提示词</p>

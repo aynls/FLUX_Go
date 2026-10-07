@@ -210,7 +210,7 @@ export function validateFields(d: Draft): string[] {
   return errors;
 }
 
-/** New queue entries always request one image; the footer owns total quantity. */
+/** Each concurrent request asks for one image; the footer owns total quantity. */
 export function singleImageDraft(d: Draft): Draft {
   return fieldsFor(d).count ? { ...d, params: { ...d.params, count: 1 } } : d;
 }
