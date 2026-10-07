@@ -530,7 +530,6 @@ export default function App() {
       const id = await queue.enqueue(snapshot, count);
       if (!id) return;
       setRequestFeedback({ key: workspaceKey(snapshot), id });
-      setNotice("已加入任务队列，可以继续创建下一条请求");
     } catch (e) {
       setNotice("加入队列失败：" + String(e));
     }
