@@ -35,7 +35,6 @@ export default function QwenStage(p: StageProps) {
           />
         </div>
       </div>
-      {p.references}
     </div>
   );
 }

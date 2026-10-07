@@ -48,7 +48,6 @@ export default function FluxStage(p: StageProps) {
           />
         </div>
       </div>
-      {p.references}
     </div>
   );
 }

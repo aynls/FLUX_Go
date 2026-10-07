@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 export const MIN_REFERENCE_WIDTH = 180;
 export const MAX_REFERENCE_WIDTH = 420;
@@ -36,7 +36,9 @@ export default function ResizableReferences({
       Math.min(
         MAX_REFERENCE_WIDTH,
         (panel.current?.parentElement?.getBoundingClientRect().width ||
-          MAX_REFERENCE_WIDTH + 230) - 230,
+          MAX_REFERENCE_WIDTH + 320) -
+          (panel.current?.previousElementSibling?.getBoundingClientRect().width || 0) -
+          320,
       ),
     );
   const update = (next: number, max = maximum()) =>
@@ -48,6 +50,9 @@ export default function ResizableReferences({
   return (
     <div
       ref={panel}
+      role="region"
+      aria-label="参考素材"
+      style={{ "--reference-sidebar-width": `${value}px` } as CSSProperties}
       className={"reference-sidebar" + (resizing ? " resizing" : "")}
     >
       {children}
@@ -79,7 +84,7 @@ export default function ResizableReferences({
         onPointerMove={(e) => {
           const start = drag.current;
           if (start?.pointerId === e.pointerId)
-            update(start.startWidth + start.startX - e.clientX, start.maxWidth);
+            update(start.startWidth + e.clientX - start.startX, start.maxWidth);
         }}
         onPointerUp={(e) => {
           if (drag.current?.pointerId !== e.pointerId) return;
@@ -93,9 +98,9 @@ export default function ResizableReferences({
           const actualWidth =
             panel.current?.getBoundingClientRect().width || value;
           const next =
-            e.key === "ArrowLeft"
+            e.key === "ArrowRight"
               ? actualWidth + 10
-              : e.key === "ArrowRight"
+              : e.key === "ArrowLeft"
                 ? actualWidth - 10
                 : e.key === "Home"
                   ? MIN_REFERENCE_WIDTH

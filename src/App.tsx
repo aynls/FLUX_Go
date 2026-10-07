@@ -1,11 +1,5 @@
 import { useGenerationQueue } from "./app/useGenerationQueue";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
@@ -23,9 +17,7 @@ import { regionsEnabled } from "./models/flux/layout";
 import Settings from "./components/Settings";
 import Modal from "./components/Modal";
 import References from "./workspaces/shared/References";
-import ResizableReferences, {
-  referenceWidth,
-} from "./components/ResizableReferences";
+import ResizableReferences from "./components/ResizableReferences";
 import { WorkspaceSidebar, WorkspaceStage } from "./workspaces";
 import { useWorkspace } from "./app/useWorkspace";
 import * as api from "./lib/api";
@@ -985,13 +977,9 @@ export default function App() {
             </>
           )}
         </ResizableSidebar>
+        {references}
         <main
           className="main-area"
-          style={
-            {
-              "--reference-sidebar-width": `${referenceWidth(prefs.referenceSidebarWidth)}px`,
-            } as CSSProperties
-          }
           aria-label={familyById(draft.family).label + " 工作区"}
         >
           <div className="canvas-toolbar">
@@ -1059,7 +1047,6 @@ export default function App() {
                 selected={result}
                 onSelect={(r, i) => void chooseResult(i, r, true)}
               />
-              {references}
             </div>
           ) : view === "canvas" &&
             ((intent === "edit" && !primaryImage(draft)) ||
@@ -1087,12 +1074,10 @@ export default function App() {
                   </button>
                 )}
               </div>
-              {references}
             </div>
           ) : view === "canvas" ? (
             <WorkspaceStage
               draft={draft}
-              references={references}
               selectedId={selectedId}
               onSelect={setSelected}
               onChange={onChange}
@@ -1104,7 +1089,6 @@ export default function App() {
           ) : (
             <div className="result-work-area">
               <ResultStage result={result} view={view} original={original} />
-              {references}
             </div>
           )}
           {!resultPreview && resultActions(ordinaryGeneration)}

@@ -116,7 +116,6 @@ export default function GptStage(p: StageProps) {
           </div>
         )}
       </div>
-      {p.references}
     </div>
   );
 }
