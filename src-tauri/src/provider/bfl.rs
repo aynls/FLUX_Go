@@ -10,7 +10,9 @@ use std::time::Duration;
 
 use serde_json::{json, Map, Value};
 
-use super::{GenerateOutput, GenerateRequest, OutputImage, ProviderError, ProviderResult};
+use super::{
+    localized_note, GenerateOutput, GenerateRequest, OutputImage, ProviderError, ProviderResult,
+};
 
 pub const ENDPOINT: &str = "https://api.bfl.ai/v1/flux-3-image";
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -22,24 +24,32 @@ fn client() -> &'static reqwest::Client {
         reqwest::Client::builder()
             .timeout(Duration::from_secs(120))
             .build()
-            .expect("构建 HTTP 客户端失败")
+            .expect("HTTP client initialization failed")
     })
 }
 
 fn read_key() -> Result<String, ProviderError> {
     super::configured_key("bfl").ok_or_else(|| {
-        ProviderError::msg("尚未配置 BFL API Key")
-            .with_hint("请在应用设置中检查所选密钥来源、环境变量名称或手动填写的密钥。")
+        ProviderError::coded("backend_missing_api_key", "No BFL API key is configured")
+            .with_param("provider", "BFL")
+            .with_hint("Check the key source, environment variable, or saved key in Settings.")
+            .with_hint_code("backend_check_key_settings")
     })
 }
 
 pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
     crate::models::validate(req)?;
     if crate::models::resolve(req)?.family != "flux" {
-        return Err(ProviderError::msg("BFL 适配器仅支持 FLUX 3 Image"));
+        return Err(ProviderError::coded(
+            "backend_bfl_flux_only",
+            "The BFL adapter only supports FLUX.3 Image",
+        ));
     }
     if req.params.safety_tolerance.is_some_and(|s| s > 4) {
-        return Err(ProviderError::msg("BFL safety_tolerance 取值范围 0–4"));
+        return Err(ProviderError::coded(
+            "backend_bfl_safety",
+            "BFL safety_tolerance must be between 0 and 4",
+        ));
     }
     if let Some(a) = &req.params.aspect_ratio {
         if ![
@@ -48,19 +58,32 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
         ]
         .contains(&a.as_str())
         {
-            return Err(ProviderError::msg(format!("aspect_ratio 无效: {a}")));
+            return Err(ProviderError::coded(
+                "backend_invalid_aspect",
+                format!("Invalid aspect_ratio: {a}"),
+            )
+            .with_param("value", a.clone()));
         }
     }
     if req.final_prompt.trim().is_empty() {
-        return Err(ProviderError::msg("提示词不能为空"));
+        return Err(ProviderError::coded(
+            "backend_empty_prompt",
+            "The prompt cannot be empty",
+        ));
     }
     if req.images.len() > 10 {
-        return Err(ProviderError::msg("参考图最多 10 张"));
+        return Err(ProviderError::coded(
+            "backend_bfl_max_refs",
+            "At most 10 reference images are allowed",
+        ));
     }
     let mut p = Map::new();
     if let Some(version) = &req.params.version {
         if version != "latest" {
-            return Err(ProviderError::msg("BFL version 仅支持 latest"));
+            return Err(ProviderError::coded(
+                "backend_bfl_version",
+                "BFL version only supports latest",
+            ));
         }
         p.insert("version".into(), json!(version));
     }
@@ -79,13 +102,22 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
             let (_, bytes) = super::parse_data_url(img)?;
             let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
                 .with_guessed_format()
-                .map_err(|_| ProviderError::msg("无法识别参考图格式"))?;
-            let (w, h) = reader
-                .into_dimensions()
-                .map_err(|_| ProviderError::msg("参考图不是有效图片"))?;
+                .map_err(|_| {
+                    ProviderError::coded(
+                        "backend_ref_format",
+                        "Couldn't recognize the reference image format",
+                    )
+                })?;
+            let (w, h) = reader.into_dimensions().map_err(|_| {
+                ProviderError::coded(
+                    "backend_ref_not_image",
+                    "The reference image is not a valid image",
+                )
+            })?;
             if w < 256 || h < 256 || u64::from(w) * u64::from(h) > 16_000_000 {
-                return Err(ProviderError::msg(
-                    "BFL 参考图每边至少 256px，面积最多 16MP（压缩后也须满足）",
+                return Err(ProviderError::coded(
+                    "backend_bfl_ref_bounds",
+                    "Each BFL reference image must be at least 256px on each side and at most 16MP, including after compression",
                 ));
             }
         }
@@ -104,7 +136,13 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
             "1.5K" | "1.5k" => "1.5k",
             "2K" | "2k" => "2k",
             "4K" | "4k" => "4k",
-            _ => return Err(ProviderError::msg(format!("resolution 无效: {r}"))),
+            _ => {
+                return Err(ProviderError::coded(
+                    "backend_invalid_resolution",
+                    format!("Invalid resolution: {r}"),
+                )
+                .with_param("value", r.clone()))
+            }
         };
         p.insert("resolution".into(), json!(wire));
     }
@@ -127,21 +165,36 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
         .json(&payload)
         .send()
         .await
-        .map_err(|e| ProviderError::msg(format!("无法连接 BFL API: {e}")))?;
+        .map_err(|e| {
+            ProviderError::coded(
+                "backend_bfl_connect",
+                format!("Couldn't connect to the BFL API: {e}"),
+            )
+            .with_param("detail", e.to_string())
+        })?;
     let status = resp.status().as_u16();
     let body: Value = resp.json().await.unwrap_or(Value::Null);
     if status != 200 {
-        let message = body
+        let upstream = body
             .pointer("/detail/0/msg")
             .or_else(|| body.pointer("/detail"))
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| format!("HTTP {status}"));
-        return Err(ProviderError::http(status, message));
+            .map(|v| v.to_string());
+        return Err(match upstream {
+            Some(message) => ProviderError::http(status, message),
+            None => ProviderError::coded("backend_http_status", format!("HTTP {status}"))
+                .with_param("status", status)
+                .with_status(status),
+        });
     }
     let polling_url = body
         .get("polling_url")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| ProviderError::msg("BFL 响应缺少 polling_url"))?
+        .ok_or_else(|| {
+            ProviderError::coded(
+                "backend_bfl_missing_poll",
+                "The BFL response is missing polling_url",
+            )
+        })?
         .to_string();
     super::progress::report("waiting", body["id"].as_str(), None, None);
 
@@ -153,7 +206,10 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
             .header("x-key", &key)
             .send()
             .await
-            .map_err(|e| ProviderError::msg(format!("轮询失败: {e}")))?;
+            .map_err(|e| {
+                ProviderError::coded("backend_bfl_poll", format!("Polling failed: {e}"))
+                    .with_param("detail", e.to_string())
+            })?;
         let poll_status = poll.status().as_u16();
         let poll_body: Value = poll.json().await.unwrap_or(Value::Null);
         if poll_status != 200 {
@@ -178,35 +234,53 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
         match st {
             "Ready" => break poll_body,
             "Error" | "Failed" | "Content Moderated" | "Request Moderated" | "Task Not Found" => {
-                return Err(ProviderError::msg(format!(
-                    "BFL 任务终止: {st}{}",
-                    poll_body
-                        .pointer("/result/details")
-                        .map(|v| format!(" ({v})"))
-                        .unwrap_or_default()
-                )));
+                let detail = poll_body
+                    .pointer("/result/details")
+                    .map(|v| format!(" ({v})"))
+                    .unwrap_or_default();
+                return Err(ProviderError::coded(
+                    "backend_bfl_task_ended",
+                    format!("BFL task ended: {st}{detail}"),
+                )
+                .with_param("status", st)
+                .with_param("detail", detail));
             }
             _ => {}
         }
         if std::time::Instant::now() > deadline {
-            return Err(ProviderError::msg("BFL 任务超时（10 分钟）"));
+            return Err(ProviderError::coded(
+                "backend_bfl_timeout",
+                "The BFL task timed out after 10 minutes",
+            ));
         }
     };
 
     let sample = result
         .pointer("/result/sample")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| ProviderError::msg("BFL 结果缺少 sample URL"))?;
+        .ok_or_else(|| {
+            ProviderError::coded(
+                "backend_bfl_missing_sample",
+                "The BFL result is missing a sample URL",
+            )
+        })?;
     let img = client()
         .get(sample)
         .send()
         .await
-        .map_err(|e| ProviderError::msg(format!("下载结果图片失败: {e}")))?;
+        .map_err(|e| {
+            ProviderError::coded(
+                "backend_download_result",
+                format!("Couldn't download the result image: {e}"),
+            )
+            .with_param("detail", e.to_string())
+        })?;
     if !img.status().is_success() {
-        return Err(ProviderError::http(
-            img.status().as_u16(),
-            "下载结果图片失败",
-        ));
+        return Err(ProviderError::coded(
+            "backend_download_result_failed",
+            "Couldn't download the result image",
+        )
+        .with_status(img.status().as_u16()));
     }
     let media_type = img
         .headers()
@@ -220,7 +294,13 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
     let bytes = img
         .bytes()
         .await
-        .map_err(|e| ProviderError::msg(format!("下载结果图片失败: {e}")))?;
+        .map_err(|e| {
+            ProviderError::coded(
+                "backend_download_result",
+                format!("Couldn't download the result image: {e}"),
+            )
+            .with_param("detail", e.to_string())
+        })?;
     use base64::Engine;
     let data_url = format!(
         "data:{media_type};base64,{}",
@@ -241,7 +321,11 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
     }
     if let Some(expanded) = result.pointer("/result/prompt").and_then(|v| v.as_str()) {
         if expanded != req.final_prompt {
-            notes.push(format!("BFL 展开后的提示词: {expanded}"));
+            notes.push(localized_note(
+                "backend_bfl_expanded_prompt",
+                format!("BFL expanded prompt: {expanded}"),
+                &[("prompt", expanded.to_string())],
+            ));
         }
     }
 

@@ -1,4 +1,5 @@
 import type { Draft } from "../lib/types";
+import { m } from "../i18n";
 import { fieldsFor } from "./catalog";
 
 export function gptSize(size: string | undefined) {
@@ -21,19 +22,17 @@ export function validateGpt(d: Draft): string[] {
       size.w * size.h > 8294400 ||
       Math.max(size.w, size.h) / Math.min(size.w, size.h) > 3
     )
-      errors.push(
-        "GPT Image 尺寸须为宽x高、16 的倍数、每边至多 3840px、面积 655,360–8,294,400px、比例至多 3:1",
-      );
+      errors.push(m.error_gpt_size());
   }
   if (d.params.background === "transparent" && d.params.outputFormat === "jpeg")
-    errors.push("透明背景需选择 PNG 或 WebP");
+    errors.push(m.error_transparent_format());
   if (d.mask) {
     const first = d.refs[0];
-    if (!first) errors.push("蒙版需要至少一张参考图，作用于第一张图片");
+    if (!first) errors.push(m.error_mask_needs_ref());
     else if (first.width !== d.mask.width || first.height !== d.mask.height)
-      errors.push("蒙版尺寸须与第一张参考图一致");
+      errors.push(m.error_mask_size());
     if (!d.mask.dataUrl.startsWith("data:image/png;base64,"))
-      errors.push("蒙版须为 PNG 图片");
+      errors.push(m.error_mask_png());
   }
   return errors;
 }

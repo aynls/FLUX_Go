@@ -1,3 +1,4 @@
+import { m } from "../../i18n";
 import {
   RouteControls,
   PromptEditor,
@@ -15,11 +16,11 @@ export default function QwenSidebar(p: WorkspaceControlsProps) {
         <RouteControls {...p} />
         <PromptEditor {...p} />
         <section>
-          <h2>画面尺寸</h2>
+          <h2>{m.frame_size()}</h2>
           <QwenSizeFields {...p} />
         </section>
         <section>
-          <h2>生成控制</h2>
+          <h2>{m.generation_controls()}</h2>
           <ParameterFields
             {...p}
             keys={["seed", "promptExtend", "promptExtendMode", "watermark"]}
@@ -27,13 +28,13 @@ export default function QwenSidebar(p: WorkspaceControlsProps) {
         </section>
         {p.draft.provider !== "openrouter" && (
           <details>
-            <summary>负面提示词</summary>
+            <summary>{m.negative_prompt()}</summary>
             <ParameterFields {...p} keys={["negativePrompt"]} />
           </details>
         )}
         {p.draft.provider === "runware" && (
           <details>
-            <summary>输出文件</summary>
+            <summary>{m.output_file()}</summary>
             <ParameterFields
               {...p}
               keys={["outputFormat", "outputCompression"]}

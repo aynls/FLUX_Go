@@ -1,4 +1,5 @@
 import type { Draft, GenerateRequestPayload, LayoutRegion } from "../lib/types";
+import { m } from "../i18n";
 import { composePrompt } from "../lib/protocol";
 import { routeFor, validateFields, pickParams, defaultsFor } from "./catalog";
 import { validateGpt } from "./gpt";
@@ -10,7 +11,7 @@ import { regionsEnabled } from "./flux/layout";
 
 export function compileDraft(d: Draft) {
   if (!d.prompt.trim())
-    return { finalPrompt: "", rows: [], error: "请输入提示词" };
+    return { finalPrompt: "", rows: [], error: m.error_prompt_required() };
   const instruction = referenceInstruction(d);
   if (d.family === "flux") {
     const result = composePrompt({
@@ -28,7 +29,7 @@ export function compileDraft(d: Draft) {
   return {
     finalPrompt: instruction,
     rows: [],
-    error: d.prompt.trim() ? null : "请输入提示词",
+    error: d.prompt.trim() ? null : m.error_prompt_required(),
   };
 }
 /** Limits apply to the compiled instruction, including reference roles and regions. */
@@ -39,9 +40,9 @@ export function promptLength(d: Draft) {
     max = route?.maxPrompt ?? 32000;
   const error =
     length > max
-      ? `编译后的提示词超过 ${max} 字符`
+      ? m.error_prompt_too_long({ max })
       : length > 0 && length < min
-        ? `此路由提示词至少需要 ${min} 个字符`
+        ? m.error_prompt_too_short({ min })
         : null;
   return { length, min, max, error };
 }
@@ -60,22 +61,22 @@ export function validateModel(d: Draft) {
       (match) => Number(match[1]) >= d.refs.length,
     )
   )
-    errors.push("提示词引用了不存在的图片，请更新图片标签");
-  if (d.intent === "edit" && !d.refs.length) errors.push("请添加编辑主图");
+    errors.push(m.error_missing_image_tag());
+  if (d.intent === "edit" && !d.refs.length) errors.push(m.error_need_main_image());
   if (d.intent === "edit" && routeFor(d)?.maxRefs === 0)
-    errors.push("此路由仅支持文生图，编辑图片请切换供应商");
-  if (d.intent === "create" && d.mask) errors.push("编辑蒙版需要编辑图片模式");
+    errors.push(m.error_edit_needs_provider());
+  if (d.intent === "create" && d.mask) errors.push(m.error_mask_needs_edit_mode());
   if (d.intent === "edit" && d.baseId && d.refs[0]?.uid !== d.baseId)
-    errors.push("主图须位于图片 1，请重新指定主图");
+    errors.push(m.error_main_must_be_first());
   const prompt = promptLength(d);
   if (prompt.error) errors.push(prompt.error);
   if (d.family !== "flux" && d.boxes.length && d.layoutEnabled !== false)
-    errors.push("此模型不支持区域，请暂不使用区域或切换到 FLUX");
+    errors.push(m.error_regions_unsupported());
   if (d.family === "flux" && d.provider === "runware") {
     if (!d.refs.length && !d.boxes.length)
-      errors.push("Runware FLUX 文生图需要至少一个放置区域，请在画布上画框");
+      errors.push(m.error_runware_place());
     if (!d.refs.length && d.params.aspectRatio === "auto")
-      errors.push("Runware FLUX 文生图需要明确的宽高比");
+      errors.push(m.error_runware_aspect());
   }
   return errors;
 }
@@ -87,7 +88,7 @@ export function buildRequest(
   const compiled = compileDraft(d);
   if (compiled.error) throw new Error(compiled.error);
   const route = routeFor(d);
-  if (!route) throw new Error("该模型与供应商组合不可用");
+  if (!route) throw new Error(m.error_route_unavailable());
   const regions: LayoutRegion[] =
     d.family === "flux"
       ? compiled.rows.map((row) =>

@@ -1,4 +1,6 @@
 import raw from "../../shared/model-catalog.json";
+import { m } from "../i18n";
+import { fieldLabel } from "../labels";
 import type {
   Draft,
   FamilyId,
@@ -170,7 +172,7 @@ export function changeRoute(
 export function validateFields(d: Draft): string[] {
   const route = routeFor(d);
   if (!route || modelById(d.modelId)?.family !== d.family)
-    return ["该模型与供应商组合不可用"];
+    return [m.error_route_unavailable()];
   const errors: string[] = [];
   const merged = { ...defaultsFor(d.modelId, d.provider), ...d.params };
   for (const [key, f] of Object.entries(fieldsFor(d))) {
@@ -181,8 +183,9 @@ export function validateFields(d: Draft): string[] {
       continue;
     const v: ParamValue | undefined = merged[key];
     if (v === undefined || v === null) continue;
+    const label = fieldLabel(key, f.label);
     if (f.kind === "enum" && !f.values?.includes(String(v)))
-      errors.push(`${f.label} ${v} 无效`);
+      errors.push(m.error_field_enum({ label, value: String(v) }));
     if (
       f.kind === "integer" &&
       (typeof v !== "number" ||
@@ -190,23 +193,30 @@ export function validateFields(d: Draft): string[] {
         v < (f.min ?? 0) ||
         v > (f.max ?? Infinity))
     )
-      errors.push(`${f.label}须为 ${f.min}–${f.max} 的整数`);
+      errors.push(
+        m.error_field_integer({
+          label,
+          min: f.min ?? "undefined",
+          max: f.max ?? "undefined",
+        }),
+      );
     if (f.kind === "boolean" && typeof v !== "boolean")
-      errors.push(`${f.label}须为开关值`);
+      errors.push(m.error_field_boolean({ label }));
     if (
       f.kind === "text" &&
       (typeof v !== "string" ||
         v.length > (f.maxLength ?? Infinity) ||
         (v.length > 0 && v.length < (f.minLength ?? 0)))
     )
-      errors.push(`${f.label}内容无效或过长`);
+      errors.push(m.error_field_text({ label }));
   }
   if (d.refs.length > route.maxRefs)
     errors.push(
-      route.maxRefs === 0 ? "此路由仅支持文生图，请切换供应商以使用参考图" : `此路由参考图最多 ${route.maxRefs} 张，当前 ${d.refs.length} 张`,
+      route.maxRefs === 0
+        ? m.error_text_only_route()
+        : m.error_too_many_refs({ count: route.maxRefs, current: d.refs.length }),
     );
-  if (d.mask && !route.mask)
-    errors.push("此路由不支持蒙版，请移除蒙版或切换到 Comfy / Runware");
+  if (d.mask && !route.mask) errors.push(m.error_mask_unsupported());
   return errors;
 }
 

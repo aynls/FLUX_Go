@@ -133,7 +133,7 @@ async fn grok_moderation_and_empty_results_fail_without_resubmission() {
     for provider in ["xai", "comfy"] {
         for (status, body, expected) in [
             (200,json!({"block_reason":"input moderation refused","usage":{}}),"input moderation refused"),
-            (200,json!({"data":[{}]}),"没有图片"),
+            (200,json!({"data":[{}]}),"no image"),
             (429,json!({"error":{"message":"rate limited"}}),"rate limited"),
         ] {
             let (url, handle) = server(vec![(status,body)]);

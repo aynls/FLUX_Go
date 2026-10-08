@@ -27,6 +27,7 @@ target/
 *.local
 .vite/
 .cache/
+/src/paraglide/
 coverage/
 *.log
 .DS_Store

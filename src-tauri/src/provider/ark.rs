@@ -29,7 +29,10 @@ pub fn native_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
 pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
     let model = crate::models::resolve(req)?;
     if !matches!(req.provider.as_str(), "ark" | "byteplus") || model.family != "seedream" {
-        return Err(ProviderError::msg("此官方路由仅支持 Seedream"));
+        return Err(ProviderError::coded(
+            "backend_seedream_official_only",
+            "This official route only supports Seedream",
+        ));
     }
     let mut body = native_payload(req)?;
     body["model"] = json!(model.wire_id());
@@ -39,7 +42,12 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
     let endpoint = match req.provider.as_str() {
         "ark" => ARK_ENDPOINT,
         "byteplus" => BYTEPLUS_ENDPOINT,
-        _ => return Err(ProviderError::msg("未知 Seedream 官方路由")),
+        _ => {
+            return Err(ProviderError::coded(
+                "backend_seedream_route",
+                "Unknown official Seedream route",
+            ))
+        }
     };
     let key = transport::key(&req.provider)?;
     generate_at(req, &key, endpoint).await
@@ -51,20 +59,22 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(900))
         .build()
-        .map_err(|_| ProviderError::msg("Seedream HTTP 客户端初始化失败"))?;
+        .map_err(|_| {
+            ProviderError::coded(
+                "backend_seedream_client",
+                "Couldn't initialize the Seedream HTTP client",
+            )
+        })?;
     let (_, body) = transport::json(
         client.post(endpoint).bearer_auth(key).json(&payload),
-        if req.provider == "ark" {
-            "火山方舟"
-        } else {
-            "BytePlus"
-        },
+        if req.provider == "ark" { "Ark" } else { "BytePlus" },
     )
     .await?;
     if let Some(error) = body.get("error").filter(|e| !e.is_null()) {
-        return Err(ProviderError::msg(
-            error["message"].as_str().unwrap_or("Seedream 生成失败"),
-        ));
+        return Err(match error["message"].as_str() {
+            Some(message) => ProviderError::msg(message),
+            None => ProviderError::coded("backend_seedream_failed", "Seedream generation failed"),
+        });
     }
     super::progress::report("downloading", None, None, None);
     Ok(GenerateOutput {

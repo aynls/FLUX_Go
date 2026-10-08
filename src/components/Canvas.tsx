@@ -21,6 +21,7 @@ import {
 import type { Box, WorkingImage } from "../lib/types";
 import { rectToWire } from "../lib/protocol";
 import { BOX_COLORS } from "../lib/boxColors";
+import { m } from "../i18n";
 
 interface CanvasProps {
   /** 画布展示图片；发送顺序由工作区管理。 */
@@ -162,7 +163,7 @@ export default function Canvas(props: CanvasProps) {
     if (!maskRaster.current || !props.onMaskChange) return;
     props.onMaskChange({
       uid: crypto.randomUUID(),
-      name: "编辑蒙版",
+      name: m.name_mask(),
       width: iw,
       height: ih,
       dataUrl: maskRaster.current.toDataURL("image/png"),
@@ -593,12 +594,12 @@ export default function Canvas(props: CanvasProps) {
               style={{ borderWidth: 1 / s }}
             >
               <span className="text-zinc-500" style={{ fontSize: 13 / s }}>
-                输出画布
+                {m.canvas_output()}
               </span>
               <span className="text-zinc-600" style={{ fontSize: 11 / s }}>
                 {props.dimensionLabel ?? `${iw}×${ih}`}
                 {!props.readOnly && props.coordinateMode !== "pixels"
-                  ? " · 右键拖拽画框"
+                  ? m.canvas_draw_hint()
                   : ""}
               </span>
             </div>
@@ -671,7 +672,7 @@ export default function Canvas(props: CanvasProps) {
         <button
           className="rounded p-1 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
           onClick={() => zoomBy(1 / 1.25)}
-          title="缩小"
+          title={m.canvas_zoom_out()}
         >
           <Minus size={13} />
         </button>
@@ -681,7 +682,7 @@ export default function Canvas(props: CanvasProps) {
         <button
           className="rounded p-1 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
           onClick={() => zoomBy(1.25)}
-          title="放大"
+          title={m.canvas_zoom_in()}
         >
           <Plus size={13} />
         </button>
@@ -690,7 +691,7 @@ export default function Canvas(props: CanvasProps) {
           className="rounded px-1.5 py-0.5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
           onClick={fit}
         >
-          适应
+          {m.canvas_fit()}
         </button>
         <button
           className="rounded px-1.5 py-0.5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
@@ -774,7 +775,7 @@ function BoxView({
               fontFamily: "ui-monospace, monospace",
             }}
           >
-            源
+            {m.canvas_source()}
           </span>
         </div>
       )}
@@ -810,9 +811,9 @@ function BoxView({
           }}
         >
           {box.role === "remove"
-            ? "移除 · "
+            ? m.canvas_remove()
             : box.role === "move"
-              ? "目标 · "
+              ? m.canvas_target()
               : ""}
           {box.id || "…"}{" "}
           {selected && (

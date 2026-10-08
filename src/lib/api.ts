@@ -1,6 +1,7 @@
 // Tauri 后端命令的类型化封装与错误解析。
 
 import { invoke, convertFileSrc, isTauri } from "@tauri-apps/api/core";
+import { localizeMessage, localizeStored, m } from "../i18n";
 import { listen } from "@tauri-apps/api/event";
 import type { GenerationProgress } from "./types";
 import type {
@@ -27,6 +28,11 @@ export class AppError extends Error {
     this.status = opts?.status;
     this.hint = opts?.hint;
   }
+
+  // 字符串化时只输出已本地化的说明，避免界面出现 "AppError: " 前缀。
+  toString() {
+    return this.message;
+  }
 }
 
 /** 后端错误为 ProviderError 的 JSON 字符串，解析为可读错误 */
@@ -38,14 +44,38 @@ function parseBackendError(e: unknown): AppError {
       status?: number;
       message?: string;
       hint?: string;
+      code?: string;
+      hint_code?: string;
+      params?: Record<string, string | number>;
     };
     if (j && typeof j.message === "string") {
-      return new AppError(j.message, { status: j.status, hint: j.hint });
+      const params = j.params ?? {};
+      return new AppError(localizeMessage(j.code, j.message, params), {
+        status: j.status,
+        hint:
+          j.hint_code != null
+            ? localizeMessage(j.hint_code, j.hint ?? "", params)
+            : j.hint,
+      });
     }
   } catch {
     // 不是 JSON，按纯文本处理
   }
   return new AppError(raw);
+}
+
+/** 所有命令经过此入口，后端错误码统一按当前语言展示。 */
+async function call<T>(command: string, args?: Record<string, unknown>) {
+  try {
+    return await invoke<T>(command, args);
+  } catch (e) {
+    throw parseBackendError(e);
+  }
+}
+
+// 默认名称由后端留空（不保存本地化文案），在进入界面时按当前语言补全。
+function withDefaultName(image: ImportedImage, name: () => string) {
+  return image.name ? image : { ...image, name: name() };
 }
 
 export async function providerStatus(): Promise<ProviderStatus> {
@@ -60,7 +90,7 @@ export async function providerStatus(): Promise<ProviderStatus> {
       byteplus: false,
       xai: false,
     };
-  return invoke<ProviderStatus>("provider_status");
+  return call<ProviderStatus>("provider_status");
 }
 export const isDesktop = () => isTauri();
 
@@ -75,9 +105,7 @@ export async function generate(
         if (event.payload.requestId === request.requestId)
           onProgress(event.payload);
       });
-    return await invoke<GenerateOutput>("generate", { request });
-  } catch (e) {
-    throw parseBackendError(e);
+    return await call<GenerateOutput>("generate", { request });
   } finally {
     off?.();
   }
@@ -92,27 +120,27 @@ export interface ImportedImage {
 }
 
 export function importImage(path: string): Promise<ImportedImage> {
-  return invoke<ImportedImage>("import_image", { path });
+  return call<ImportedImage>("import_image", { path });
 }
 
 export function saveDataUrl(dataUrl: string, path: string): Promise<string> {
-  return invoke<string>("save_data_url", { dataUrl, path });
+  return call<string>("save_data_url", { dataUrl, path });
 }
 
 export function historyList(): Promise<HistoryItem[]> {
   if (!isTauri()) return Promise.resolve([]);
-  return invoke<HistoryItem[]>("history_list");
+  return call<HistoryItem[]>("history_list");
 }
 
 export function historySave(
   item: HistoryItem,
   files: { kind: string; name: string; data: string }[],
 ): Promise<HistoryItem> {
-  return invoke<HistoryItem>("history_save", { item, files });
+  return call<HistoryItem>("history_save", { item, files });
 }
 
 export function historyDelete(id: string): Promise<void> {
-  return invoke<void>("history_delete", { id });
+  return call<void>("history_delete", { id });
 }
 
 /** 历史图片绝对路径 → asset 协议 URL */
@@ -120,43 +148,56 @@ export function assetUrl(absPath: string): string {
   return convertFileSrc(absPath);
 }
 
-export const draftLoad = () => invoke<unknown>("draft_load");
+export const draftLoad = () => call<unknown>("draft_load");
 export const draftSave = (draft: Draft | WorkspaceSession) =>
-  invoke<void>("draft_save", { draft });
+  call<void>("draft_save", { draft });
 export const credentialSave = (provider: ProviderId, key: string) =>
-  invoke<void>("credential_save", { provider, key });
+  call<void>("credential_save", { provider, key });
 export const credentialRemove = (provider: ProviderId) =>
-  invoke<void>("credential_remove", { provider });
-export const credentialCheck = (provider: ProviderId) =>
-  invoke<string>("credential_check", { provider });
+  call<void>("credential_remove", { provider });
+export const credentialCheck = async (provider: ProviderId) =>
+  localizeStored(await call<string>("credential_check", { provider }));
 export const credentialConfigure = (
   provider: ProviderId,
   settings: CredentialSettings,
-) => invoke<void>("credential_configure", { provider, ...settings });
-export const importUrl = (url: string) =>
-  invoke<ImportedImage>("import_url", { url });
-export const clipboardImage = () => invoke<ImportedImage>("clipboard_image");
+) => call<void>("credential_configure", { provider, ...settings });
+export const importUrl = async (url: string) =>
+  withDefaultName(await call<ImportedImage>("import_url", { url }), () =>
+    m.default_name_web(),
+  );
+export const clipboardImage = async () =>
+  withDefaultName(await call<ImportedImage>("clipboard_image"), () =>
+    m.default_name_clipboard(),
+  );
 export const copyImage = (dataUrl: string) =>
-  invoke<void>("copy_image", { dataUrl });
+  call<void>("copy_image", { dataUrl });
 export const historyStorage = () =>
   isTauri()
-    ? invoke<string>("history_storage")
-    : Promise.resolve("请在桌面应用中查看历史目录");
+    ? call<string>("history_storage")
+    : Promise.resolve(m.error_desktop_only_history());
 
-export const galleryList = () =>
-  isTauri() ? invoke<GalleryItem[]>("gallery_list") : Promise.resolve([]);
+export const galleryList = async (): Promise<GalleryItem[]> => {
+  if (!isTauri()) return [];
+  const items = await call<GalleryItem[]>("gallery_list");
+  return items.map((item) =>
+    item.name ? item : { ...item, name: m.default_name_generated() },
+  );
+};
 export const galleryImport = (
   image: ImportedImage,
   source: "file" | "clipboard" | "url",
 ) =>
-  invoke<GalleryItem>("gallery_import", {
+  call<GalleryItem>("gallery_import", {
     dataUrl: image.dataUrl,
     name: image.name,
     source,
   });
 export const galleryDelete = (id: string) =>
-  invoke<void>("gallery_delete", { id });
+  call<void>("gallery_delete", { id });
 export const galleryRead = async (id: string): Promise<ImportedImage> => ({
-  ...(await invoke<ImportedImage>("gallery_read", { id })),
+  ...withDefaultName(
+    await call<ImportedImage>("gallery_read", { id }),
+    () => m.default_name_generated(),
+  ),
   assetId: id,
 });

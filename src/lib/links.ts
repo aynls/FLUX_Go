@@ -1,4 +1,5 @@
 import { isTauri } from "@tauri-apps/api/core";
+import { m } from "../i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 export function webUrl(value: string): string | null {
@@ -15,7 +16,7 @@ export function webUrl(value: string): string | null {
 }
 export async function openWebUrl(value: string) {
   const url = webUrl(value);
-  if (!url) throw new Error("来源链接无效");
+  if (!url) throw new Error(m.error_bad_source_url());
   if (isTauri()) await openUrl(url);
   else window.open(url, "_blank", "noopener,noreferrer");
 }

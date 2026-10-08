@@ -10,13 +10,18 @@ pub fn client() -> &'static reqwest::Client {
         reqwest::Client::builder()
             .timeout(Duration::from_secs(120))
             .build()
-            .expect("HTTP 客户端初始化失败")
+            .expect("HTTP client initialization failed")
     })
 }
 pub fn key(provider: &str) -> Result<String, ProviderError> {
     super::configured_key(provider).ok_or_else(|| {
-        ProviderError::msg(format!("尚未配置 {provider} API Key"))
-            .with_hint("请在设置中配置密钥及其来源。")
+        ProviderError::coded(
+            "backend_missing_api_key",
+            format!("No {provider} API key is configured"),
+        )
+        .with_param("provider", provider)
+        .with_hint("Set the key and its source in Settings.")
+        .with_hint_code("backend_configure_key_source")
     })
 }
 pub async fn json(
@@ -38,8 +43,13 @@ pub async fn json_with_metadata(
     provider: &str,
 ) -> Result<(u16, Value, Option<Duration>, Option<f64>), ProviderError> {
     let response = request.send().await.map_err(|_| {
-        ProviderError::msg(format!("{provider} 网络请求失败"))
-            .with_hint("任务可能已被接受；不会自动重新提交付费请求。")
+        ProviderError::coded(
+            "backend_network_failed",
+            format!("{provider} network request failed"),
+        )
+        .with_param("provider", provider)
+        .with_hint("The task may already have been accepted. The paid request will not be submitted again.")
+        .with_hint_code("backend_network_maybe_accepted")
     })?;
     let status = response.status().as_u16();
     let credits = response
@@ -57,19 +67,29 @@ pub async fn json_with_metadata(
     let body: Value = response
         .json()
         .await
-        .map_err(|_| ProviderError::msg(format!("{provider} 返回了无法解析的响应")))?;
+        .map_err(|_| {
+            ProviderError::coded(
+                "backend_unparseable_response",
+                format!("{provider} returned a response that could not be parsed"),
+            )
+            .with_param("provider", provider)
+        })?;
     if !(200..300).contains(&status) {
-        let message = body
+        let upstream = body
             .pointer("/error/message")
             .or_else(|| body.pointer("/errors/0/message"))
             .or_else(|| body.get("message"))
             .or_else(|| body.get("detail"))
-            .and_then(Value::as_str)
-            .unwrap_or("服务请求失败");
-        return Err(ProviderError::http(
-            status,
-            format!("{provider}: {message}"),
-        ));
+            .and_then(Value::as_str);
+        return Err(match upstream {
+            Some(message) => ProviderError::http(status, format!("{provider}: {message}")),
+            None => ProviderError::coded(
+                "backend_request_failed",
+                format!("{provider}: The request failed"),
+            )
+            .with_param("provider", provider)
+            .with_status(status),
+        });
     }
     Ok((status, body, retry_after, credits))
 }
@@ -91,44 +111,67 @@ pub async fn download_image(url: &str) -> Result<OutputImage, ProviderError> {
             media_type: mime,
         });
     }
-    let parsed = reqwest::Url::parse(url).map_err(|_| ProviderError::msg("结果图片 URL 无效"))?;
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|_| ProviderError::coded("backend_result_url_invalid", "The result image URL is invalid"))?;
     if !matches!(parsed.scheme(), "http" | "https") {
-        return Err(ProviderError::msg("结果图片须使用 HTTP(S)"));
+        return Err(ProviderError::coded(
+            "backend_result_url_scheme",
+            "The result image must use HTTP or HTTPS",
+        ));
     }
-    let mut response = client()
-        .get(parsed)
-        .send()
-        .await
-        .map_err(|_| ProviderError::msg("结果已生成，但图片下载失败"))?;
+    let mut response = client().get(parsed).send().await.map_err(|_| {
+        ProviderError::coded(
+            "backend_result_download_failed",
+            "The image was generated, but downloading it failed",
+        )
+    })?;
     if !response.status().is_success() {
-        return Err(ProviderError::msg(format!(
-            "结果图片下载失败（HTTP {}）",
-            response.status()
-        )));
+        let status = response.status().as_u16();
+        return Err(ProviderError::coded(
+            "backend_result_download_http",
+            format!("Downloading the result image failed (HTTP {status})"),
+        )
+        .with_param("status", status));
     }
     const MAX: usize = 64 * 1024 * 1024;
     if response.content_length().is_some_and(|n| n > MAX as u64) {
-        return Err(ProviderError::msg("结果图片超过 64MiB"));
+        return Err(ProviderError::coded(
+            "backend_result_too_large",
+            "The result image is larger than 64MiB",
+        ));
     }
     let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| ProviderError::msg("结果图片下载中断"))?
-    {
+    while let Some(chunk) = response.chunk().await.map_err(|_| {
+        ProviderError::coded(
+            "backend_result_download_interrupted",
+            "The result image download was interrupted",
+        )
+    })? {
         if bytes.len() + chunk.len() > MAX {
-            return Err(ProviderError::msg("结果图片超过 64MiB"));
+            return Err(ProviderError::coded(
+                "backend_result_too_large",
+                "The result image is larger than 64MiB",
+            ));
         }
         bytes.extend_from_slice(&chunk);
     }
-    let format =
-        image::guess_format(&bytes).map_err(|_| ProviderError::msg("下载的结果不是图片"))?;
+    let format = image::guess_format(&bytes).map_err(|_| {
+        ProviderError::coded(
+            "backend_result_not_image",
+            "The downloaded result is not an image",
+        )
+    })?;
     let mime = match format {
         image::ImageFormat::Jpeg => "image/jpeg",
         image::ImageFormat::WebP => "image/webp",
         image::ImageFormat::Gif => "image/gif",
         image::ImageFormat::Png => "image/png",
-        _ => return Err(ProviderError::msg("结果图片格式不受支持")),
+        _ => {
+            return Err(ProviderError::coded(
+                "backend_result_format",
+                "The result image format is not supported",
+            ))
+        }
     };
     base64_image(
         &base64::engine::general_purpose::STANDARD.encode(bytes),
@@ -141,7 +184,12 @@ pub async fn openai_images(
 ) -> Result<Vec<OutputImage>, ProviderError> {
     let items = body["data"]
         .as_array()
-        .ok_or_else(|| ProviderError::msg("响应缺少图片 data"))?;
+        .ok_or_else(|| {
+            ProviderError::coded(
+                "backend_missing_image_data",
+                "The response is missing image data",
+            )
+        })?;
     let mut images = Vec::new();
     for item in items {
         if let Some(b64) = item["b64_json"].as_str() {
@@ -155,7 +203,10 @@ pub async fn openai_images(
         }
     }
     if images.is_empty() {
-        return Err(ProviderError::msg("响应中没有图片"));
+        return Err(ProviderError::coded(
+            "backend_no_image",
+            "The response contains no image",
+        ));
     }
     Ok(images)
 }

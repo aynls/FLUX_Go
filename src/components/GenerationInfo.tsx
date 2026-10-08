@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { m } from "../i18n";
 import type { GenerationDetails } from "../lib/types";
 import { openWebUrl, webUrl } from "../lib/links";
 
@@ -37,22 +38,22 @@ export default function GenerationInfo({
     void openWebUrl(url).catch((e) => setError(String(e)));
   };
   return (
-    <section className="generation-info" aria-label="生成说明与来源">
+    <section className="generation-info" aria-label={m.info_label()}>
       {details.text && (
         <details>
-          <summary>生成说明</summary>
+          <summary>{m.info_summary()}</summary>
           <p className="response-text">{details.text}</p>
         </details>
       )}
       {!!details.sources.length && (
         <div className="generation-sources">
-          <h3>参考来源</h3>
+          <h3>{m.info_sources()}</h3>
           <ul>
             {details.sources
               .filter((s) => webUrl(s.url))
               .map((s) => (
                 <li key={s.url}>
-                  <span>{s.kind === "image" ? "图片" : "网页"}</span>
+                  <span>{s.kind === "image" ? m.info_image() : m.info_web()}</span>
                   <a
                     href={s.url}
                     target="_blank"
@@ -72,7 +73,7 @@ export default function GenerationInfo({
       {html && (
         <iframe
           className="search-suggestions"
-          title="Google 搜索建议"
+          title={m.info_suggestions()}
           sandbox="allow-same-origin"
           srcDoc={html}
           onLoad={(e) => {
@@ -93,13 +94,13 @@ export default function GenerationInfo({
       )}
       {!!details.searchQueries.length && (
         <details>
-          <summary>使用的搜索词</summary>
+          <summary>{m.info_queries()}</summary>
           <p className="response-text">{details.searchQueries.join("\n")}</p>
         </details>
       )}
       {details.thoughts && (
         <details>
-          <summary>思考摘要</summary>
+          <summary>{m.info_thoughts()}</summary>
           <p className="response-text">{details.thoughts}</p>
         </details>
       )}

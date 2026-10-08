@@ -27,6 +27,8 @@ import {
   validateFields,
 } from "../models/catalog";
 import { ParameterFields, QwenSizeFields } from "../workspaces/shared/Controls";
+import { m } from "../i18n";
+import { modelLabel, providerLabel } from "../labels";
 
 export default function Settings({
   prefs,
@@ -76,7 +78,7 @@ export default function Settings({
       const directory = await open({
         directory: true,
         multiple: false,
-        title: "选择图片默认保存目录",
+        title: m.settings_choose_dir(),
         ...(prefs.saveDirectory ? { defaultPath: prefs.saveDirectory } : {}),
       });
       if (typeof directory === "string") {
@@ -84,18 +86,18 @@ export default function Settings({
         setDirectoryError("");
       }
     } catch (e) {
-      setDirectoryError("选择目录失败：" + String(e));
+      setDirectoryError(m.error_choose_directory({ detail: String(e) }));
     }
   };
   return (
-    <Modal title="偏好设置" onClose={onClose} large>
+    <Modal title={m.settings_title()} onClose={onClose} large>
       <div className="settings-content">
-        <nav className="settings-navigation" aria-label="设置分类">
+        <nav className="settings-navigation" aria-label={m.settings_nav()}>
           {[
-            ["connection", "API 连接"],
-            ["defaults", "新建默认值"],
-            ["appearance", "外观"],
-            ["storage", "存储"],
+            ["connection", m.settings_connection()],
+            ["defaults", m.settings_defaults()],
+            ["appearance", m.settings_appearance()],
+            ["storage", m.settings_storage()],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -110,7 +112,7 @@ export default function Settings({
         <div className="settings-panel">
           {page === "connection" && (
             <section>
-              <h3>API 连接</h3>
+              <h3>{m.settings_connection()}</h3>
               <div className="provider-selector">
                 {providers.map((p) => (
                   <button
@@ -119,9 +121,11 @@ export default function Settings({
                     aria-pressed={provider === p.id}
                     onClick={() => setProvider(p.id)}
                   >
-                    <span>{p.label}</span>
+                    <span>{providerLabel(p.id)}</span>
                     <span className="muted">
-                      {status?.[p.id] ? "已配置" : "未配置"}
+                      {status?.[p.id]
+                        ? m.state_configured()
+                        : m.state_missing_key()}
                     </span>
                   </button>
                 ))}
@@ -137,10 +141,10 @@ export default function Settings({
           {page === "defaults" && (
             <>
               <section>
-                <h3>新建方案的默认值</h3>
-                <p className="muted">用于下次新建，当前方案保持原设置。</p>
+                <h3>{m.settings_defaults_title()}</h3>
+                <p className="muted">{m.settings_defaults_help()}</p>
                 <label>
-                  启动时的模型家族
+                  {m.settings_startup_family()}
                   <select
                     value={prefs.defaultFamily ?? "flux"}
                     onChange={(e) =>
@@ -169,7 +173,7 @@ export default function Settings({
                   ))}
                 </div>
                 <label>
-                  默认模型
+                  {m.settings_default_model()}
                   <select
                     value={defaults.modelId}
                     onChange={(e) => {
@@ -186,16 +190,16 @@ export default function Settings({
                     }}
                   >
                     {catalog.models
-                      .filter((m) => m.family === family)
-                      .map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label}
+                      .filter((model) => model.family === family)
+                      .map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {modelLabel(model.id, model.label)}
                         </option>
                       ))}
                   </select>
                 </label>
                 <label>
-                  默认提供商
+                  {m.settings_default_provider()}
                   <select
                     value={defaults.provider}
                     onChange={(e) =>
@@ -208,7 +212,7 @@ export default function Settings({
                       .filter((p) => modelById(defaults.modelId)?.routes[p.id])
                       .map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.label}
+                          {providerLabel(p.id)}
                         </option>
                       ))}
                   </select>
@@ -247,11 +251,11 @@ export default function Settings({
                     })
                   }
                 >
-                  重置此家族默认值
+                  {m.settings_reset_family()}
                 </button>
               </section>
               <section>
-                <h3>参考图处理</h3>
+                <h3>{m.settings_ref_processing()}</h3>
                 <label className="check">
                   <input
                     type="checkbox"
@@ -260,10 +264,10 @@ export default function Settings({
                       onChange({ ...prefs, compressEnabled: e.target.checked })
                     }
                   />
-                  默认等比缩小参考图
+                  {m.settings_shrink()}
                 </label>
                 <label>
-                  默认长边上限（px）
+                  {m.settings_edge()}
                   <input
                     type="number"
                     min={256}
@@ -282,16 +286,16 @@ export default function Settings({
                   (!Number.isInteger(prefs.maxInputEdge) ||
                     prefs.maxInputEdge < 256 ||
                     prefs.maxInputEdge > 8192) && (
-                    <p className="error-text">长边上限须为 256–8192px</p>
+                    <p className="error-text">{m.error_edge_limit_short()}</p>
                   )}
               </section>
             </>
           )}
           {page === "appearance" && (
             <section>
-              <h3>外观</h3>
+              <h3>{m.settings_appearance()}</h3>
               <label>
-                主题
+                {m.settings_theme()}
                 <select
                   value={prefs.theme}
                   onChange={(e) =>
@@ -301,30 +305,47 @@ export default function Settings({
                     })
                   }
                 >
-                  <option value="system">跟随系统</option>
-                  <option value="light">浅色</option>
-                  <option value="dark">深色</option>
+                  <option value="system">{m.theme_system()}</option>
+                  <option value="light">{m.theme_light()}</option>
+                  <option value="dark">{m.theme_dark()}</option>
                 </select>
               </label>
-              <span className="muted">即时生效</span>
+              <label>
+                {m.language()}
+                <select
+                  value={prefs.locale ?? "system"}
+                  onChange={(e) =>
+                    onChange({
+                      ...prefs,
+                      locale: e.target.value as "system" | "en" | "zh" | "ja",
+                    })
+                  }
+                >
+                  <option value="system">{m.language_system()}</option>
+                  <option value="en">{m.language_en()}</option>
+                  <option value="zh">{m.language_zh()}</option>
+                  <option value="ja">{m.language_ja()}</option>
+                </select>
+              </label>
+              <span className="muted">{m.settings_immediate()}</span>
             </section>
           )}
           {page === "storage" && (
             <>
               <section>
-                <h3>图片默认保存位置</h3>
+                <h3>{m.settings_save_dir()}</h3>
                 <p className="storage-path">
-                  {prefs.saveDirectory || "系统默认"}
+                  {prefs.saveDirectory || m.settings_system_default()}
                 </p>
                 <div className="row">
                   <button onClick={() => void chooseDirectory()}>
-                    选择文件夹
+                    {m.settings_choose_folder()}
                   </button>
                   <button
                     disabled={!prefs.saveDirectory}
                     onClick={() => onChange({ ...prefs, saveDirectory: "" })}
                   >
-                    使用系统默认
+                    {m.settings_use_default()}
                   </button>
                 </div>
                 {directoryError && (
@@ -334,9 +355,9 @@ export default function Settings({
                 )}
               </section>
               <section>
-                <h3>本地历史</h3>
+                <h3>{m.settings_local_history()}</h3>
                 <p className="storage-path">{storage}</p>
-                <button onClick={onHistory}>管理历史记录</button>
+                <button onClick={onHistory}>{m.settings_manage_history()}</button>
               </section>
             </>
           )}
@@ -387,15 +408,15 @@ function KeySettingsCard({
         await credentialSave(provider, key);
         setKey("");
         await credentialConfigure(provider, { ...config, source: "manual" });
-        setMessage("手动密钥已保存并启用，尚未验证连接");
+        setMessage(m.credential_saved());
       }
       if (action === "apply") {
         await credentialConfigure(provider, config);
-        setMessage("已应用密钥来源，尚未验证连接");
+        setMessage(m.credential_source_applied());
       }
       if (action === "remove") {
         await credentialRemove(provider);
-        setMessage("手动密钥已移除，请重新填写或切换来源");
+        setMessage(m.credential_removed());
       }
       if (action === "check") setMessage(await credentialCheck(provider));
       await refresh();
@@ -408,11 +429,13 @@ function KeySettingsCard({
   return (
     <div className="key-settings">
       <div className="section-heading">
-        <strong>{definition.label}</strong>
-        <span className="muted">{configured ? "已配置" : "未配置"}</span>
+        <strong>{providerLabel(definition.id)}</strong>
+        <span className="muted">
+          {configured ? m.state_configured() : m.state_missing_key()}
+        </span>
       </div>
       <label>
-        密钥来源
+        {m.credential_source()}
         <select
           disabled={busy || !status}
           value={selection.source}
@@ -424,14 +447,14 @@ function KeySettingsCard({
             setMessage("");
           }}
         >
-          <option value="environment">环境变量</option>
-          <option value="manual">手动填写</option>
+          <option value="environment">{m.credential_environment()}</option>
+          <option value="manual">{m.credential_manual()}</option>
         </select>
       </label>
       {selection.source === "environment" ? (
         <>
           <label>
-            环境变量名称
+            {m.credential_env_name()}
             <input
               disabled={busy}
               autoComplete="off"
@@ -445,15 +468,13 @@ function KeySettingsCard({
             />
           </label>
           {!validName && (
-            <p className="error-text">
-              请输入有效的环境变量名称，不含等号或换行。
-            </p>
+            <p className="error-text">{m.error_env_name()}</p>
           )}
         </>
       ) : (
         <>
           <label>
-            输入或替换密钥
+            {m.credential_replace()}
             <input
               disabled={busy}
               type="password"
@@ -461,15 +482,17 @@ function KeySettingsCard({
               spellCheck={false}
               value={key}
               placeholder={
-                stored ? "已有手动密钥，填写以替换" : "保存后清空输入框"
+                stored
+                  ? m.credential_stored_hint()
+                  : m.credential_clear_hint()
               }
               onChange={(e) => setKey(e.target.value)}
             />
           </label>
-          <span className="muted">保存到系统凭据存储</span>
+          <span className="muted">{m.credential_store()}</span>
         </>
       )}
-      {changed && <p className="help">来源设置尚未应用，生成仍使用原设置。</p>}
+      {changed && <p className="help">{m.credential_pending()}</p>}
       <div className="row">
         <button
           disabled={
@@ -480,7 +503,7 @@ function KeySettingsCard({
           }
           onClick={() => void run("apply")}
         >
-          应用来源
+          {m.credential_apply()}
         </button>
         {selection.source === "manual" && (
           <>
@@ -488,13 +511,13 @@ function KeySettingsCard({
               disabled={busy || !key.trim()}
               onClick={() => void run("save")}
             >
-              保存并使用密钥
+              {m.credential_save()}
             </button>
             <button
               disabled={busy || !stored}
               onClick={() => void run("remove")}
             >
-              移除手动密钥
+              {m.credential_remove()}
             </button>
           </>
         )}
@@ -508,12 +531,12 @@ function KeySettingsCard({
           }
           title={
             provider === "ark" || provider === "byteplus"
-              ? "请通过实际生成确认密钥和模型权限"
+              ? m.credential_check_help()
               : undefined
           }
           onClick={() => void run("check")}
         >
-          检查连接
+          {m.credential_check()}
         </button>
       </div>
       {message && (

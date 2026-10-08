@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { CaretDown, Check } from "@phosphor-icons/react";
 import { families } from "../models/catalog";
 import type { FamilyId } from "../lib/types";
+import { m } from "../i18n";
 
 const icons: Record<FamilyId, string> = {
   flux: "/flux.png", gpt: "/openai.png", qwen: "/qwen-color.png",
@@ -54,7 +55,7 @@ export default function FamilySelect({ value, disabled, onChange }: {
     (menu.current?.children[active] as HTMLElement | undefined)?.scrollIntoView?.({ block: "nearest" });
   }, [active, open, id]);
   return <div className="model-family-control">
-    <button ref={trigger} type="button" className="family-select-trigger" role="combobox" aria-label="模型系列" value={value}
+    <button ref={trigger} type="button" className="family-select-trigger" role="combobox" aria-label={m.family_label()} value={value}
       aria-expanded={open} aria-haspopup="listbox" aria-controls={open ? id : undefined}
       aria-activedescendant={open ? `${id}-${active}` : undefined} disabled={disabled}
       onClick={() => open ? setOpen(false) : show()}
@@ -71,7 +72,7 @@ export default function FamilySelect({ value, disabled, onChange }: {
       }}>
       <Icon family={value} /><span>{families[selected].label}</span><CaretDown size={16} />
     </button>
-    {open && createPortal(<div ref={menu} id={id} role="listbox" aria-label="模型系列" className="family-select-menu" style={position}>
+    {open && createPortal(<div ref={menu} id={id} role="listbox" aria-label={m.family_label()} className="family-select-menu" style={position}>
       {families.map((family, index) => <button type="button" key={family.id} id={`${id}-${index}`} role="option" aria-selected={family.id === value}
         className={active === index ? "highlighted" : ""} tabIndex={-1}
         onPointerDown={event => event.preventDefault()} onPointerMove={() => setActive(index)} onClick={() => choose(index)}>

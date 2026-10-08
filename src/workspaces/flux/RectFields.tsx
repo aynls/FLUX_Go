@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { m } from "../../i18n";
 import type { Rect } from "../../lib/types";
 import { rectToWire } from "../../lib/protocol";
 
@@ -40,13 +41,13 @@ export function RectFields({
         (value) => !Number.isInteger(value) || value < 0 || value > 1000,
       )
     ) {
-      setError("请填完整四个坐标，使用 0–1000 的整数。");
+      setError(m.error_coords_incomplete());
       onValidityChange?.(false);
       return;
     }
     const [top, left, bottom, right] = next;
     if (top >= bottom || left >= right) {
-      setError("上须小于下，左须小于右。");
+      setError(m.error_coords_order());
       onValidityChange?.(false);
       return;
     }
@@ -91,11 +92,18 @@ export function RectFields({
           }
         }}
       >
-        {(["上", "左", "下", "右"] as const).map((name, index) => (
-          <label key={name}>
-            {name}
+        {(
+          [
+            ["top", m.coord_top],
+            ["left", m.coord_left],
+            ["bottom", m.coord_bottom],
+            ["right", m.coord_right],
+          ] as const
+        ).map(([key, name], index) => (
+          <label key={key}>
+            {name()}
             <input
-              aria-label={label + " " + name}
+              aria-label={m.coord_label({ label, name: name() })}
               type="number"
               min={0}
               max={1000}

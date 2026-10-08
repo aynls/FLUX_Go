@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { localizeStored, m } from "../i18n";
 import * as api from "../lib/api";
 import { readDraft, taskIntent } from "../lib/workspace";
 import { singleImageDraft } from "../models/catalog";
@@ -56,7 +57,11 @@ export function useGenerationTasks(
   const refresh = () =>
     callbacks.current
       .onHistory()
-      .catch((e) => callbacks.current.onNotice("历史刷新失败：" + String(e)));
+      .catch((e) =>
+        callbacks.current.onNotice(
+          m.notice_history_refresh_failed({ detail: String(e) }),
+        ),
+      );
   const run = async (job: Job) => {
     if (!alive.current || running.current.has(job.item.id)) return;
     running.current.set(job.item.id, job);
@@ -133,9 +138,9 @@ export function useGenerationTasks(
                   ) {
                     if (requests) {
                       requests[i].status = "skipped";
-                      requests[i].error = "请求未发送";
+                      requests[i].error = m.error_request_unsent();
                     }
-                    throw new Error("请求未发送");
+                    throw new Error(m.error_request_unsent());
                   }
                   if (requests) requests[i].status = "running";
                 });
@@ -189,8 +194,8 @@ export function useGenerationTasks(
             }
             if (requests?.[i].status !== "skipped")
               job.item.error = [
-                job.item.error,
-                `第 ${i + 1} 次请求失败：${message}`,
+                job.item.error && localizeStored(job.item.error),
+                m.error_request_failed({ index: i + 1, detail: message }),
               ]
                 .filter(Boolean)
                 .join("；");
@@ -209,11 +214,13 @@ export function useGenerationTasks(
         }),
       );
     } catch (e) {
-      job.item.error = "任务停止，历史保存失败：" + errorMessage(e);
+      job.item.error = m.error_history_save_stopped({
+        detail: errorMessage(e),
+      });
       for (const request of requests ?? []) {
         if (request.status === "queued") {
           request.status = "skipped";
-          request.error = "历史保存失败，未发送此请求";
+          request.error = m.error_history_save_skipped();
         }
       }
     }
@@ -234,13 +241,17 @@ export function useGenerationTasks(
       saved = true;
     } catch (e) {
       callbacks.current.onNotice(
-        "历史保存失败，可从结果区重新保存：" + errorMessage(e),
+        m.error_history_resave({ detail: errorMessage(e) }),
       );
     }
     if (result && alive.current)
       callbacks.current.onResult({ ...result, item: job.item, saved });
     else if (alive.current)
-      callbacks.current.onNotice("任务失败：" + job.item.error);
+      callbacks.current.onNotice(
+        m.notice_task_failed({
+          detail: localizeStored(job.item.error ?? ""),
+        }),
+      );
     await refresh();
     running.current.delete(job.item.id);
     updateTask(job.item.id, () => null);
@@ -248,7 +259,7 @@ export function useGenerationTasks(
   const submit = async (snapshot: Draft, count = 1) => {
     if (locked.current || !ready) return;
     if (!Number.isInteger(count) || count < 1 || count > 20)
-      throw new Error("生成张数须为 1–20 的整数");
+      throw new Error(m.error_count_range());
     locked.current = true;
     setAccepting(true);
     sync();
@@ -292,13 +303,13 @@ export function useGenerationTasks(
     for (const request of job.item.batch.requests) {
       if (request.status === "queued") {
         request.status = "skipped";
-        request.error = "用户停止后续生成，未发送此请求";
+        request.error = m.error_user_stopped();
       }
     }
     updateTask(job.item.id, (t) =>
       t ? { ...t, remainingRequests: 0, stopRequested: true } : t,
     );
-    callbacks.current.onNotice("已停止后续请求，当前请求仍会接收并保存结果");
+    callbacks.current.onNotice(m.notice_stopped_remaining());
   };
   useEffect(() => {
     alive.current = true;
@@ -312,7 +323,7 @@ export function useGenerationTasks(
           .sort((a, b) => a.createdAt - b.createdAt)) {
           if (!isCurrent()) return;
           try {
-            if (!item.recipe) throw new Error("任务缺少请求快照");
+            if (!item.recipe) throw new Error(m.error_missing_recipe());
             const refs = await Promise.all(
               item.inputFiles.map(async (path, i) => ({
                 ...(await api.importImage(path)),
@@ -325,7 +336,7 @@ export function useGenerationTasks(
             const mask = item.maskFile
               ? {
                   ...(await api.importImage(item.maskFile)),
-                  name: item.recipe.maskName ?? "编辑蒙版",
+                  name: item.recipe.maskName ?? m.name_mask(),
                 }
               : null;
             const snapshot = readDraft({ ...item.recipe, refs, mask });
@@ -348,7 +359,7 @@ export function useGenerationTasks(
               {
                 ...item,
                 status: "failed",
-                error: "任务恢复失败：" + String(e),
+                error: m.error_restore_failed({ detail: String(e) }),
               },
               [],
             );
@@ -360,7 +371,9 @@ export function useGenerationTasks(
           for (const job of restored) void run(job);
         }
       } catch (e) {
-        callbacks.current.onNotice("任务读取失败：" + String(e));
+        callbacks.current.onNotice(
+          m.notice_task_read_failed({ detail: String(e) }),
+        );
       }
     };
     void restore();

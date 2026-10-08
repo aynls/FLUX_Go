@@ -1,4 +1,5 @@
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { m } from "../i18n";
 
 export const MIN_REFERENCE_WIDTH = 180;
 export const MAX_REFERENCE_WIDTH = 420;
@@ -51,7 +52,7 @@ export default function ResizableReferences({
     <div
       ref={panel}
       role="region"
-      aria-label="参考素材"
+      aria-label={m.references_panel()}
       style={{ "--reference-sidebar-width": `${value}px` } as CSSProperties}
       className={"reference-sidebar" + (resizing ? " resizing" : "")}
     >
@@ -59,7 +60,7 @@ export default function ResizableReferences({
       <div
         className="reference-resizer"
         role="separator"
-        aria-label="调整素材栏宽度"
+        aria-label={m.references_resize()}
         aria-orientation="vertical"
         aria-valuemin={MIN_REFERENCE_WIDTH}
         aria-valuemax={MAX_REFERENCE_WIDTH}

@@ -1,3 +1,4 @@
+import { m } from "../../i18n";
 import {
   RouteControls,
   PromptEditor,
@@ -14,7 +15,7 @@ export default function GptSidebar(p: WorkspaceControlsProps) {
         <RouteControls {...p} />
         <PromptEditor {...p} />
         <section>
-          <h2>输出与质量</h2>
+          <h2>{m.gpt_output()}</h2>
           <ParameterFields
             {...p}
             keys={[
@@ -28,7 +29,7 @@ export default function GptSidebar(p: WorkspaceControlsProps) {
           />
         </section>
         <details>
-          <summary>内容审核</summary>
+          <summary>{m.gpt_moderation()}</summary>
           <ParameterFields {...p} keys={["moderation"]} />
         </details>
         <InputOptions {...p} />

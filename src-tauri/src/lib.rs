@@ -34,7 +34,7 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?.join("workbench");
             let store = history::HistoryStore::new(dir.clone())
-                .map_err(|e| format!("初始化历史存储失败: {e}"))?;
+                .map_err(|e| format!("Couldn't initialize history storage: {e}"))?;
             // Register the existing, resolved image roots before the WebView reads assets.
             // Keep credentials, drafts and metadata outside the asset protocol scope.
             let assets = app.asset_protocol_scope();
@@ -68,5 +68,5 @@ pub fn run() {
             commands::gallery_delete,
         ])
         .run(tauri::generate_context!())
-        .expect("LutriUI 启动失败");
+        .expect("LutriUI failed to start");
 }

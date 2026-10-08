@@ -16,6 +16,7 @@ pub mod transport;
 pub use credentials::*;
 
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Map, Value};
 
 /// 与前端 src/lib/types.ts 的 GenerateRequest 对应
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -146,6 +147,12 @@ pub struct ProviderError {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub code: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub hint_code: String,
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub params: Map<String, Value>,
 }
 
 impl ProviderError {
@@ -154,10 +161,30 @@ impl ProviderError {
             status: None,
             message: message.into(),
             hint: None,
+            code: String::new(),
+            hint_code: String::new(),
+            params: Map::new(),
         }
+    }
+    pub fn coded(code: impl Into<String>, message: impl Into<String>) -> Self {
+        let mut error = Self::msg(message);
+        error.code = code.into();
+        error
+    }
+    pub fn with_param(mut self, key: impl Into<String>, value: impl Into<Value>) -> Self {
+        self.params.insert(key.into(), value.into());
+        self
     }
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
         self.hint = Some(hint.into());
+        self
+    }
+    pub fn with_hint_code(mut self, code: impl Into<String>) -> Self {
+        self.hint_code = code.into();
+        self
+    }
+    pub fn with_status(mut self, status: u16) -> Self {
+        self.status = Some(status);
         self
     }
     pub fn http(status: u16, message: impl Into<String>) -> Self {
@@ -165,11 +192,46 @@ impl ProviderError {
             status: Some(status),
             message: message.into(),
             hint: None,
+            code: String::new(),
+            hint_code: String::new(),
+            params: Map::new(),
         }
     }
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|_| self.message.clone())
     }
+}
+
+/// Tauri 命令错误统一以 ProviderError JSON 返回，前端按错误码本地化。
+impl From<ProviderError> for String {
+    fn from(error: ProviderError) -> Self {
+        error.to_json()
+    }
+}
+
+/// 结果备注：持久化稳定码和英文回退，界面按当前语言展示。
+pub fn localized_note(
+    code: &str,
+    message: impl Into<String>,
+    params: &[(&str, String)],
+) -> String {
+    let mut body = Map::new();
+    body.insert("code".into(), json!(code));
+    body.insert("message".into(), json!(message.into()));
+    if !params.is_empty() {
+        let mut values = Map::new();
+        for (key, value) in params {
+            values.insert((*key).into(), json!(value));
+        }
+        body.insert("params".into(), Value::Object(values));
+    }
+    serde_json::to_string(&body).unwrap_or_else(|_| code.to_string())
+}
+
+/// 本地文件或系统操作失败；系统原始细节只作为参数，文案由前端本地化。
+pub fn io_failed(error: impl std::fmt::Display) -> ProviderError {
+    ProviderError::coded("backend_io_failed", format!("File operation failed: {error}"))
+        .with_param("detail", error.to_string())
 }
 
 pub type ProviderResult = Result<GenerateOutput, ProviderError>;
@@ -184,7 +246,11 @@ pub async fn dispatch(req: &GenerateRequest) -> ProviderResult {
         "google" => google::generate(req).await,
         "xai" => xai::generate(req).await,
         "ark" | "byteplus" => ark::generate(req).await,
-        other => Err(ProviderError::msg(format!("未知提供商: {other}"))),
+        other => Err(ProviderError::coded(
+            "backend_unknown_provider",
+            format!("Unknown provider: {other}"),
+        )
+        .with_param("name", other)),
     }
 }
 
@@ -192,20 +258,41 @@ pub async fn dispatch(req: &GenerateRequest) -> ProviderResult {
 pub fn parse_data_url(url: &str) -> Result<(String, Vec<u8>), ProviderError> {
     let rest = url
         .strip_prefix("data:")
-        .ok_or_else(|| ProviderError::msg("图片必须以 data URL 形式提供"))?;
-    let (meta, b64) = rest
-        .split_once(";base64,")
-        .ok_or_else(|| ProviderError::msg("data URL 缺少 base64 载荷"))?;
+        .ok_or_else(|| {
+            ProviderError::coded(
+                "backend_data_url",
+                "Images must be provided as data URLs",
+            )
+        })?;
+    let (meta, b64) = rest.split_once(";base64,").ok_or_else(|| {
+        ProviderError::coded(
+            "backend_data_url_payload",
+            "The data URL has no base64 payload",
+        )
+    })?;
     let mime = meta.to_string();
     if !mime.starts_with("image/") {
-        return Err(ProviderError::msg(format!("不支持的图片类型: {mime}")));
+        return Err(ProviderError::coded(
+            "backend_image_type",
+            format!("Unsupported image type: {mime}"),
+        )
+        .with_param("type", mime));
     }
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(b64)
-        .map_err(|e| ProviderError::msg(format!("图片 base64 解码失败: {e}")))?;
+        .map_err(|e| {
+            ProviderError::coded(
+                "backend_base64",
+                format!("Couldn't decode the image base64: {e}"),
+            )
+            .with_param("detail", e.to_string())
+        })?;
     if bytes.is_empty() {
-        return Err(ProviderError::msg("图片内容为空"));
+        return Err(ProviderError::coded(
+            "backend_empty_image",
+            "The image is empty",
+        ));
     }
     Ok((mime, bytes))
 }

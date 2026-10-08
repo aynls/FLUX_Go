@@ -1,4 +1,5 @@
 //! 密钥来源和系统凭据存储，独立于模型与传输适配器。
+use super::ProviderError;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -62,19 +63,33 @@ pub fn init_key_settings(dir: &Path) -> Result<(), String> {
     let mut settings = default_key_settings();
     if path.exists() {
         let saved: HashMap<String, CredentialSettings> =
-            serde_json::from_slice(&std::fs::read(&path).map_err(|_| "密钥来源配置读取失败")?)
-                .map_err(|_| "密钥来源配置损坏")?;
+            serde_json::from_slice(&std::fs::read(&path).map_err(|_| {
+                ProviderError::coded(
+                    "backend_key_settings_read_failed",
+                    "Couldn't read the key source settings",
+                )
+            })?)
+            .map_err(|_| {
+                ProviderError::coded(
+                    "backend_key_settings_corrupt",
+                    "The key source settings are corrupt",
+                )
+            })?;
         for (p, config) in saved {
             validate_key_settings(&p, &config)?;
             settings.insert(p, config);
         }
     }
-    KEY_SETTINGS_PATH
-        .set(path)
-        .map_err(|_| "密钥来源配置重复初始化")?;
+    let reinitialized = || {
+        ProviderError::coded(
+            "backend_key_settings_reinitialized",
+            "The key source settings were initialized twice",
+        )
+    };
+    KEY_SETTINGS_PATH.set(path).map_err(|_| reinitialized())?;
     KEY_SETTINGS
         .set(RwLock::new(settings))
-        .map_err(|_| "密钥来源配置重复初始化")?;
+        .map_err(|_| reinitialized())?;
     Ok(())
 }
 
@@ -96,32 +111,68 @@ fn validate_key_settings(provider: &str, config: &CredentialSettings) -> Result<
         provider,
         "openrouter" | "bfl" | "comfy" | "runware" | "google" | "ark" | "byteplus" | "xai"
     ) {
-        return Err("未知提供商".into());
+        return Err(unknown_provider(provider));
     }
     if !matches!(config.source.as_str(), "environment" | "manual") {
-        return Err("密钥来源无效".into());
+        return Err(
+            ProviderError::coded("backend_key_source_invalid", "Invalid key source").into(),
+        );
     }
     let name = &config.env_name;
     if name.is_empty() || name.contains(['=', '\0', '\r', '\n']) {
-        return Err("请输入有效的环境变量名称（不含等号或换行）".into());
+        return Err(ProviderError::coded(
+            "backend_env_name_invalid",
+            "Enter a valid environment variable name (no equals sign or line breaks)",
+        )
+        .into());
     }
     Ok(())
+}
+pub fn unknown_provider(provider: &str) -> String {
+    ProviderError::coded(
+        "backend_unknown_provider",
+        format!("Unknown provider: {provider}"),
+    )
+    .with_param("name", provider)
+    .into()
 }
 
 pub fn save_key_settings(provider: &str, config: CredentialSettings) -> Result<(), String> {
     validate_key_settings(provider, &config)?;
-    let path = KEY_SETTINGS_PATH.get().ok_or("密钥来源存储尚未初始化")?;
+    let uninitialized = || {
+        ProviderError::coded(
+            "backend_key_settings_uninitialized",
+            "The key source storage isn't initialized yet",
+        )
+    };
+    let path = KEY_SETTINGS_PATH.get().ok_or_else(uninitialized)?;
     let mut guard = KEY_SETTINGS
         .get()
-        .ok_or("密钥来源尚未初始化")?
+        .ok_or_else(uninitialized)?
         .write()
-        .map_err(|_| "密钥来源暂不可用")?;
+        .map_err(|_| {
+            ProviderError::coded(
+                "backend_key_settings_unavailable",
+                "The key source settings are temporarily unavailable",
+            )
+        })?;
     let mut next = guard.clone();
     next.insert(provider.into(), config);
-    let bytes = serde_json::to_vec_pretty(&next).map_err(|_| "密钥来源配置序列化失败")?;
+    let save_failed = || {
+        ProviderError::coded(
+            "backend_key_settings_save_failed",
+            "Couldn't save the key source settings",
+        )
+    };
+    let bytes = serde_json::to_vec_pretty(&next).map_err(|_| {
+        ProviderError::coded(
+            "backend_key_settings_serialize_failed",
+            "Couldn't serialize the key source settings",
+        )
+    })?;
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, bytes).map_err(|_| "密钥来源配置保存失败")?;
-    std::fs::rename(tmp, path).map_err(|_| "密钥来源配置保存失败")?;
+    std::fs::write(&tmp, bytes).map_err(|_| save_failed())?;
+    std::fs::rename(tmp, path).map_err(|_| save_failed())?;
     *guard = next;
     Ok(())
 }
@@ -131,9 +182,15 @@ pub fn credential_entry(provider: &str) -> Result<keyring::Entry, String> {
         provider,
         "bfl" | "openrouter" | "comfy" | "runware" | "google" | "ark" | "byteplus" | "xai"
     ) {
-        return Err("未知提供商".into());
+        return Err(unknown_provider(provider));
     }
-    keyring::Entry::new("app.lutriui.desktop", provider).map_err(|_| "无法访问系统凭据存储".into())
+    keyring::Entry::new("app.lutriui.desktop", provider).map_err(|_| {
+        ProviderError::coded(
+            "backend_credential_store_unavailable",
+            "Couldn't access the system credential store",
+        )
+        .into()
+    })
 }
 
 pub fn stored_key(provider: &str) -> Option<String> {

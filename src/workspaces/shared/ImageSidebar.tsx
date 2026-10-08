@@ -1,3 +1,4 @@
+import { m } from "../../i18n";
 import {
   RouteControls,
   PromptEditor,
@@ -18,7 +19,7 @@ export default function ImageSidebar(p: WorkspaceControlsProps) {
         <RouteControls {...p} />
         <PromptEditor {...p} />
         <section>
-          <h2>画面尺寸</h2>
+          <h2>{m.frame_size()}</h2>
           {fields.width ? (
             <QwenSizeFields {...p} />
           ) : (
@@ -27,18 +28,18 @@ export default function ImageSidebar(p: WorkspaceControlsProps) {
           {p.draft.family === "seedream" &&
             fields.width?.nullable &&
             p.draft.params.width == null && (
-              <p className="help">在提示词中描述画面比例，或选择自定义尺寸。</p>
+              <p className="help">{m.frame_ratio_help()}</p>
             )}
         </section>
         {(fields.seed || fields.quality) && (
           <section>
-            <h2>生成控制</h2>
+            <h2>{m.generation_controls()}</h2>
             <ParameterFields {...p} keys={["quality", "seed"]} />
           </section>
         )}
         {(fields.outputFormat || fields.watermark) && (
           <details>
-            <summary>输出文件</summary>
+            <summary>{m.output_file()}</summary>
             <ParameterFields
               {...p}
               keys={["outputFormat", "outputCompression", "watermark"]}
@@ -47,7 +48,7 @@ export default function ImageSidebar(p: WorkspaceControlsProps) {
         )}
         {(fields.thinkingLevel || fields.searchMode) && (
           <details>
-            <summary>思考与联网</summary>
+            <summary>{m.thinking_search()}</summary>
             <ParameterFields
               {...p}
               keys={[

@@ -2,6 +2,7 @@
 // 定价来自 OpenRouter /api/v1/images/models/.../endpoints 记录（2026-10-05）。
 
 import type { GenerateParams, ProviderId } from "./types";
+import { m } from "../i18n";
 
 export interface ResolutionOption {
   value: string;
@@ -72,17 +73,17 @@ export function validateParams(
 ): string[] {
   const errors: string[] = [];
   if (!RESOLUTIONS.some((r) => r.value === p.resolution)) {
-    errors.push(`分辨率 ${p.resolution} 无效（允许 768/1K/1.5K/2K/4K）`);
+    errors.push(m.error_resolution_invalid({ value: String(p.resolution) }));
   }
   if (!ASPECT_RATIOS.includes(p.aspectRatio ?? "")) {
-    errors.push(`宽高比 ${p.aspectRatio} 无效`);
+    errors.push(m.error_aspect_invalid({ value: String(p.aspectRatio) }));
   }
-  if (p.version && p.version !== "latest") errors.push("模型版本仅支持 latest");
+  if (p.version && p.version !== "latest") errors.push(m.error_version_latest());
   if (p.safetyTolerance != null) {
     const v = p.safetyTolerance;
     const max = 4;
     if (!Number.isInteger(v) || v < 0 || v > max) {
-      errors.push(`safety_tolerance 必须是 0–${max} 的整数，或留空`);
+      errors.push(m.error_safety_tolerance({ max }));
     }
   }
   return errors;

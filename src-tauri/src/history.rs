@@ -4,6 +4,13 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::provider::{io_failed, ProviderError};
+
+/// 历史错误以稳定码持久化，前端按当前语言展示。
+fn coded(code: &str, message: impl Into<String>) -> ProviderError {
+    ProviderError::coded(code, message)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryItem {
@@ -76,8 +83,7 @@ impl HistoryStore {
             for item in &mut items {
                 if item.status == "running" {
                     item.status = "interrupted".into();
-                    item.error =
-                        Some("应用关闭时任务尚未完成；供应商可能仍在处理，未自动重新提交。".into());
+                    item.error = Some("backend_task_interrupted".into());
                     if let Some(requests) = item
                         .batch
                         .as_mut()
@@ -113,15 +119,35 @@ impl HistoryStore {
         if !p.exists() {
             return Ok(Vec::new());
         }
-        let text = std::fs::read_to_string(&p).map_err(|e| format!("读取历史索引失败: {e}"))?;
-        serde_json::from_str(&text).map_err(|e| format!("历史索引损坏: {e}"))
+        let text = std::fs::read_to_string(&p).map_err(|e| {
+            coded(
+                "backend_history_index_read",
+                format!("Couldn't read the history index: {e}"),
+            )
+            .with_param("detail", e.to_string())
+        })?;
+        serde_json::from_str(&text).map_err(|e| {
+            coded(
+                "backend_history_index_corrupt",
+                format!("The history index is corrupt: {e}"),
+            )
+            .with_param("detail", e.to_string())
+            .into()
+        })
     }
 
     fn write_index(&self, items: &[HistoryItem]) -> Result<(), String> {
-        let json = serde_json::to_string_pretty(items).map_err(|e| e.to_string())?;
+        let json = serde_json::to_string_pretty(items).map_err(io_failed)?;
         let tmp = self.index_path().with_extension("json.tmp");
-        std::fs::write(&tmp, json).map_err(|e| format!("写入历史索引失败: {e}"))?;
-        std::fs::rename(&tmp, self.index_path()).map_err(|e| format!("写入历史索引失败: {e}"))?;
+        let write_failed = |e: std::io::Error| {
+            coded(
+                "backend_history_index_write",
+                format!("Couldn't write the history index: {e}"),
+            )
+            .with_param("detail", e.to_string())
+        };
+        std::fs::write(&tmp, json).map_err(write_failed)?;
+        std::fs::rename(&tmp, self.index_path()).map_err(write_failed)?;
         Ok(())
     }
 
@@ -180,7 +206,12 @@ impl HistoryStore {
                 if p.is_absolute() {
                     *path = p
                         .strip_prefix(&self.dir)
-                        .map_err(|_| "历史图片路径不属于本地历史目录")?
+                        .map_err(|_| {
+                            coded(
+                                "backend_history_image_path",
+                                "The history image path is outside the local history folder",
+                            )
+                        })?
                         .to_string_lossy()
                         .replace('\\', "/");
                 }
@@ -191,16 +222,21 @@ impl HistoryStore {
             if p.is_absolute() {
                 *path = p
                     .strip_prefix(&self.dir)
-                    .map_err(|_| "历史蒙版路径不属于本地历史目录")?
+                    .map_err(|_| {
+                        coded(
+                            "backend_history_mask_path",
+                            "The history mask path is outside the local history folder",
+                        )
+                    })?
                     .to_string_lossy()
                     .replace('\\', "/");
             }
         }
         if item.id.trim().is_empty() {
-            return Err("历史条目缺少 id".into());
+            return Err(coded("backend_history_missing_id", "The history entry has no id").into());
         }
         let img_dir = self.dir.join("images").join(&item.id);
-        std::fs::create_dir_all(&img_dir).map_err(|e| format!("创建历史目录失败: {e}"))?;
+        std::fs::create_dir_all(&img_dir).map_err(io_failed)?;
         for f in files {
             if f.kind == "result" {
                 let id = self.gallery.generated(&f.data, &f.name, &item)?;
@@ -209,18 +245,24 @@ impl HistoryStore {
                 }
                 continue;
             }
-            let (mime, bytes) = crate::provider::parse_data_url(&f.data).map_err(|e| e.message)?;
+            let (mime, bytes) = crate::provider::parse_data_url(&f.data)?;
             let ext = match mime.as_str() {
                 "image/png" => "png",
                 "image/jpeg" => "jpg",
                 "image/webp" => "webp",
                 "image/gif" => "gif",
-                other => return Err(format!("不支持的历史图片类型: {other}")),
+                other => {
+                    return Err(coded(
+                        "backend_history_image_type",
+                        format!("Unsupported history image type: {other}"),
+                    )
+                    .with_param("type", other)
+                    .into())
+                }
             };
             let base = sanitize_name(&f.name);
             let file_name = format!("{base}.{ext}");
-            std::fs::write(img_dir.join(&file_name), &bytes)
-                .map_err(|e| format!("写入历史图片失败: {e}"))?;
+            std::fs::write(img_dir.join(&file_name), &bytes).map_err(io_failed)?;
             let rel = format!("images/{}/{file_name}", item.id);
             match f.kind.as_str() {
                 "input" => {
@@ -229,7 +271,14 @@ impl HistoryStore {
                     }
                 }
                 "mask" => item.mask_file = Some(rel),
-                _ => return Err(format!("未知历史文件类型: {}", f.kind)),
+                _ => {
+                    return Err(coded(
+                        "backend_history_file_kind",
+                        format!("Unknown history file type: {}", f.kind),
+                    )
+                    .with_param("kind", f.kind.clone())
+                    .into())
+                }
             }
         }
         items.retain(|it| it.id != item.id);
@@ -255,7 +304,11 @@ impl HistoryStore {
             .iter()
             .any(|it| it.id == id && matches!(it.status.as_str(), "queued" | "running"))
         {
-            return Err("请先取消等待任务，或等待正在执行的任务完成后再删除".into());
+            return Err(coded(
+                "backend_history_busy",
+                "Cancel queued tasks or wait for running tasks to finish before deleting",
+            )
+            .into());
         }
         items.retain(|it| it.id != id);
         self.write_index(&items)?;
@@ -284,7 +337,7 @@ fn validate_id(id: &str) -> Result<(), String> {
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
-        return Err("历史 ID 无效".into());
+        return Err(coded("backend_history_id_invalid", "The history ID is invalid").into());
     }
     Ok(())
 }
@@ -309,11 +362,12 @@ fn sanitize_name(name: &str) -> String {
 
 /// 把 data URL 解码写到任意路径（用于「另存为」）
 pub fn write_data_url(data_url: &str, path: &std::path::Path) -> Result<(), String> {
-    let (_mime, bytes) = crate::provider::parse_data_url(data_url).map_err(|e| e.message)?;
+    let (_mime, bytes) = crate::provider::parse_data_url(data_url)?;
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
+        std::fs::create_dir_all(parent).map_err(io_failed)?;
     }
-    std::fs::write(path, bytes).map_err(|e| format!("写入文件失败: {e}"))
+    std::fs::write(path, bytes).map_err(io_failed)?;
+    Ok(())
 }
 
 #[cfg(test)]

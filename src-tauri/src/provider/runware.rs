@@ -1,6 +1,7 @@
 //! Runware Models API：统一任务协议、结构化 FLUX 区域和白色编辑蒙版。
 use super::{
-    transport, GenerateOutput, GenerateRequest, OutputImage, ProviderError, ProviderResult,
+    localized_note, transport, GenerateOutput, GenerateRequest, OutputImage, ProviderError,
+    ProviderResult,
 };
 use base64::Engine;
 use serde_json::{json, Value};
@@ -106,7 +107,12 @@ pub fn build_payload(req: &GenerateRequest, task_id: &str) -> Result<Value, Prov
                 let key = m.route["dimensionsKey"].as_str().unwrap_or(m.id);
                 let pair = crate::models::catalog()["imageDimensions"][key][resolution][aspect]
                     .as_array()
-                    .ok_or_else(|| ProviderError::msg("Gemini 分辨率或比例无效"))?;
+                    .ok_or_else(|| {
+                        ProviderError::coded(
+                            "backend_gemini_dimensions",
+                            "The Gemini resolution or aspect ratio is invalid",
+                        )
+                    })?;
                 task["width"] = pair[0].clone();
                 task["height"] = pair[1].clone();
             }
@@ -123,7 +129,13 @@ pub fn build_payload(req: &GenerateRequest, task_id: &str) -> Result<Value, Prov
             } else {
                 let key = m.route["dimensionsKey"].as_str().unwrap_or(m.id);
                 let pair = crate::models::catalog()["imageDimensions"][key][resolution][aspect]
-                    .as_array().ok_or_else(|| ProviderError::msg("Grok 分辨率或比例无效"))?;
+                    .as_array()
+                    .ok_or_else(|| {
+                        ProviderError::coded(
+                            "backend_grok_dimensions",
+                            "The Grok resolution or aspect ratio is invalid",
+                        )
+                    })?;
                 task["width"] = pair[0].clone();
                 task["height"] = pair[1].clone();
             }
@@ -134,29 +146,54 @@ pub fn build_payload(req: &GenerateRequest, task_id: &str) -> Result<Value, Prov
                     [p.resolution.as_deref().unwrap_or("2K")]
                     [p.aspect_ratio.as_deref().unwrap_or("1:1")]
                 .as_array()
-                .ok_or_else(|| ProviderError::msg("Seedream 分辨率或比例无效"))?;
+                .ok_or_else(|| {
+                    ProviderError::coded(
+                        "backend_seedream_dimensions",
+                        "The Seedream resolution or aspect ratio is invalid",
+                    )
+                })?;
                 task["width"] = pair[0].clone();
                 task["height"] = pair[1].clone();
             } else {
                 task["width"] = json!(p
                     .width
-                    .ok_or_else(|| ProviderError::msg("Seedream 需要输出宽度"))?);
+                    .ok_or_else(|| {
+                        ProviderError::coded(
+                            "backend_seedream_width",
+                            "Seedream requires an output width",
+                        )
+                    })?);
                 task["height"] = json!(p
                     .height
-                    .ok_or_else(|| ProviderError::msg("Seedream 需要输出高度"))?);
+                    .ok_or_else(|| {
+                        ProviderError::coded(
+                            "backend_seedream_height",
+                            "Seedream requires an output height",
+                        )
+                    })?);
             }
             if m.id == "seedream-5-lite" {
                 task["settings"] = json!({"maxSequentialImages":1});
             }
         }
-        _ => return Err(ProviderError::msg("Runware 尚未实现该模型家族的编码")),
+        _ => {
+            return Err(ProviderError::coded(
+                "backend_runware_family",
+                "Runware cannot encode this model family yet",
+            ))
+        }
     }
     Ok(json!([task]))
 }
 pub fn flux_dimensions(resolution: &str, aspect: &str) -> Result<(u32, u32), ProviderError> {
     let pair = crate::models::catalog()["fluxDimensions"][resolution][aspect]
         .as_array()
-        .ok_or_else(|| ProviderError::msg("Runware FLUX 分辨率或比例无效"))?;
+        .ok_or_else(|| {
+            ProviderError::coded(
+                "backend_runware_flux_dimensions",
+                "The Runware FLUX resolution or aspect ratio is invalid",
+            )
+        })?;
     Ok((
         pair[0].as_u64().unwrap() as u32,
         pair[1].as_u64().unwrap() as u32,
@@ -165,7 +202,7 @@ pub fn flux_dimensions(resolution: &str, aspect: &str) -> Result<(u32, u32), Pro
 pub fn white_edit_mask(mask: &str) -> Result<String, ProviderError> {
     let (_, bytes) = super::parse_data_url(mask)?;
     let im = image::load_from_memory(&bytes)
-        .map_err(|_| ProviderError::msg("蒙版解码失败"))?
+        .map_err(|_| ProviderError::coded("backend_mask_decode", "Couldn't decode the mask"))?
         .to_rgba8();
     let gray = image::GrayImage::from_fn(im.width(), im.height(), |x, y| {
         image::Luma([if im.get_pixel(x, y).0[3] == 0 { 255 } else { 0 }])
@@ -173,7 +210,7 @@ pub fn white_edit_mask(mask: &str) -> Result<String, ProviderError> {
     let mut output = std::io::Cursor::new(Vec::new());
     image::DynamicImage::ImageLuma8(gray)
         .write_to(&mut output, image::ImageFormat::Png)
-        .map_err(|_| ProviderError::msg("蒙版转换失败"))?;
+        .map_err(|_| ProviderError::coded("backend_mask_convert", "Couldn't convert the mask"))?;
     Ok(format!(
         "data:image/png;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(output.into_inner())
@@ -190,7 +227,10 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     if uuid::Uuid::parse_str(&id).is_err() {
-        return Err(ProviderError::msg("任务标识须为 UUID"));
+        return Err(ProviderError::coded(
+            "backend_task_uuid",
+            "The task id must be a UUID",
+        ));
     }
     let payload = build_payload(req, &id)?;
     let (_, mut body) = transport::json(
@@ -205,16 +245,27 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
     super::progress::report("waiting", Some(&id), Some(0), None);
     let deadline = Instant::now() + Duration::from_secs(900);
     let expected = req.params.count.unwrap_or(1) as usize;
-    let mut notes = vec![format!("Runware 任务 {id}")];
+    let mut notes = vec![localized_note(
+        "backend_runware_task",
+        format!("Runware task {id}"),
+        &[("id", id.clone())],
+    )];
     let mut interval = 2;
     loop {
         let terminal_error = collect_results(&body, &id, &mut results);
         super::progress::report("waiting", Some(&id), Some(results.len()), None);
         if let Some(error) = terminal_error {
             if results.is_empty() {
-                return Err(ProviderError::msg(error).with_hint(format!("任务 {id}；未自动重试。")));
+                return Err(runware_failure(error)
+                    .with_hint(format!("Task {id}; not retried automatically."))
+                    .with_hint_code("backend_task_not_retried")
+                    .with_param("id", id.clone()));
             }
-            notes.push(format!("部分结果失败：{error}"));
+            notes.push(localized_note(
+                "backend_runware_partial_failed",
+                format!("Some results failed: {error}"),
+                &[("detail", error.clone())],
+            ));
             break;
         }
         if results.len() >= expected {
@@ -222,10 +273,21 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
         }
         if Instant::now() >= deadline {
             if results.is_empty() {
-                return Err(ProviderError::msg("Runware 等待结果超时")
-                    .with_hint(format!("任务 {id} 可能仍在运行；未重新提交。")));
+                return Err(ProviderError::coded(
+                    "backend_runware_timeout",
+                    "Timed out waiting for the Runware result",
+                )
+                .with_hint(format!(
+                    "Task {id} may still be running. It was not submitted again."
+                ))
+                .with_hint_code("backend_task_still_running")
+                .with_param("id", id.clone()));
             }
-            notes.push("部分结果仍未返回，已保存收到的图片；未重新生成。".into());
+            notes.push(localized_note(
+                "backend_runware_partial_missing",
+                "Some results are still missing. Received images were saved; nothing was generated again.",
+                &[],
+            ));
             break;
         }
         tokio::time::sleep(Duration::from_secs(interval)).await;
@@ -241,13 +303,22 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
         {
             Ok((_, next)) => body = next,
             Err(e) if !results.is_empty() => {
-                notes.push(format!(
-                    "读取后续结果失败：{}；已保存收到的图片。",
-                    e.message
+                notes.push(localized_note(
+                    "backend_runware_later_results",
+                    format!(
+                        "Couldn't read later results: {}. Received images were saved.",
+                        e.message
+                    ),
+                    &[("detail", e.message.clone())],
                 ));
                 break;
             }
-            Err(e) => return Err(e.with_hint(format!("已提交任务 {id}；未重新生成。"))),
+            Err(e) => {
+                return Err(e
+                    .with_hint(format!("Submitted task {id}; nothing was generated again."))
+                    .with_hint_code("backend_task_submitted")
+                    .with_param("id", id.clone()))
+            }
         }
     }
     let mut images: Vec<OutputImage> = Vec::new();
@@ -278,7 +349,10 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
         }
     }
     if images.is_empty() {
-        return Err(ProviderError::msg("Runware 没有返回图片"));
+        return Err(ProviderError::coded(
+            "backend_runware_no_image",
+            "Runware returned no image",
+        ));
     }
     let usage = if has_cost {
         json!({"cost":cost})
@@ -324,7 +398,17 @@ pub fn collect_results(
         .map(|e| {
             e["message"]
                 .as_str()
-                .unwrap_or("Runware 任务失败")
+                .unwrap_or(RUNWARE_TASK_FAILED)
                 .to_string()
         })
+}
+
+const RUNWARE_TASK_FAILED: &str = "Runware task failed";
+
+fn runware_failure(detail: String) -> ProviderError {
+    ProviderError::coded(
+        "backend_runware_task_failed",
+        format!("Runware task failed: {detail}"),
+    )
+    .with_param("detail", detail)
 }

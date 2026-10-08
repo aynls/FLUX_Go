@@ -51,7 +51,10 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
         "gemini" => super::google::native_payload(req, true),
         "seedream" => super::ark::native_payload(req),
         "grok" => super::xai::build_payload(req),
-        _ => Err(ProviderError::msg("Comfy 尚未实现该模型家族的请求编码")),
+        _ => Err(ProviderError::coded(
+            "backend_comfy_family",
+            "Comfy cannot encode this model family yet",
+        )),
     }
 }
 pub async fn generate(req: &GenerateRequest) -> ProviderResult {
@@ -76,7 +79,9 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(900))
         .build()
-        .map_err(|_| ProviderError::msg("Comfy HTTP 客户端初始化失败"))?;
+        .map_err(|_| {
+            ProviderError::coded("backend_comfy_client", "Couldn't initialize the Comfy HTTP client")
+        })?;
     let (_, submit, _, mut actual_credits) = transport::json_with_metadata(
         client
             .post(&url)
@@ -103,7 +108,12 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         })
-        .ok_or_else(|| ProviderError::msg("Comfy 提交响应缺少有效 request_id"))?;
+        .ok_or_else(|| {
+            ProviderError::coded(
+                "backend_comfy_missing_request_id",
+                "The Comfy submit response is missing a valid request_id",
+            )
+        })?;
     let result_url = format!("{url}/{id}");
     super::progress::report("waiting", Some(id), None, None);
     let deadline = Instant::now() + Duration::from_secs(900);
@@ -132,7 +142,12 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
                 interval = Duration::from_secs(2 * read_failures);
                 continue;
             }
-            Err(e) => return Err(e.with_hint(format!("已提交任务 {id}；未自动重新生成。"))),
+            Err(e) => {
+                return Err(e
+                    .with_hint(format!("Submitted task {id}; nothing was generated again."))
+                    .with_hint_code("backend_task_submitted")
+                    .with_param("id", id))
+            }
         };
         interval = retry_after.unwrap_or(Duration::from_secs(2));
         if credits.is_some() {
@@ -156,14 +171,24 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
             break body;
         }
         if matches!(body["status"].as_str(), Some("FAILED" | "CANCELLED")) {
-            return Err(ProviderError::msg(format!(
-                "Comfy 任务 {id} 终止：{}",
-                body["status"]
-            )));
+            return Err(ProviderError::coded(
+                "backend_comfy_task_ended",
+                format!(
+                    "Comfy task {id} ended: {}",
+                    body["status"].as_str().unwrap_or_default()
+                ),
+            )
+            .with_param("id", id)
+            .with_param("status", body["status"].as_str().unwrap_or_default()));
         }
         if Instant::now() > deadline {
-            return Err(ProviderError::msg("Comfy 等待结果超时")
-                .with_hint(format!("任务 {id} 可能仍在运行；未重新提交。")));
+            return Err(ProviderError::coded(
+                "backend_comfy_timeout",
+                "Timed out waiting for the Comfy result",
+            )
+            .with_hint(format!("Task {id} may still be running. It was not submitted again."))
+            .with_hint_code("backend_task_still_running")
+            .with_param("id", id));
         }
     };
     let mut out = normalize(req, &body, Some(id)).await?;
@@ -185,7 +210,12 @@ pub async fn normalize(req: &GenerateRequest, body: &Value, job: Option<&str>) -
             transport::download_image(
                 body.pointer("/result/sample")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| ProviderError::msg("Comfy FLUX 响应缺少结果图片"))?,
+                    .ok_or_else(|| {
+                        ProviderError::coded(
+                            "backend_comfy_flux_missing_image",
+                            "The Comfy FLUX response has no result image",
+                        )
+                    })?,
             )
             .await?,
         ],
@@ -193,7 +223,12 @@ pub async fn normalize(req: &GenerateRequest, body: &Value, job: Option<&str>) -
             let choices = body
                 .pointer("/output/choices")
                 .and_then(Value::as_array)
-                .ok_or_else(|| ProviderError::msg("Comfy Qwen 响应缺少结果"))?;
+                .ok_or_else(|| {
+                    ProviderError::coded(
+                        "backend_comfy_qwen_missing_result",
+                        "The Comfy Qwen response has no result",
+                    )
+                })?;
             let mut images = Vec::new();
             for choice in choices {
                 if let Some(content) = choice.pointer("/message/content").and_then(Value::as_array)
@@ -206,13 +241,21 @@ pub async fn normalize(req: &GenerateRequest, body: &Value, job: Option<&str>) -
                 }
             }
             if images.is_empty() {
-                return Err(ProviderError::msg("Comfy Qwen 没有返回图片"));
+                return Err(ProviderError::coded(
+                    "backend_comfy_qwen_no_image",
+                    "Comfy Qwen returned no image",
+                ));
             }
             images
         }
         "gemini" => super::google::images(body).await?,
         "grok" => super::xai::images(body).await?,
-        _ => return Err(ProviderError::msg("Comfy 结果格式未实现")),
+        _ => {
+            return Err(ProviderError::coded(
+                "backend_comfy_result_format",
+                "Comfy result format is not implemented",
+            ))
+        }
     };
     let mut usage = body
         .get("usage")
@@ -230,11 +273,7 @@ pub async fn normalize(req: &GenerateRequest, body: &Value, job: Option<&str>) -
         images,
         usage: Value::Object(usage),
         notes: job
-            .map(|id| {
-                vec![format!(
-                    "Comfy 任务 {id}；实际扣费以 Comfy 返回的 Credits 为准。"
-                )]
-            })
+            .map(|_| vec!["backend_comfy_billing_note".to_string()])
             .unwrap_or_default(),
     })
 }

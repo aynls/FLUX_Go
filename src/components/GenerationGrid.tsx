@@ -1,4 +1,6 @@
 import type { SavedResult } from "../app/generation";
+import { m, formatTime } from "../i18n";
+import { modelLabel } from "../labels";
 import { modelByAnyId } from "../models/catalog";
 
 export default function GenerationGrid(p: {
@@ -10,26 +12,29 @@ export default function GenerationGrid(p: {
     <div className="generation-grid-scroll">
       {!p.attempts.length && (
         <div className="gallery-empty">
-          <strong>描述你想生成的画面</strong>
-          <p>候选图片会逐张显示在这里</p>
+          <strong>{m.grid_empty_title()}</strong>
+          <p>{m.grid_empty_help()}</p>
         </div>
       )}
       {[...p.attempts].reverse().map((attempt) => (
         <section className="generation-batch" key={attempt.item.id}>
           <div className="generation-batch-heading">
             <strong>
-              {modelByAnyId(attempt.out.model)?.label ?? attempt.out.model}
+              {modelLabel(
+                attempt.out.model,
+                modelByAnyId(attempt.out.model)?.label ?? attempt.out.model,
+              )}
             </strong>
             <span>
-              {attempt.out.images.length} 张
+              {m.count_images({ count: attempt.out.images.length })}
               {attempt.item.status === "running"
                 ? attempt.item.batch?.stopped
-                  ? " · 等待当前结果"
-                  : " · 继续生成中"
+                  ? m.grid_waiting()
+                  : m.grid_continuing()
                 : attempt.item.batch?.stopped
-                  ? " · 已停止后续生成"
+                  ? m.grid_stopped()
                   : attempt.item.status === "partial"
-                    ? " · 部分完成"
+                    ? m.grid_partial()
                     : ""}
             </span>
           </div>
@@ -47,13 +52,16 @@ export default function GenerationGrid(p: {
                   aria-pressed={active}
                   aria-label={
                     attempt.item.id === p.selected?.item.id
-                      ? `查看结果 ${index + 1}`
-                      : `查看批次 ${new Date(attempt.item.createdAt).toLocaleTimeString()} 结果 ${index + 1}`
+                      ? m.grid_view({ index: index + 1 })
+                      : m.grid_view_batch({
+                          time: formatTime(attempt.item.createdAt),
+                          index: index + 1,
+                        })
                   }
                 >
                   <img
                     src={im.dataUrl}
-                    alt={`候选图片 ${index + 1}`}
+                    alt={m.grid_candidate({ index: index + 1 })}
                     loading="lazy"
                   />
                   <span>{index + 1}</span>

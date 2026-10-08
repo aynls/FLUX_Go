@@ -1,6 +1,19 @@
 //! Owned image assets. Generation keys survive deletion so retries cannot resurrect assets.
+use crate::provider::{io_failed, ProviderError};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf};
+
+fn coded(code: &str, message: impl Into<String>) -> ProviderError {
+    ProviderError::coded(code, message)
+}
+
+fn image_too_large() -> String {
+    coded(
+        "backend_image_too_large",
+        "The image file exceeds the 64MB limit",
+    )
+    .into()
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,20 +65,33 @@ impl GalleryStore {
         if !path.exists() {
             return Ok(Index::default());
         }
-        let index: Index = serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
-            .map_err(|e| format!("图库索引损坏，原文件已保留：{e}"))?;
+        let index: Index = serde_json::from_slice(&std::fs::read(path).map_err(io_failed)?)
+            .map_err(|e| {
+                coded(
+                    "backend_gallery_index_corrupt",
+                    format!("The gallery index is corrupt; the original file was kept: {e}"),
+                )
+                .with_param("detail", e.to_string())
+            })?;
         for item in &index.items {
-            uuid::Uuid::parse_str(&item.id).map_err(|_| "图库图片 ID 无效")?;
+            uuid::Uuid::parse_str(&item.id).map_err(|_| gallery_id_invalid())?;
             extension(&item.mime)?;
         }
         Ok(index)
     }
     fn write(&self, index: &Index) -> Result<(), String> {
         let temp = self.dir.join("index.json.tmp");
-        std::fs::write(&temp, serde_json::to_vec(index).map_err(|e| e.to_string())?)
-            .map_err(|e| format!("图库记录保存失败：{e}"))?;
-        std::fs::rename(temp, self.dir.join("index.json"))
-            .map_err(|e| format!("图库记录保存失败：{e}"))
+        let save_failed = |e: std::io::Error| {
+            coded(
+                "backend_gallery_write_failed",
+                format!("Couldn't save the gallery record: {e}"),
+            )
+            .with_param("detail", e.to_string())
+        };
+        std::fs::write(&temp, serde_json::to_vec(index).map_err(io_failed)?)
+            .map_err(save_failed)?;
+        std::fs::rename(temp, self.dir.join("index.json")).map_err(save_failed)?;
+        Ok(())
     }
     fn paths(&self, mut item: GalleryItem) -> Result<GalleryItem, String> {
         let dir = self.dir.join("images").join(&item.id);
@@ -88,12 +114,21 @@ impl GalleryStore {
             .items
             .into_iter()
             .find(|i| i.id == id && !i.pending_delete)
-            .ok_or("图片已从图库删除")?;
+            .ok_or_else(|| {
+                coded(
+                    "backend_gallery_deleted",
+                    "The image was deleted from the gallery",
+                )
+            })?;
         self.paths(item)
     }
     pub fn import(&self, data: &str, name: &str, source: &str) -> Result<GalleryItem, String> {
         if !["file", "clipboard", "url"].contains(&source) {
-            return Err("导入来源无效".into());
+            return Err(coded(
+                "backend_import_source_invalid",
+                "The import source is invalid",
+            )
+            .into());
         }
         self.add(data, name, source, None, None)
             .map(|(_, item)| item.unwrap())
@@ -104,9 +139,10 @@ impl GalleryStore {
         name: &str,
         history: &crate::history::HistoryItem,
     ) -> Result<String, String> {
+        // 默认名称由前端按当前语言补全，持久化的名称保持为空。
         self.add(
             data,
-            "生成图片",
+            "",
             "generated",
             Some((format!("{}/{}", history.id, name), history)),
             history.result_details.get(name).cloned(),
@@ -137,25 +173,38 @@ impl GalleryStore {
             }
         }
         if data.len() > 90_000_000 {
-            return Err("图片文件超过 64MB 限制".into());
+            return Err(image_too_large());
         }
-        let (_, bytes) = crate::provider::parse_data_url(data).map_err(|e| e.message)?;
+        let (_, bytes) = crate::provider::parse_data_url(data)?;
         if bytes.len() > 64 * 1024 * 1024 {
-            return Err("图片文件超过 64MB 限制".into());
+            return Err(image_too_large());
         }
         let reader = image::ImageReader::new(std::io::Cursor::new(&bytes))
             .with_guessed_format()
-            .map_err(|e| e.to_string())?;
-        let format = reader.format().ok_or("无法识别图片格式")?;
+            .map_err(io_failed)?;
+        let format = reader.format().ok_or_else(|| {
+            coded(
+                "backend_image_unrecognized",
+                "Couldn't recognize the image format",
+            )
+        })?;
         let mime = format.to_mime_type().to_string();
         let ext = extension(&mime)?;
-        let (width, height) = reader
-            .into_dimensions()
-            .map_err(|e| format!("无法读取图片尺寸：{e}"))?;
+        let (width, height) = reader.into_dimensions().map_err(|_| {
+            coded(
+                "backend_image_dimensions_unreadable",
+                "Couldn't read the image dimensions",
+            )
+        })?;
         if width == 0 || height == 0 || u64::from(width) * u64::from(height) > 64_000_000 {
-            return Err("图片面积超过 64MP，请缩小后导入".into());
+            return Err(coded(
+                "backend_image_area_64mp",
+                "The image area exceeds 64MP. Reduce it before importing",
+            )
+            .into());
         }
-        let image = image::load_from_memory(&bytes).map_err(|e| format!("无法解码图片：{e}"))?;
+        let image = image::load_from_memory(&bytes)
+            .map_err(|_| coded("backend_image_decode_failed", "Couldn't decode the image"))?;
         let item = GalleryItem {
             details,
             id: uuid::Uuid::new_v4().to_string(),
@@ -176,14 +225,13 @@ impl GalleryStore {
             pending_delete: false,
         };
         let dir = self.dir.join("images").join(&item.id);
-        std::fs::create_dir(&dir).map_err(|e| format!("无法创建图片目录：{e}"))?;
+        std::fs::create_dir(&dir).map_err(io_failed)?;
         let written = (|| -> Result<(), String> {
-            std::fs::write(dir.join(format!("original.{ext}")), bytes)
-                .map_err(|e| e.to_string())?;
+            std::fs::write(dir.join(format!("original.{ext}")), bytes).map_err(io_failed)?;
             image
                 .thumbnail(384, 384)
                 .save_with_format(dir.join("thumbnail.png"), image::ImageFormat::Png)
-                .map_err(|e| e.to_string())?;
+                .map_err(io_failed)?;
             index.items.push(item.clone());
             if let Some((key, _)) = generated {
                 index.generated.insert(key, item.id.clone());
@@ -192,12 +240,17 @@ impl GalleryStore {
         })();
         if let Err(error) = written {
             let _ = std::fs::remove_dir_all(&dir);
-            return Err(format!("图片尚未保存到图库：{error}"));
+            return Err(coded(
+                "backend_gallery_not_saved",
+                format!("The image wasn't saved to the gallery: {error}"),
+            )
+            .with_param("detail", error)
+            .into());
         }
         Ok((item.id.clone(), Some(self.paths(item)?)))
     }
     pub fn delete(&self, id: &str) -> Result<(), String> {
-        uuid::Uuid::parse_str(id).map_err(|_| "图库图片 ID 无效")?;
+        uuid::Uuid::parse_str(id).map_err(|_| gallery_id_invalid())?;
         let mut index = self.read()?;
         let Some(item) = index.items.iter_mut().find(|i| i.id == id) else {
             return Ok(());
@@ -207,11 +260,23 @@ impl GalleryStore {
         // Journal first: a crash cannot make a deleted generated image reappear on the next save.
         let dir = self.dir.join("images").join(id);
         if dir.exists() {
-            std::fs::remove_dir_all(dir).map_err(|e| format!("图片文件删除未完成，可重试：{e}"))?;
+            std::fs::remove_dir_all(dir).map_err(|e| {
+                coded(
+                    "backend_gallery_delete_pending",
+                    format!("The image file deletion didn't finish. You can retry: {e}"),
+                )
+                .with_param("detail", e.to_string())
+            })?;
         }
         index.items.retain(|i| i.id != id);
         self.write(&index)
     }
+}
+fn gallery_id_invalid() -> ProviderError {
+    coded(
+        "backend_gallery_id_invalid",
+        "The gallery image ID is invalid",
+    )
 }
 fn extension(mime: &str) -> Result<&'static str, String> {
     match mime {
@@ -219,7 +284,11 @@ fn extension(mime: &str) -> Result<&'static str, String> {
         "image/jpeg" => Ok("jpg"),
         "image/webp" => Ok("webp"),
         "image/gif" => Ok("gif"),
-        _ => Err("仅支持 PNG、JPEG、WebP 和 GIF 图片".into()),
+        _ => Err(coded(
+            "backend_format_unsupported",
+            "Only PNG, JPEG, WebP, and GIF images are supported",
+        )
+        .into()),
     }
 }
 

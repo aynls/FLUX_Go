@@ -21,14 +21,19 @@ fn client() -> &'static reqwest::Client {
         reqwest::Client::builder()
             .timeout(Duration::from_secs(300))
             .build()
-            .expect("构建 HTTP 客户端失败")
+            .expect("HTTP client initialization failed")
     })
 }
 
 fn read_key() -> Result<String, ProviderError> {
     super::configured_key("openrouter").ok_or_else(|| {
-        ProviderError::msg("尚未配置 OpenRouter API Key")
-            .with_hint("请在应用设置中检查所选密钥来源、环境变量名称或手动填写的密钥。")
+        ProviderError::coded(
+            "backend_missing_api_key",
+            "No OpenRouter API key is configured",
+        )
+        .with_param("provider", "OpenRouter")
+        .with_hint("Check the key source, environment variable, or saved key in Settings.")
+        .with_hint_code("backend_check_key_settings")
     })
 }
 
@@ -36,7 +41,10 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
     crate::models::validate(req)?;
     let model = crate::models::resolve(req)?;
     if req.final_prompt.trim().is_empty() {
-        return Err(ProviderError::msg("提示词不能为空"));
+        return Err(ProviderError::coded(
+            "backend_empty_prompt",
+            "The prompt cannot be empty",
+        ));
     }
     let mut p = Map::new();
     p.insert("model".into(), json!(model.wire_id()));
@@ -103,8 +111,13 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
         .send()
         .await
         .map_err(|e| {
-            ProviderError::msg(format!("无法连接 OpenRouter: {e}"))
-                .with_hint("请检查网络连接（该请求为同步付费调用，失败不会自动重试）。")
+            ProviderError::coded(
+                "backend_openrouter_connect",
+                format!("Couldn't connect to OpenRouter: {e}"),
+            )
+            .with_param("detail", e.to_string())
+            .with_hint("Check the network connection. This synchronous paid call is not retried.")
+            .with_hint_code("backend_sync_paid_no_retry")
         })?;
 
     let status = resp.status().as_u16();
@@ -117,38 +130,84 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
             .and_then(|v| v.as_str())
             .map(str::to_string)
             .unwrap_or_else(|| truncate(&text, 300));
-        let hint = match status {
-            401 => Some("API 密钥无效或已撤销，请检查 OPENROUTER_API_KEY。".to_string()),
-            402 => Some("OpenRouter 余额不足，请到 openrouter.ai/credits 充值。".to_string()),
-            413 => Some("请求体过大：尝试在高级设置中降低参考图尺寸上限。".to_string()),
-            429 => Some("请求过于频繁或超出额度，稍后再试。".to_string()),
-            500..=599 => Some("OpenRouter 或上游提供商临时故障，未自动重试。".to_string()),
-            _ => None,
+        let (hint, hint_code) = match status {
+            401 => (
+                Some("The API key is invalid or revoked. Check OPENROUTER_API_KEY.".to_string()),
+                "backend_openrouter_key",
+            ),
+            402 => (
+                Some(
+                    "OpenRouter credits are too low. Add credits at openrouter.ai/credits."
+                        .to_string(),
+                ),
+                "backend_openrouter_credits",
+            ),
+            413 => (
+                Some(
+                    "The request is too large. Lower the reference image size limit in advanced settings."
+                        .to_string(),
+                ),
+                "backend_openrouter_too_large",
+            ),
+            429 => (
+                Some("Too many requests, or the quota was exceeded. Try again later.".to_string()),
+                "backend_openrouter_rate",
+            ),
+            500..=599 => (
+                Some(
+                    "OpenRouter or an upstream provider failed temporarily. The request was not retried."
+                        .to_string(),
+                ),
+                "backend_openrouter_upstream",
+            ),
+            _ => (None, ""),
         };
         return Err(ProviderError {
             status: Some(status),
             message,
             hint,
+            code: String::new(),
+            hint_code: hint_code.to_string(),
+            params: Map::new(),
         });
     }
 
     let data = body
         .get("data")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| ProviderError::msg("OpenRouter 响应缺少 data 字段"))?;
+        .ok_or_else(|| {
+            ProviderError::coded(
+                "backend_openrouter_missing_data",
+                "The OpenRouter response is missing the data field",
+            )
+        })?;
     if data.is_empty() {
-        return Err(ProviderError::msg("OpenRouter 响应中没有图片"));
+        return Err(ProviderError::coded(
+            "backend_openrouter_no_image",
+            "The OpenRouter response contains no image",
+        ));
     }
     let mut images = Vec::new();
     for item in data {
         let b64 = item
             .get("b64_json")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| ProviderError::msg("响应图片缺少 b64_json"))?;
+            .ok_or_else(|| {
+                ProviderError::coded(
+                    "backend_missing_b64",
+                    "The response image is missing b64_json",
+                )
+            })?;
         use base64::Engine;
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(b64)
-            .map_err(|e| ProviderError::msg(format!("图片 base64 解码失败: {e}")))?;
+            .map_err(|e| {
+                ProviderError::coded(
+                    "backend_base64",
+                    format!("Couldn't decode the image base64: {e}"),
+                )
+                .with_param("detail", e.to_string())
+            })?;
         let media_type = item
             .get("media_type")
             .and_then(|v| v.as_str())

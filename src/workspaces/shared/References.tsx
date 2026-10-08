@@ -6,6 +6,7 @@ import {
   Plus,
   DotsThree,
 } from "@phosphor-icons/react";
+import { m } from "../../i18n";
 import {
   primaryImage,
   reorderRefs,
@@ -72,7 +73,7 @@ export default function References(p: ReferencesProps) {
     <section className={"reference-strip references-" + d.family}>
       <div className="section-heading">
         <h2>
-          素材{" "}
+          {m.references()}{" "}
           <span className="muted">
             {d.refs.length}/{max}
           </span>
@@ -80,22 +81,22 @@ export default function References(p: ReferencesProps) {
         <div className="reference-add">
           <button disabled={disabled} onClick={p.onFiles}>
             <Plus size={14} />
-            添加文件
+            {m.references_add_file()}
           </button>
           <details
             className="action-menu"
             onClick={closeAction}
             onKeyDown={closeKey}
           >
-            <summary aria-label="更多导入方式">
+            <summary aria-label={m.references_more()}>
               <DotsThree size={18} />
             </summary>
             <div className="menu-popover">
               <button disabled={disabled} onClick={p.onPaste}>
-                粘贴图片
+                {m.references_paste()}
               </button>
               <button disabled={disabled} onClick={p.onUrl}>
-                图片 URL
+                {m.references_url()}
               </button>
             </div>
           </details>
@@ -106,12 +107,14 @@ export default function References(p: ReferencesProps) {
         disabled={disabled}
         onClick={p.onGallery}
       >
-        从图库选择
+        {m.references_gallery()}
       </button>
       {!d.refs.length && (
         <div className="reference-empty">
-          <strong>{editing ? "添加要编辑的主图" : "添加参考素材"}</strong>
-          <span>拖入图片，或选择文件</span>
+          <strong>
+            {editing ? m.references_empty_edit() : m.references_empty()}
+          </strong>
+          <span>{m.references_drop()}</span>
         </div>
       )}
       <div className="references">
@@ -124,52 +127,52 @@ export default function References(p: ReferencesProps) {
             >
               <div className="reference-card-heading">
                 <span className={isMain ? "state-badge" : "muted"}>
-                  {isMain ? "编辑主图" : "参考 " + (i + 1)}
+                  {isMain ? m.references_main() : m.references_n({ index: i + 1 })}
                 </span>
                 <details
                   className="action-menu"
                   onClick={closeAction}
                   onKeyDown={closeKey}
                 >
-                  <summary aria-label={"素材操作 " + r.name}>
+                  <summary aria-label={m.references_actions({ name: r.name })}>
                     <DotsThree size={18} />
                   </summary>
                   <div className="menu-popover">
                     {!isMain && (
                       <button onClick={() => makePrimary(r.uid!)}>
-                        设为编辑主图
+                        {m.references_make_main()}
                       </button>
                     )}
                     <button onClick={() => p.onPreview(r.uid!)}>
                       <Eye size={14} />
-                      查看原图
+                      {m.references_view()}
                     </button>
                     <button
                       disabled={i === 0 || (editing && i === 1)}
                       onClick={() => reorder(i, i - 1)}
                     >
                       <ArrowUp size={14} />
-                      前移
+                      {m.references_earlier()}
                     </button>
                     <button
                       disabled={isMain || i === d.refs.length - 1}
                       onClick={() => reorder(i, i + 1)}
                     >
                       <ArrowDown size={14} />
-                      后移
+                      {m.references_later()}
                     </button>
                     <button
                       className="danger"
                       onClick={() => {
                         if (d.mask && i === 0) {
-                          p.onNotice("请先移除作用于主图的蒙版");
+                          p.onNotice(m.notice_mask_blocks_main());
                           return;
                         }
                         if (
                           d.boxes.some((b) => b.sourceId === r.uid) ||
                           d.prompt.includes(`<ref_image_${i}>`)
                         ) {
-                          p.onNotice("请先移除这张素材的区域或提示词引用");
+                          p.onNotice(m.notice_ref_in_use());
                           return;
                         }
                         const next = reorderRefs(
@@ -186,7 +189,7 @@ export default function References(p: ReferencesProps) {
                       }}
                     >
                       <Trash size={14} />
-                      移除
+                      {m.action_remove()}
                     </button>
                   </div>
                 </details>
@@ -194,7 +197,7 @@ export default function References(p: ReferencesProps) {
               <button
                 className="reference-image"
                 onClick={() => p.onPreview(r.uid!)}
-                aria-label={"预览 " + r.name}
+                aria-label={m.references_preview({ name: r.name })}
               >
                 <img src={r.dataUrl} alt={r.name} />
               </button>
@@ -206,13 +209,13 @@ export default function References(p: ReferencesProps) {
                 {r.assetId &&
                   p.galleryIds &&
                   !p.galleryIds.includes(r.assetId) && (
-                    <span>图库原图已删除 · 工作副本可用</span>
+                    <span>{m.references_source_gone()}</span>
                   )}
                 {!isMain && (
                   <label>
-                    用途
+                    {m.references_role()}
                     <select
-                      aria-label={"素材用途 " + r.name}
+                      aria-label={m.references_role_label({ name: r.name })}
                       value={r.purpose ?? "reference"}
                       onChange={(e) =>
                         p.onChange({
@@ -229,17 +232,17 @@ export default function References(p: ReferencesProps) {
                         })
                       }
                     >
-                      <option value="reference">综合参考</option>
-                      <option value="style">风格参考</option>
-                      <option value="subject">主体参考</option>
-                      <option value="composition">构图参考</option>
-                      <option value="custom">自定义用途</option>
+                      <option value="reference">{m.role_reference()}</option>
+                      <option value="style">{m.role_style()}</option>
+                      <option value="subject">{m.role_subject()}</option>
+                      <option value="composition">{m.role_composition()}</option>
+                      <option value="custom">{m.role_custom()}</option>
                     </select>
                   </label>
                 )}
                 {!isMain && r.purpose === "custom" && (
                   <label>
-                    用途说明
+                    {m.role_note()}
                     <textarea
                       rows={2}
                       value={r.note ?? ""}
@@ -273,7 +276,7 @@ export default function References(p: ReferencesProps) {
             checked={d.showBase !== false}
             onChange={(e) => p.onChange({ ...d, showBase: e.target.checked })}
           />
-          在画布显示主图
+          {m.show_main()}
         </label>
       )}
     </section>

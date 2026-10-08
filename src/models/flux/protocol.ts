@@ -9,6 +9,7 @@
 // 这是 BFL 官方定义的请求体格式，两个提供商（OpenRouter / BFL 直连）完全一致。
 
 import type { Box, Rect, WorkingImage } from "../../lib/types";
+import { m } from "../../i18n";
 
 export const MODEL_FLUX3 = "black-forest-labs/flux-3-image";
 export const MODEL_NAME = "FLUX.3 Image";
@@ -119,28 +120,28 @@ export function composePrompt(opts: {
     error,
   });
 
-  if (!instruction) return fail("请输入提示词");
-  if (!opts.iw || !opts.ih) return fail("画布尺寸无效");
+  if (!instruction) return fail(m.error_prompt_required());
+  if (!opts.iw || !opts.ih) return fail(m.error_canvas_size());
 
   const ids = new Set<string>();
   for (const b of opts.boxes) {
     if (!/^[A-Za-z0-9_]+$/.test(b.id)) {
-      return fail(`包围盒 ID「${b.id}」只能包含字母、数字和下划线`);
+      return fail(m.error_box_id({ id: b.id }));
     }
-    if (ids.has(b.id)) return fail(`包围盒 ID 重复: ${b.id}`);
+    if (ids.has(b.id)) return fail(m.error_box_duplicate({ id: b.id }));
     ids.add(b.id);
-    if (!b.desc.trim()) return fail(`包围盒「${b.id}」缺少区域描述`);
+    if (!b.desc.trim()) return fail(m.error_box_desc({ id: b.id }));
     if (["move", "remove"].includes(b.role) && !b.srcRect) {
-      return fail(`区域「${b.id}」需要设置来源区域`);
+      return fail(m.error_box_source({ id: b.id }));
     }
     if (opts.mode === "t2i" && ["move", "anchor", "remove"].includes(b.role))
-      return fail(`区域「${b.id}」需要参考图`);
+      return fail(m.error_box_ref({ id: b.id }));
     if (
       opts.refs &&
       ["move", "anchor", "remove"].includes(b.role) &&
       !opts.refs.some((r) => r.uid === b.sourceId)
     )
-      return fail(`区域「${b.id}」的来源图片已移除，请重新选择`);
+      return fail(m.error_box_ref_missing({ id: b.id }));
   }
 
   if (opts.boxes.length === 0) {

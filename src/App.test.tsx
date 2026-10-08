@@ -23,6 +23,8 @@ import { catalog, fieldsFor, defaultsFor } from "./models/catalog";
 import { queuedGeneration } from "./app/generation";
 
 const dom = new Window({ url: "http://localhost:5173" });
+Object.defineProperty(dom.navigator, "language", { get: () => "zh-CN" });
+Object.defineProperty(dom.navigator, "languages", { get: () => ["zh-CN"] });
 Object.assign(globalThis, {
   window: dom,
   document: dom.document,
@@ -96,6 +98,7 @@ mock.module("@tauri-apps/api/window", () => ({
     destroy: async () => {
       destroyed = true;
     },
+    setTitle: async () => {},
   }),
 }));
 mock.module("@tauri-apps/plugin-dialog", () => ({

@@ -1,6 +1,14 @@
 import FamilySelect from "../../components/FamilySelect";
+import { m } from "../../i18n";
+import {
+  fieldHelp,
+  fieldLabel,
+  generationPhase,
+  modelLabel,
+  providerLabel,
+  valueLabel,
+} from "../../labels";
 import { promptLength } from "../../models";
-import { displayValue } from "../../models/parameterLabels";
 export { displayValue } from "../../models/parameterLabels";
 import {
   defaultsFor,
@@ -26,6 +34,13 @@ import type {
   GenerationTask,
   FamilyId,
 } from "../../lib/types";
+
+function localizedValue(key: string, value: GenerateParams[string]) {
+  if (value == null)
+    return key === "seed" ? m.state_random() : m.state_provider_default();
+  if (typeof value === "boolean") return value ? m.state_on() : m.state_off();
+  return valueLabel(String(value));
+}
 export interface WorkspaceControlsProps {
   draft: Draft;
   onChange: (draft: Draft) => void;
@@ -57,7 +72,7 @@ export function RouteControls({
   | "onFamilyChange"
   | "busy"
 >) {
-  const models = catalog.models.filter((m) => m.family === d.family);
+  const models = catalog.models.filter((model) => model.family === d.family);
   const selected = modelById(d.modelId)!;
   const switchRoute = (provider: ProviderId, modelId = d.modelId) => {
     onChange(changeRoute(d, provider, modelId));
@@ -65,37 +80,37 @@ export function RouteControls({
   return (
     <section>
       <div className="section-heading">
-        <h2>模型与供应商</h2>
+        <h2>{m.model_and_provider()}</h2>
       </div>
       {onFamilyChange && (
         <label>
-          模型系列
+          {m.model_family()}
           <FamilySelect value={d.family} disabled={busy} onChange={onFamilyChange} />
         </label>
       )}
       {models.length > 1 && (
         <label>
-          模型版本
+          {m.model_version()}
           <select
             value={d.modelId}
             onChange={(e) => {
-              const m = modelById(e.target.value)!;
-              const provider = m.routes[d.provider]
+              const model = modelById(e.target.value)!;
+              const provider = model.routes[d.provider]
                 ? d.provider
-                : (Object.keys(m.routes)[0] as ProviderId);
-              switchRoute(provider, m.id);
+                : (Object.keys(model.routes)[0] as ProviderId);
+              switchRoute(provider, model.id);
             }}
           >
-            {models.map((m) => (
-              <option value={m.id} key={m.id}>
-                {m.label}
+            {models.map((model) => (
+              <option value={model.id} key={model.id}>
+                {modelLabel(model.id, model.label)}
               </option>
             ))}
           </select>
         </label>
       )}
       <label>
-        提供商
+        {m.provider()}
         <select
           value={d.provider}
           onChange={(e) => switchRoute(e.target.value as ProviderId)}
@@ -104,22 +119,24 @@ export function RouteControls({
             .filter((p) => selected.routes[p.id])
             .map((p) => (
               <option key={p.id} value={p.id}>
-                {p.label}
+                {providerLabel(p.id)}
               </option>
             ))}
         </select>
       </label>
       <div className="credential-hint">
         <span>
-          {providerStatus?.[d.provider] ? "已配置" : "尚未配置 API Key"}
+          {providerStatus?.[d.provider]
+            ? m.state_configured()
+            : m.state_key_needed()}
         </span>
-        <button onClick={onSettings}>设置</button>
+        <button onClick={onSettings}>{m.action_settings()}</button>
       </div>
       {!!d.mask && !routeFor(d)?.mask && (
         <div className="route-warning">
-          <p className="error-text">当前模型与供应商不支持蒙版。蒙版已保留。</p>
+          <p className="error-text">{m.mask_kept()}</p>
           <button onClick={() => onChange({ ...d, mask: null, maskRects: [] })}>
-            移除蒙版
+            {m.remove_mask()}
           </button>
         </div>
       )}
@@ -127,12 +144,12 @@ export function RouteControls({
         <div className="route-warning">
           <p className={d.layoutEnabled === false ? "help" : "error-text"}>
             {d.layoutEnabled === false
-              ? `保留 ${d.boxes.length} 个区域，当前不会发送。`
-              : "此模型不支持区域。可暂停使用，切回 FLUX 后恢复。"}
+              ? m.regions_kept({ count: d.boxes.length })
+              : m.regions_paused_help()}
           </p>
           {d.layoutEnabled !== false && (
             <button onClick={() => onChange({ ...d, layoutEnabled: false })}>
-              暂不使用区域
+              {m.regions_pause()}
             </button>
           )}
         </div>
@@ -167,15 +184,19 @@ export function ParameterFields({
         .map((key) => {
           const field = fields[key];
           const value = values[key];
+          const label = fieldLabel(key, field.label);
+          const help = fieldHelp(key, d.provider) ?? field.help;
           const control = (() => {
             if (field.kind === "enum" && field.values?.length === 1)
               return (
                 <div className="fixed-field" key={key}>
-                  <span>{field.label}</span>
-                  <span>{displayValue(key, value ?? field.values[0])}</span>
+                  <span>{label}</span>
+                  <span>
+                    {localizedValue(key, value ?? field.values[0])}
+                  </span>
                   {value != null && !field.values.includes(String(value)) && (
                     <button onClick={() => change(key, field.values![0])}>
-                      恢复默认
+                      {m.restore_default()}
                     </button>
                   )}
                 </div>
@@ -183,9 +204,9 @@ export function ParameterFields({
             if (key === "safetyTolerance")
               return (
                 <label key={key}>
-                  {field.label}
+                  {label}
                   <select
-                    aria-label={field.label}
+                    aria-label={label}
                     value={value == null ? "default" : String(value)}
                     onChange={(e) =>
                       change(
@@ -196,14 +217,14 @@ export function ParameterFields({
                       )
                     }
                   >
-                    <option value="default">供应商默认</option>
+                    <option value="default">{m.state_provider_default()}</option>
                     {Array.from({ length: (field.max ?? 4) + 1 }, (_, n) => (
                       <option key={n} value={n}>
                         {n}
                         {n === 0
-                          ? " · 最严格"
+                          ? m.strictest()
                           : n === field.max
-                            ? " · 最宽松"
+                            ? m.loosest()
                             : ""}
                       </option>
                     ))}
@@ -214,24 +235,24 @@ export function ParameterFields({
               return (
                 <div key={key} className="seed-field">
                   <label>
-                    随机种子
+                    {m.seed()}
                     <select
-                      aria-label="种子模式"
+                      aria-label={m.seed_mode()}
                       value={value == null ? "random" : "fixed"}
                       onChange={(e) =>
                         change(key, e.target.value === "random" ? null : 0)
                       }
                     >
-                      <option value="random">随机</option>
-                      <option value="fixed">固定种子</option>
+                      <option value="random">{m.state_random()}</option>
+                      <option value="fixed">{m.seed_fixed()}</option>
                     </select>
                   </label>
                   {value != null && (
                     <div className="row">
                       <label className="grow">
-                        种子值
+                        {m.seed_value()}
                         <input
-                          aria-label="种子值"
+                          aria-label={m.seed_value()}
                           type="number"
                           min={field.min}
                           max={field.max}
@@ -247,7 +268,7 @@ export function ParameterFields({
                         />
                       </label>
                       <button
-                        title="生成一个随机种子并固定"
+                        title={m.seed_roll_title()}
                         onClick={() =>
                           change(
                             key,
@@ -256,7 +277,7 @@ export function ParameterFields({
                           )
                         }
                       >
-                        换一个
+                        {m.seed_roll()}
                       </button>
                     </div>
                   )}
@@ -279,12 +300,12 @@ export function ParameterFields({
                     checked={value === true}
                     onChange={(e) => change(key, e.target.checked)}
                   />
-                  {field.label}
+                  {label}
                 </label>
               );
             return (
               <label key={key}>
-                {field.label}
+                {label}
                 {field.kind === "enum" ? (
                   <select
                     value={String(value ?? "")}
@@ -293,7 +314,7 @@ export function ParameterFields({
                     {value != null &&
                       !field.values?.includes(String(value)) && (
                         <option value={String(value)}>
-                          {String(value)} · 不适用
+                          {m.value_unused({ value: String(value) })}
                         </option>
                       )}
                     {field.values?.map((v) => (
@@ -310,8 +331,8 @@ export function ParameterFields({
                         }
                       >
                         {key === "moderation" && v === "low"
-                          ? "宽松"
-                          : displayValue(key, v)}
+                          ? m.value_loose()
+                          : valueLabel(v)}
                       </option>
                     ))}
                   </select>
@@ -322,7 +343,9 @@ export function ParameterFields({
                     min={field.min}
                     max={field.max}
                     step={1}
-                    placeholder={field.nullable ? "使用默认 / 随机" : undefined}
+                    placeholder={
+                      field.nullable ? m.placeholder_default() : undefined
+                    }
                     onChange={(e) =>
                       change(
                         key,
@@ -346,7 +369,7 @@ export function ParameterFields({
               key={key}
               className={
                 "parameter-field" +
-                (field.help ||
+                (help ||
                 ["boolean", "text", "size"].includes(field.kind) ||
                 key === "seed" ||
                 field.values?.length === 1
@@ -354,13 +377,13 @@ export function ParameterFields({
                   : "")
               }
               role="group"
-              aria-label={field.label}
-              aria-describedby={field.help ? `${helpId}-${key}` : undefined}
+              aria-label={label}
+              aria-describedby={help ? `${helpId}-${key}` : undefined}
             >
               {control}
-              {field.help && (
+              {help && (
                 <p className="help" id={`${helpId}-${key}`}>
-                  {field.help}
+                  {help}
                 </p>
               )}
             </div>
@@ -384,16 +407,16 @@ export function SizeField({
     <div className="size-field">
       {allowAuto && (
         <label>
-          输出尺寸
+          {m.output_size()}
           <select
-            aria-label="尺寸模式"
+            aria-label={m.size_mode()}
             value={value === "auto" ? "auto" : "custom"}
             onChange={(e) =>
               onChange(e.target.value === "auto" ? "auto" : "1024x1024")
             }
           >
-            <option value="auto">自动</option>
-            <option value="custom">自定义</option>
+            <option value="auto">{m.size_auto()}</option>
+            <option value="custom">{m.size_custom()}</option>
           </select>
         </label>
       )}
@@ -401,9 +424,9 @@ export function SizeField({
         <>
           <div className="field-grid">
             <label>
-              宽度（px）
+              {m.size_width()}
               <input
-                aria-label="输出宽度"
+                aria-label={m.size_width_label()}
                 type="number"
                 min={16}
                 max={3840}
@@ -415,9 +438,9 @@ export function SizeField({
               />
             </label>
             <label>
-              高度（px）
+              {m.size_height()}
               <input
-                aria-label="输出高度"
+                aria-label={m.size_height_label()}
                 type="number"
                 min={16}
                 max={3840}
@@ -429,11 +452,11 @@ export function SizeField({
               />
             </label>
           </div>
-          <div className="preset-row" aria-label="尺寸预设">
+          <div className="preset-row" aria-label={m.size_presets()}>
             {[
-              ["方形", "1024x1024"],
-              ["横向", "1536x1024"],
-              ["竖向", "1024x1536"],
+              [m.size_square(), "1024x1024"],
+              [m.size_landscape(), "1536x1024"],
+              [m.size_portrait(), "1024x1536"],
               ["2K", "2048x2048"],
             ].map(([label, v]) => (
               <button
@@ -461,9 +484,9 @@ export function QwenSizeFields(
     <>
       {fields.width?.nullable && (
         <label>
-          尺寸模式
+          {m.size_mode()}
           <select
-            aria-label="尺寸模式"
+            aria-label={m.size_mode()}
             value={auto ? "auto" : "custom"}
             onChange={(e) =>
               p.onChange({
@@ -476,8 +499,8 @@ export function QwenSizeFields(
               })
             }
           >
-            <option value="auto">模型自动推荐</option>
-            <option value="custom">自定义</option>
+            <option value="auto">{m.size_recommended()}</option>
+            <option value="custom">{m.size_custom()}</option>
           </select>
         </label>
       )}
@@ -523,19 +546,21 @@ export function PromptEditor({
   };
   return (
     <section className="prompt-editor">
-      <h2>{d.family === "gpt" && d.refs.length ? "编辑指令" : "提示词"}</h2>
+      <h2>
+        {d.family === "gpt" && d.refs.length
+          ? m.handoff_instruction()
+          : m.prompt()}
+      </h2>
       <textarea
         ref={ref}
-        aria-label="提示词"
+        aria-label={m.prompt()}
         rows={d.family === "qwen" ? 4 : 5}
         aria-describedby={feedbackId}
         aria-invalid={!!error}
         placeholder={
-          d.family === "flux"
-            ? "描述目标画面或修改内容…"
-            : d.family === "qwen"
-              ? "描述画面、版式和文字内容…"
-              : "描述目标画面或修改内容…"
+          d.family === "qwen"
+            ? m.prompt_placeholder_text()
+            : m.prompt_placeholder()
         }
         value={d.prompt}
         onChange={(e) => onChange({ ...d, prompt: e.target.value })}
@@ -545,7 +570,8 @@ export function PromptEditor({
         className={error ? "prompt-limit error-text" : "prompt-limit muted"}
       >
         <span>
-          {error ?? (min > 1 ? `发送字符 · 至少 ${min}` : "发送字符")}
+          {error ??
+            (min > 1 ? m.prompt_chars_min({ min }) : m.prompt_chars())}
         </span>
         <span>
           {length.toLocaleString()} / {max.toLocaleString()}
@@ -560,7 +586,7 @@ export function PromptEditor({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => insert(`<ref_image_${i}>`)}
             >
-              图片 {i + 1}
+              {m.image_n({ index: i + 1 })}
             </button>
           ))}
           {d.boxes.map((b) => (
@@ -584,7 +610,7 @@ export function InputOptions({
 }: Pick<WorkspaceControlsProps, "draft" | "onChange" | "finalPreview">) {
   return (
     <details>
-      <summary>输入与请求</summary>
+      <summary>{m.request_preview()}</summary>
       <label className="check">
         <input
           type="checkbox"
@@ -593,10 +619,10 @@ export function InputOptions({
             onChange({ ...d, compressEnabled: e.target.checked })
           }
         />
-        发送前等比缩小参考图
+        {m.shrink_refs()}
       </label>
       <label>
-        长边上限（px）
+        {m.edge_limit()}
         <input
           type="number"
           min={256}
@@ -612,12 +638,16 @@ export function InputOptions({
         const s = sentSize(r, d.compressEnabled, d.maxInputEdge);
         return (
           <p className="help" key={r.uid}>
-            图片 {i + 1}：{r.width}×{r.height} → 发送 {s.w}×{s.h}
+            {m.send_size({
+              index: i + 1,
+              before: `${r.width}×${r.height}`,
+              after: `${s.w}×${s.h}`,
+            })}
           </p>
         );
       })}
-      {d.mask && <p className="help">蒙版与第一张参考图同步缩放。</p>}
-      <h3>实际发送参数</h3>
+      {d.mask && <p className="help">{m.mask_scales()}</p>}
+      <h3>{m.sent_params()}</h3>
       <dl className="request-parameters">
         {Object.entries(
           pickParams(d.modelId, d.provider, {
@@ -634,13 +664,13 @@ export function InputOptions({
           )
           .map(([key, value]) => (
             <div key={key}>
-              <dt>{catalog.fields[key]?.label ?? key}</dt>
-              <dd>{displayValue(key, value)}</dd>
+              <dt>{fieldLabel(key, catalog.fields[key]?.label ?? key)}</dt>
+              <dd>{localizedValue(key, value)}</dd>
             </div>
           ))}
       </dl>
-      <h3>生成指令</h3>
-      <pre>{finalPreview || "（待输入）"}</pre>
+      <h3>{m.compiled_prompt()}</h3>
+      <pre>{finalPreview || m.compiled_empty()}</pre>
     </details>
   );
 }
@@ -686,16 +716,6 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
     const timer = window.setInterval(update, 1000);
     return () => window.clearInterval(timer);
   }, [startedAt]);
-  const labels = {
-    preparing: "准备输入",
-    submitting: "提交请求",
-    queued: "排队中",
-    reasoning: "理解指令",
-    generating: "生成中",
-    waiting: "等待结果",
-    downloading: "下载结果",
-    saving: "保存到图库",
-  };
   const job = p.generationTask;
   const perRequestCredits = estimateComfyCredits(singleImageDraft(d));
   const credits = perRequestCredits
@@ -717,11 +737,11 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
   const cost = perRequestCost == null ? null : perRequestCost * repeatCount;
   const reason = p.busy
     ? ""
-    : (p.errors.find((error) => error !== "请输入提示词") ??
+    : (p.errors.find((error) => error !== m.error_prompt_required()) ??
       (!p.finalPreview
         ? ""
         : !p.providerStatus?.[d.provider]
-          ? "配置当前供应商的 API Key 后生成"
+          ? m.need_api_key()
           : ""));
   return (
     <div className="generate-footer">
@@ -729,31 +749,34 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
         <div className="generation-status" role="status">
           <div>
             <span className="activity-dot" aria-hidden="true" />
-            {labels[job.phase]}
+            {generationPhase(job.phase)}
             <span className="muted" aria-hidden="true">
               {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
             </span>
           </div>
           <span className="muted">
-            {modelById(job.modelId)?.label} ·{" "}
-            {providers.find((v) => v.id === job.provider)?.label}
+            {modelLabel(job.modelId, modelById(job.modelId)?.label ?? job.modelId)} ·{" "}
+            {providerLabel(job.provider)}
             {job.completed != null && job.total > 1
-              ? ` · ${job.completed}/${job.total} 张`
+              ? m.progress_count({
+                  done: job.completed,
+                  total: job.total,
+                })
               : ""}
           </span>
           {job.stopRequested ? (
-            <span className="help">后续请求已停止，等待当前结果。</span>
+            <span className="help">{m.tasks_stopped()}</span>
           ) : (
             (job.remainingRequests ?? 0) > 0 && (
-              <button onClick={p.onStopRemaining}>停止后续生成</button>
+              <button onClick={p.onStopRemaining}>{m.stop_later()}</button>
             )
           )}
           {(job.intent ?? "create") !== taskIntent(d) && (
-            <button onClick={p.onShowTask}>返回任务工作区</button>
+            <button onClick={p.onShowTask}>{m.back_to_task()}</button>
           )}
           {job.taskId && (
             <details>
-              <summary>任务详情</summary>
+              <summary>{m.task_details()}</summary>
               <code>{job.taskId}</code>
             </details>
           )}
@@ -776,15 +799,21 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
             style={{ opacity: labelVisible ? 1 : 0 }}
           >
             {sent
-              ? "请求已发送"
-              : `${taskIntent(d) === "edit" ? "应用编辑" : "生成图像"} · ${creditLabel ? "约 " + creditLabel : cost != null ? "约 $" + cost.toFixed(3) : outputCount + " 张"}`}
+              ? m.request_sent()
+              : (taskIntent(d) === "edit" ? m.submit_edit : m.submit_generate)({
+                  detail: creditLabel
+                    ? m.about_credits({ amount: creditLabel })
+                    : cost != null
+                      ? m.about_cost({ amount: cost.toFixed(3) })
+                      : m.count_images({ count: outputCount }),
+                })}
           </span>
         </button>
         <input
           className="generate-repeat-count"
           type="number"
-          aria-label="生成张数"
-          title="生成张数"
+          aria-label={m.output_count()}
+          title={m.output_count()}
           min={1}
           max={20}
           step={1}
@@ -804,7 +833,9 @@ export function GenerateFooter(p: WorkspaceControlsProps) {
           <span>{reason}</span>
           {!p.providerStatus?.[d.provider] &&
             p.finalPreview &&
-            !p.errors.length && <button onClick={p.onSettings}>配置</button>}
+            !p.errors.length && (
+              <button onClick={p.onSettings}>{m.action_configure()}</button>
+            )}
         </div>
       )}
     </div>

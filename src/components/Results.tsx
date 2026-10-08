@@ -3,7 +3,9 @@ import GenerationInfo from "./GenerationInfo";
 import { getResultBase, type SavedResult } from "../app/generation";
 import type { WorkingImage } from "../lib/types";
 import { taskIntent } from "../lib/workspace";
-import { modelByAnyId, providers } from "../models/catalog";
+import { localizeStored, m } from "../i18n";
+import { modelLabel, providerLabel } from "../labels";
+import { modelByAnyId } from "../models/catalog";
 import { useId, useState } from "react";
 import { CaretDown, CaretUp } from "@phosphor-icons/react";
 
@@ -24,21 +26,21 @@ export function ResultStage({
       {original ? (
         <div className="original-view">
           {view === "compare" && base && (
-            <img src={base.dataUrl} alt="原图原尺寸" />
+            <img src={base.dataUrl} alt={m.result_original_full()} />
           )}
-          <img src={image.dataUrl} alt="生成结果原尺寸" />
+          <img src={image.dataUrl} alt={m.result_full()} />
         </div>
       ) : view === "compare" && base ? (
         <div className="comparison">
           <figure>
-            <figcaption>原图 · 提交时快照</figcaption>
-            <img src={base.dataUrl} alt="原图" />
+            <figcaption>{m.result_original_caption()}</figcaption>
+            <img src={base.dataUrl} alt={m.result_original()} />
           </figure>
           <figure>
             <figcaption>
-              生成结果 · {image.width}×{image.height}
+              {m.result_size({ width: image.width, height: image.height })}
             </figcaption>
-            <img src={image.dataUrl} alt="生成结果" />
+            <img src={image.dataUrl} alt={m.result_alt()} />
           </figure>
         </div>
       ) : (
@@ -76,7 +78,7 @@ export function ResultActions(p: {
   return (
     <section
       className={"result-panel" + (p.compact ? " result-panel-compact" : "")}
-      aria-label="生成记录"
+      aria-label={m.result_log()}
     >
       {!p.compact && (
         <button
@@ -85,12 +87,15 @@ export function ResultActions(p: {
           aria-controls={contentId}
           onClick={() => setExpanded((value) => !value)}
         >
-          <strong>生成记录</strong>
+          <strong>{m.result_log()}</strong>
           <span className="muted">
-            {p.attempts?.length || 1} 个批次 · 当前 {r.out.images.length} 张
+            {m.result_batches({
+              batches: p.attempts?.length || 1,
+              count: r.out.images.length,
+            })}
           </span>
           <span className="result-panel-toggle-label">
-            {expanded ? "收起" : "展开"}
+            {expanded ? m.action_collapse() : m.action_expand()}
             {expanded ? <CaretDown size={16} /> : <CaretUp size={16} />}
           </span>
         </button>
@@ -99,24 +104,25 @@ export function ResultActions(p: {
         <div className="result-actions" id={contentId}>
           {!p.compact && multipleAttempts && (
             <div className="result-gallery-group">
-              <h3>最近批次</h3>
-              <div className="result-gallery" aria-label="本工作区的尝试">
+              <h3>{m.result_recent()}</h3>
+              <div className="result-gallery" aria-label={m.result_attempts()}>
                 {p.attempts!.map((attempt, i) => (
                   <button
                     key={attempt.item.id}
                     className={attempt.item.id === r.item.id ? "active" : ""}
-                    aria-label={"查看尝试 " + (i + 1)}
+                    aria-label={m.result_view_attempt({ index: i + 1 })}
                     aria-pressed={attempt.item.id === r.item.id}
                     title={
-                      "批次 " +
-                      (i + 1) +
+                      m.result_attempt({ time: i + 1 }) +
                       " · " +
-                      attempt.out.images.length +
-                      " 张"
+                      m.count_images({ count: attempt.out.images.length })
                     }
                     onClick={() => p.onAttempt?.(attempt)}
                   >
-                    <img src={attempt.image.dataUrl} alt={"尝试 " + (i + 1)} />
+                    <img
+                      src={attempt.image.dataUrl}
+                      alt={m.result_attempt_alt({ index: i + 1 })}
+                    />
                   </button>
                 ))}
               </div>
@@ -126,72 +132,80 @@ export function ResultActions(p: {
             r.out.images.length > 0 &&
             (!multipleAttempts || r.out.images.length > 1) && (
               <div className="result-gallery-group">
-                <h3>当前批次 · {r.out.images.length} 张</h3>
-                <div className="result-gallery" aria-label="本次生成结果">
+                <h3>{m.result_current({ count: r.out.images.length })}</h3>
+                <div
+                  className="result-gallery"
+                  aria-label={m.result_current_images()}
+                >
                   {r.out.images.map((im, i) => (
                     <button
                       className={i === r.selectedIndex ? "active" : ""}
                       key={i}
                       onClick={() => p.onSelect(i)}
-                      aria-label={"查看结果 " + (i + 1)}
+                      aria-label={m.result_view({ index: i + 1 })}
                       aria-pressed={i === r.selectedIndex}
                     >
-                      <img src={im.dataUrl} alt={"结果 " + (i + 1)} />
+                      <img
+                        src={im.dataUrl}
+                        alt={m.result_n_alt({ index: i + 1 })}
+                      />
                     </button>
                   ))}
                 </div>
               </div>
             )}
           <div className="result-heading">
-            <strong>{modelByAnyId(r.out.model)?.label ?? "最近生成"}</strong>
+            <strong>
+              {modelLabel(
+                r.out.model,
+                modelByAnyId(r.out.model)?.label ?? m.result_latest(),
+              )}
+            </strong>
             <span className="result-save-state">
-              {r.saved ? "已存图库" : "图片尚未保存"}
+              {r.saved ? m.result_saved() : m.result_unsaved()}
             </span>
           </div>
           <div className="result-meta">
-            <span>
-              {providers.find((p) => p.id === r.out.provider)?.label ??
-                r.out.provider}
-            </span>
+            <span>{providerLabel(r.out.provider)}</span>
             <span>
               {r.image.width}×{r.image.height}
             </span>
             {r.out.provider === "comfy" ? (
               r.out.usage?.credits != null && (
-                <span>{r.out.usage.credits} Credits</span>
+                <span>{m.history_credits({ value: r.out.usage.credits })}</span>
               )
             ) : r.item.cost != null ? (
               <span>${r.item.cost.toFixed(4)}</span>
             ) : r.out.usage?.credits != null ? (
-              <span>{r.out.usage.credits} Credits</span>
+              <span>{m.history_credits({ value: r.out.usage.credits })}</span>
             ) : null}
           </div>
           <div className="result-operations">
             <div className="result-secondary">
-              <button onClick={p.onSave}>另存为</button>
-              <button onClick={p.onCopy}>复制图片</button>
+              <button onClick={p.onSave}>{m.action_save_as()}</button>
+              <button onClick={p.onCopy}>{m.action_copy_image()}</button>
               <button onClick={() => p.onUse(r.image, false)}>
-                添加为参考图
+                {m.result_add_ref()}
               </button>
             </div>
             <button className="primary" onClick={() => p.onUse(r.image, true)}>
               {taskIntent(r.snapshot) === "edit"
-                ? "继续编辑"
-                : "用这张图开始编辑"}
+                ? m.result_continue()
+                : m.result_start_edit()}
             </button>
             {!r.saved && (
               <button disabled={p.saving} onClick={p.onRetry}>
-                重新保存历史
+                {m.result_resave()}
               </button>
             )}
           </div>
           <GenerationInfo details={r.out.images[r.selectedIndex]?.details} />
           {r.out.notes.length > 0 && (
             <details>
-              <summary>提供商说明</summary>
+              <summary>{m.result_provider_notes()}</summary>
               {r.out.notes.map((n, i) => (
                 <p className="help" key={i}>
-                  {n}
+                  {localizeStored(n)}
                 </p>
               ))}
             </details>

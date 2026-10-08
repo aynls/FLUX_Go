@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { m } from "../../i18n";
 import Canvas from "../../components/Canvas";
 import MaskThumbnail from "./MaskThumbnail";
 import { routeFor } from "../../models/catalog";
@@ -16,16 +17,16 @@ export default function GptStage(p: StageProps) {
     <div className="gpt-work-area">
       <div className="gpt-editor">
         <div className="model-stage-heading">
-          <strong>{first ? "图片 1 · 编辑主图" : "生成画面"}</strong>
+          <strong>{first ? m.gpt_main() : m.gpt_frame()}</strong>
           <div className="row">
             {supported && (
               <>
                 {(
                   [
-                    ["pan", "平移"],
-                    ["brush", "画笔"],
-                    ["eraser", "橡皮"],
-                    ["mask-box", "矩形"],
+                    ["pan", m.tool_pan],
+                    ["brush", m.tool_brush],
+                    ["eraser", m.tool_eraser],
+                    ["mask-box", m.tool_rect],
                   ] as const
                 ).map(([id, label]) => (
                   <button
@@ -35,11 +36,11 @@ export default function GptStage(p: StageProps) {
                     className={tool === id ? "active" : ""}
                     onClick={() => setTool(id)}
                   >
-                    {label}
+                    {label()}
                   </button>
                 ))}
                 <button disabled={!first} onClick={p.onImportMask}>
-                  导入蒙版
+                  {m.import_mask()}
                 </button>
               </>
             )}
@@ -48,14 +49,14 @@ export default function GptStage(p: StageProps) {
                 disabled={!d.mask}
                 onClick={() => p.onChange({ ...d, mask: null, maskRects: [] })}
               >
-                移除蒙版
+                {m.remove_mask()}
               </button>
             )}
           </div>
         </div>
         {supported && (
           <div className="mask-tools">
-            <label htmlFor="mask-radius">画笔 / 橡皮半径</label>
+            <label htmlFor="mask-radius">{m.brush_radius()}</label>
             <input
               id="mask-radius"
               type="range"
@@ -65,7 +66,7 @@ export default function GptStage(p: StageProps) {
               onChange={(e) => setRadius(Number(e.target.value))}
             />
             <input
-              aria-label="半径（像素）"
+              aria-label={m.radius_px()}
               type="number"
               min={1}
               max={256}
@@ -85,7 +86,7 @@ export default function GptStage(p: StageProps) {
             phantom={first ? null : outputEstimate(d)}
             dimensionLabel={
               !first && d.params.size === "auto"
-                ? "模型自动决定尺寸"
+                ? m.model_picks_size()
                 : undefined
             }
             boxes={[]}
@@ -111,7 +112,7 @@ export default function GptStage(p: StageProps) {
           <div className="mask-summary">
             {d.mask && <MaskThumbnail image={first} mask={d.mask} />}
             <span className="muted">
-              {d.mask ? "黑色为编辑区域" : "使用画笔或矩形标记编辑区域"}
+              {d.mask ? m.mask_black() : m.mask_hint()}
             </span>
           </div>
         )}

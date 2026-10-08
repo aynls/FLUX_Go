@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 pub fn catalog() -> &'static Value {
     static CATALOG: OnceLock<Value> = OnceLock::new();
     CATALOG.get_or_init(|| {
-        serde_json::from_str(include_str!("../../shared/model-catalog.json")).expect("模型目录无效")
+        serde_json::from_str(include_str!("../../shared/model-catalog.json")).expect("invalid model catalog")
     })
 }
 pub struct ResolvedModel {
@@ -31,11 +31,19 @@ pub fn resolve(req: &GenerateRequest) -> Result<ResolvedModel, ProviderError> {
                     .values()
                     .any(|r| r["model"].as_str() == Some(&req.model))
         })
-        .ok_or_else(|| ProviderError::msg(format!("未知模型: {}", req.model)))?;
+        .ok_or_else(|| {
+            ProviderError::coded("backend_unknown_model", format!("Unknown model: {}", req.model))
+                .with_param("name", req.model.clone())
+        })?;
     let route = model["routes"]
         .get(&req.provider)
         .filter(|r| r.is_object())
-        .ok_or_else(|| ProviderError::msg("该供应商不支持所选模型"))?;
+        .ok_or_else(|| {
+            ProviderError::coded(
+                "backend_provider_model",
+                "This provider does not support the selected model",
+            )
+        })?;
     Ok(ResolvedModel {
         id: model["id"].as_str().unwrap(),
         family: model["family"].as_str().unwrap(),
@@ -54,17 +62,25 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
     if prompt.trim().chars().count() < min_prompt as usize
         || prompt.chars().count() > max_prompt as usize
     {
-        return Err(ProviderError::msg(format!(
-            "提示词须为 {min_prompt}–{max_prompt} 字符"
-        )));
+        return Err(ProviderError::coded(
+            "backend_prompt_length",
+            format!("The prompt must be {min_prompt}–{max_prompt} characters"),
+        )
+        .with_param("min", min_prompt)
+        .with_param("max", max_prompt));
     }
     let rules = m.route["parameters"].as_object().unwrap();
-    let params =
-        serde_json::to_value(&req.params).map_err(|_| ProviderError::msg("参数序列化失败"))?;
+    let params = serde_json::to_value(&req.params).map_err(|_| {
+        ProviderError::coded("backend_params_serialize", "Couldn't serialize parameters")
+    })?;
     for (key, value) in params.as_object().unwrap() {
-        let rule = rules
-            .get(key)
-            .ok_or_else(|| ProviderError::msg(format!("此模型路由不支持参数 {key}")))?;
+        let rule = rules.get(key).ok_or_else(|| {
+            ProviderError::coded(
+                "backend_param_unsupported",
+                format!("This route does not support parameter {key}"),
+            )
+            .with_param("key", key.clone())
+        })?;
         let base = &catalog()["fields"][key];
         let get = |name: &str| rule.get(name).unwrap_or(&base[name]);
         let invalid = match base["kind"].as_str().unwrap_or("") {
@@ -84,67 +100,97 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
             _ => false,
         };
         if invalid {
-            return Err(ProviderError::msg(format!("参数 {key} 无效")));
+            return Err(ProviderError::coded(
+                "backend_param_invalid",
+                format!("Parameter {key} is invalid"),
+            )
+            .with_param("key", key.clone()));
         }
     }
     if req.images.len() as u64 > m.route["maxRefs"].as_u64().unwrap_or(0) {
-        return Err(ProviderError::msg("参考图数量超过此模型路由上限"));
+        return Err(ProviderError::coded(
+            "backend_too_many_refs",
+            "Too many references for this route",
+        ));
     }
     let mut total_bytes = 0;
     for im in &req.images {
         let (mime, bytes) = parse_data_url(im)?;
         if !["image/png", "image/jpeg", "image/webp", "image/gif"].contains(&mime.as_str()) {
-            return Err(ProviderError::msg("不支持的输入图片类型"));
+            return Err(ProviderError::coded(
+                "backend_input_type",
+                "Unsupported input image type",
+            ));
         }
         let limit = m.route["maxInputBytes"]
             .as_u64()
             .unwrap_or(50 * 1024 * 1024);
         if bytes.len() as u64 > limit {
-            return Err(ProviderError::msg("单张参考图超过此路由大小上限"));
+            return Err(ProviderError::coded(
+                "backend_ref_too_large",
+                "A reference exceeds this route's size limit",
+            ));
         }
         if m.family == "gpt" && mime == "image/gif" {
-            return Err(ProviderError::msg("GPT Image 参考图须为 PNG/JPEG/WebP"));
+            return Err(ProviderError::coded(
+                "backend_gpt_ref_type",
+                "GPT Image references must be PNG, JPEG, or WebP",
+            ));
         }
         if m.family == "gemini" && mime == "image/gif" {
-            return Err(ProviderError::msg("Gemini 参考图须为 PNG/JPEG/WebP"));
+            return Err(ProviderError::coded(
+                "backend_gemini_ref_type",
+                "Gemini references must be PNG, JPEG, or WebP",
+            ));
         }
         if m.family == "grok" && mime == "image/gif" {
-            return Err(ProviderError::msg("Grok 参考图须为 PNG/JPEG/WebP"));
+            return Err(ProviderError::coded(
+                "backend_grok_ref_type",
+                "Grok references must be PNG, JPEG, or WebP",
+            ));
         }
         if m.family == "flux"
             && matches!(req.provider.as_str(), "bfl" | "comfy")
             && bytes.len() > 20 * 1024 * 1024
         {
-            return Err(ProviderError::msg("FLUX 原生参考图超过 20MiB"));
+            return Err(ProviderError::coded(
+                "backend_flux_ref_size",
+                "A native FLUX reference exceeds 20MiB",
+            ));
         }
         if m.family == "gpt"
             && req.provider == "comfy"
             && (bytes.len() > 25 * 1024 * 1024 || mime == "image/gif")
         {
-            return Err(ProviderError::msg(
-                "Comfy GPT 参考图须为 PNG/JPEG/WebP，单张至多 25MiB",
+            return Err(ProviderError::coded(
+                "backend_comfy_gpt_ref",
+                "Comfy GPT references must be PNG, JPEG, or WebP, and at most 25MiB each",
             ));
         }
         total_bytes += bytes.len();
         if m.family == "seedream" && req.provider != "openrouter" {
             let (w, h) = image::ImageReader::new(std::io::Cursor::new(bytes))
                 .with_guessed_format()
-                .map_err(|_| ProviderError::msg("参考图无效"))?
+                .map_err(|_| ProviderError::coded("backend_ref_invalid", "The reference image is invalid"))?
                 .into_dimensions()
-                .map_err(|_| ProviderError::msg("参考图无效"))?;
+                .map_err(|_| ProviderError::coded("backend_ref_invalid", "The reference image is invalid"))?;
             if w.min(h) < 15
                 || w.max(h) as f64 / w.min(h) as f64 > 16.0
                 || u64::from(w) * u64::from(h)
                     > m.route["maxInputPixels"].as_u64().unwrap_or(u64::MAX)
             {
-                return Err(ProviderError::msg(
-                    "Seedream 参考图尺寸或比例超过此路由限制",
+                return Err(ProviderError::coded(
+                    "backend_seedream_ref",
+                    "A Seedream reference exceeds this route's size or aspect limit",
                 ));
             }
         }
     }
     if m.family == "gpt" && req.provider == "comfy" && total_bytes > 64 * 1024 * 1024 {
-        return Err(ProviderError::msg("Comfy GPT 参考图总大小超过 64MiB"));
+        return Err(ProviderError::coded(
+            "backend_comfy_gpt_total",
+            "Comfy GPT references exceed 64MiB in total",
+        ));
     }
     if let Some(limit) = m.route["maxRequestBytes"].as_u64() {
         let size = req.images.iter().map(String::len).sum::<usize>()
@@ -152,8 +198,9 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
             + params.to_string().len()
             + 1024;
         if size as u64 > limit {
-            return Err(ProviderError::msg(
-                "请求超过此路由总大小上限，请降低参考图尺寸",
+            return Err(ProviderError::coded(
+                "backend_request_too_large",
+                "The request exceeds this route's size limit. Reduce the references",
             ));
         }
     }
@@ -162,14 +209,23 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
         && req.params.aspect_ratio.as_deref() == Some("auto")
         && req.images.is_empty()
     {
-        return Err(ProviderError::msg("自动比例需要参考图"));
+        return Err(ProviderError::coded(
+            "backend_auto_aspect",
+            "Automatic aspect ratio needs a reference",
+        ));
     }
     if m.family == "seedream" && rules.contains_key("width") {
         if req.params.width.is_some() != req.params.height.is_some() {
-            return Err(ProviderError::msg("宽度和高度须同时设置"));
+            return Err(ProviderError::coded(
+                "backend_dimensions_together",
+                "Set width and height together",
+            ));
         }
         if req.params.width.is_none() && rules["width"]["nullable"].as_bool() != Some(true) {
-            return Err(ProviderError::msg("此路由需要指定宽度和高度"));
+            return Err(ProviderError::coded(
+                "backend_dimensions_required",
+                "This route requires width and height",
+            ));
         }
         if let (Some(w), Some(h)) = (req.params.width, req.params.height) {
             let area = u64::from(w) * u64::from(h);
@@ -177,33 +233,49 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
                 || area > m.route["maxPixels"].as_u64().unwrap_or(u64::MAX)
                 || w.max(h) as f64 / w.min(h) as f64 > m.route["maxAspect"].as_f64().unwrap_or(16.0)
             {
-                return Err(ProviderError::msg(
-                    "Seedream 输出面积或宽高比超过此路由限制",
+                return Err(ProviderError::coded(
+                    "backend_seedream_output",
+                    "Seedream output area or aspect ratio exceeds this route's limit",
                 ));
             }
         }
     }
     if m.family != "flux" && !req.regions.is_empty() {
-        return Err(ProviderError::msg("此模型不支持 FLUX 区域协议"));
+        return Err(ProviderError::coded(
+            "backend_flux_regions",
+            "This model does not support the FLUX region protocol",
+        ));
     }
     for region in &req.regions {
         if region.id.is_empty() || region.description.trim().is_empty() {
-            return Err(ProviderError::msg("区域缺少名称或描述"));
+            return Err(ProviderError::coded(
+                "backend_region_incomplete",
+                "A region is missing a name or description",
+            ));
         }
         if region
             .reference_index
             .is_some_and(|i| i >= req.images.len())
             || (region.source_box.is_some() && region.reference_index.is_none())
         {
-            return Err(ProviderError::msg("区域来源参考图无效"));
+            return Err(ProviderError::coded(
+                "backend_region_source",
+                "A region's source reference is invalid",
+            ));
         }
         for b in [region.source_box, region.target_box].into_iter().flatten() {
             if b.iter().any(|v| *v > 1000) || b[0] >= b[2] || b[1] >= b[3] {
-                return Err(ProviderError::msg("区域坐标须为 0–1000 的有效矩形"));
+                return Err(ProviderError::coded(
+                    "backend_region_coords",
+                    "Region coordinates must be a valid rectangle from 0 to 1000",
+                ));
             }
         }
         if region.target_box.is_none() && region.source_box.is_none() {
-            return Err(ProviderError::msg("移除区域需要来源区域"));
+            return Err(ProviderError::coded(
+                "backend_region_remove_source",
+                "A remove region needs a source region",
+            ));
         }
     }
     if m.family == "flux"
@@ -211,8 +283,9 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
         && req.images.is_empty()
         && (req.regions.is_empty() || req.params.aspect_ratio.as_deref() == Some("auto"))
     {
-        return Err(ProviderError::msg(
-            "Runware FLUX 文生图需要放置区域和明确的宽高比",
+        return Err(ProviderError::coded(
+            "backend_runware_flux_t2i",
+            "Runware FLUX text-to-image needs a place region and an explicit aspect ratio",
         ));
     }
     if m.family == "gpt" {
@@ -225,12 +298,18 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
         if req.params.background.as_deref() == Some("transparent")
             && req.params.output_format.as_deref() == Some("jpeg")
         {
-            return Err(ProviderError::msg("透明背景不支持 JPEG"));
+            return Err(ProviderError::coded(
+                "backend_transparent_jpeg",
+                "A transparent background does not support JPEG",
+            ));
         }
     }
     if m.family == "qwen" {
         if req.params.width.is_some() != req.params.height.is_some() {
-            return Err(ProviderError::msg("宽度和高度须同时设置"));
+            return Err(ProviderError::coded(
+                "backend_dimensions_together",
+                "Set width and height together",
+            ));
         }
         if let (Some(w), Some(h)) = (req.params.width, req.params.height) {
             let area = u64::from(w) * u64::from(h);
@@ -238,43 +317,69 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
                 || area > m.route["maxPixels"].as_u64().unwrap_or(4194304)
                 || w.max(h) as f64 / w.min(h) as f64 > 8.0
             {
-                return Err(ProviderError::msg("Qwen 输出面积或宽高比超过此路由限制"));
+                return Err(ProviderError::coded(
+                    "backend_qwen_output",
+                    "Qwen output area or aspect ratio exceeds this route's limit",
+                ));
             }
         }
         if req.params.prompt_extend_mode.as_deref() == Some("agent") && !req.images.is_empty() {
-            return Err(ProviderError::msg("Qwen 编辑仅支持 direct 扩写"));
+            return Err(ProviderError::coded(
+                "backend_qwen_direct",
+                "Qwen editing only supports direct expansion",
+            ));
         }
         if req.params.prompt_extend == Some(false) && req.params.prompt_extend_mode.is_some() {
-            return Err(ProviderError::msg("关闭扩写时请省略扩写方式"));
+            return Err(ProviderError::coded(
+                "backend_qwen_extend_mode",
+                "Omit the expansion method when expansion is off",
+            ));
         }
     }
     if let Some(mask) = &req.mask {
         if !m.route["mask"].as_bool().unwrap_or(false) {
-            return Err(ProviderError::msg("此模型路由不支持蒙版"));
+            return Err(ProviderError::coded(
+                "backend_mask_unsupported",
+                "This route does not support masks",
+            ));
         }
         let first = req
             .images
             .first()
-            .ok_or_else(|| ProviderError::msg("蒙版需要第一张参考图"))?;
+            .ok_or_else(|| {
+                ProviderError::coded(
+                    "backend_mask_needs_ref",
+                    "A mask needs the first reference image",
+                )
+            })?;
         let (mime, bytes) = parse_data_url(mask)?;
         if mime != "image/png" || bytes.len() >= 4 * 1024 * 1024 {
-            return Err(ProviderError::msg("蒙版须为小于 4MiB 的透明 PNG"));
+            return Err(ProviderError::coded(
+                "backend_mask_png",
+                "The mask must be a transparent PNG under 4MiB",
+            ));
         }
         let im =
-            image::load_from_memory(&bytes).map_err(|_| ProviderError::msg("蒙版不是有效图片"))?;
+            image::load_from_memory(&bytes).map_err(|_| {
+                ProviderError::coded("backend_mask_invalid", "The mask is not a valid image")
+            })?;
         let (_, first_bytes) = parse_data_url(first)?;
         let reference = image::ImageReader::new(std::io::Cursor::new(first_bytes))
             .with_guessed_format()
-            .map_err(|_| ProviderError::msg("参考图无效"))?
+            .map_err(|_| ProviderError::coded("backend_ref_invalid", "The reference image is invalid"))?
             .into_dimensions()
-            .map_err(|_| ProviderError::msg("参考图无效"))?;
+            .map_err(|_| ProviderError::coded("backend_ref_invalid", "The reference image is invalid"))?;
         if !im.color().has_alpha() || (im.width(), im.height()) != reference {
-            return Err(ProviderError::msg(
-                "蒙版须有 alpha 通道且与第一张参考图同尺寸",
+            return Err(ProviderError::coded(
+                "backend_mask_match",
+                "The mask needs an alpha channel and the same size as the first reference",
             ));
         }
         if !im.to_rgba8().pixels().any(|p| p.0[3] == 0) {
-            return Err(ProviderError::msg("蒙版需要完全透明的编辑区域"));
+            return Err(ProviderError::coded(
+                "backend_mask_transparent",
+                "The mask needs a fully transparent edit area",
+            ));
         }
     }
     Ok(())
@@ -296,5 +401,8 @@ pub fn validate_gpt_size(size: &str) -> Result<(u32, u32), ProviderError> {
             return Ok((w, h));
         }
     }
-    Err(ProviderError::msg("GPT Image 输出尺寸无效"))
+    Err(ProviderError::coded(
+        "backend_gpt_size",
+        "The GPT Image output size is invalid",
+    ))
 }

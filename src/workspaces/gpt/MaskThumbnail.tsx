@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { m } from "../../i18n";
 import type { WorkingImage } from "../../lib/types";
 
 export default function MaskThumbnail({
@@ -44,6 +45,6 @@ export default function MaskThumbnail({
   }, [image.dataUrl, image.width, image.height, mask.dataUrl]);
 
   return (
-    <canvas ref={canvasRef} role="img" aria-label="主图与黑色编辑蒙版" />
+    <canvas ref={canvasRef} role="img" aria-label={m.mask_preview()} />
   );
 }

@@ -276,6 +276,7 @@ export interface Preferences {
   sidebarWidthPercent: number;
   referenceSidebarWidth?: number;
   saveDirectory: string;
+  locale?: "system" | "en" | "zh" | "ja";
   theme: "system" | "light" | "dark";
   provider: ProviderId;
   params: GenerateParams;

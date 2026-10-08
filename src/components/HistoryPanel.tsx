@@ -4,10 +4,17 @@ import { ArrowClockwise, ArrowLeft, Trash } from "@phosphor-icons/react";
 import { assetUrl, historyDelete, importImage, saveDataUrl } from "../lib/api";
 import type { HistoryItem } from "../lib/types";
 import { exportDefaultPath } from "../lib/export";
-import { modelByAnyId, providers } from "../models/catalog";
+import { localizeStored, m, formatDateTime } from "../i18n";
+import {
+  fieldLabel,
+  historyPhase,
+  modelLabel,
+  providerLabel,
+  requestStatus,
+} from "../labels";
+import { catalog, modelByAnyId } from "../models/catalog";
 import Modal from "./Modal";
 import { displayValue } from "../workspaces/shared/Controls";
-import { catalog } from "../models/catalog";
 
 interface Props {
   onCancel?: (id: string) => void;
@@ -66,7 +73,9 @@ export default function HistoryPanel({
       );
       setDeleteIds([]);
       if (failed.length)
-        setError(`有 ${failed.length} 条记录删除失败：${failed[0]}`);
+        setError(
+          m.error_delete_records({ count: failed.length, detail: failed[0] }),
+        );
       else {
         setBatchMode(false);
         setSelectedIds(new Set());
@@ -78,25 +87,24 @@ export default function HistoryPanel({
   };
   const confirmation = deleteIds.length > 0 && (
     <Modal
-      title="确认删除历史记录"
+      title={m.history_title_delete()}
       onClose={() => {
         if (!deleting) setDeleteIds([]);
       }}
     >
       <p>
-        确定删除 {deleteIds.length}{" "}
-        条历史记录？图片文件会保留，历史记录删除后无法撤销。
+        {m.history_delete_body({ count: deleteIds.length })}
       </p>
       <div className="history-delete-actions">
         <button disabled={deleting} onClick={() => setDeleteIds([])}>
-          取消
+          {m.action_cancel()}
         </button>
         <button
           className="danger"
           disabled={deleting}
           onClick={() => void confirmDelete()}
         >
-          {deleting ? "删除中…" : "确认删除"}
+          {deleting ? m.history_deleting() : m.history_confirm()}
         </button>
       </div>
     </Modal>
@@ -134,7 +142,9 @@ export default function HistoryPanel({
     <>
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="history-list-toolbar">
-          <span className="text-xs text-zinc-500">共 {items.length} 条</span>
+          <span className="text-xs text-zinc-500">
+            {m.history_total({ count: items.length })}
+          </span>
           <div className="row">
             <button
               disabled={!deletable.length && !batchMode}
@@ -144,10 +154,10 @@ export default function HistoryPanel({
                 setError("");
               }}
             >
-              {batchMode ? "取消选择" : "批量删除"}
+              {batchMode ? m.history_cancel_select() : m.history_batch()}
             </button>
             <button onClick={onRefresh}>
-              <ArrowClockwise size={14} /> 刷新
+              <ArrowClockwise size={14} /> {m.action_refresh()}
             </button>
           </div>
         </div>
@@ -164,16 +174,18 @@ export default function HistoryPanel({
               }
             >
               {selected.length > 0 && selected.length === deletable.length
-                ? "取消全选"
-                : "全选"}
+                ? m.history_select_none()
+                : m.history_select_all()}
             </button>
-            <span className="muted">已选 {selected.length} 条</span>
+            <span className="muted">
+              {m.history_selected({ count: selected.length })}
+            </span>
             <button
               className="danger"
               disabled={!selected.length}
               onClick={() => setDeleteIds(selected.map((it) => it.id))}
             >
-              删除所选
+              {m.history_delete_selected()}
             </button>
           </div>
         )}
@@ -184,7 +196,7 @@ export default function HistoryPanel({
         )}
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {items.length === 0 ? (
-            <p className="text-xs text-zinc-500">暂无生成记录</p>
+            <p className="text-xs text-zinc-500">{m.history_empty()}</p>
           ) : (
             <div className="flex flex-col gap-2">
               {items.map((it, index) => (
@@ -198,7 +210,7 @@ export default function HistoryPanel({
                   {batchMode && (
                     <input
                       type="checkbox"
-                      aria-label={"选择第 " + (index + 1) + " 条历史记录"}
+                      aria-label={m.history_select_n({ index: index + 1 })}
                       checked={selectedIds.has(it.id) && canDelete(it)}
                       disabled={!canDelete(it)}
                       onChange={() => toggle(it.id)}
@@ -225,33 +237,39 @@ export default function HistoryPanel({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
                         <span className="rounded bg-zinc-800 px-1">
-                          {it.mode === "edit" ? "编辑" : "文生图"}
+                          {it.mode === "edit" ? m.task_edit() : m.mode_text()}
                         </span>
-                        <span>{new Date(it.createdAt).toLocaleString()}</span>
+                        <span>{formatDateTime(it.createdAt)}</span>
                         {(it.cost !== null || it.usage?.credits != null) && (
                           <span className="text-emerald-500">
                             {it.provider === "comfy"
-                              ? `${it.usage?.credits ?? "未返回"} Credits`
+                              ? m.history_credits({
+                                  value:
+                                    it.usage?.credits ?? m.state_not_returned(),
+                                })
                               : it.cost !== null
                                 ? `$${it.cost.toFixed(3)}`
-                                : "费用未返回"}
+                                : m.history_cost_missing()}
                           </span>
                         )}
                       </div>
                       <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-zinc-300">
-                        {it.prompt || "（无提示词）"}
+                        {it.prompt || m.history_no_prompt()}
                       </p>
                       <span className="muted">
-                        {modelByAnyId(it.model)?.label ?? it.model} ·{" "}
-                        {historyStatus(it)}
+                        {modelLabel(
+                          it.model,
+                          modelByAnyId(it.model)?.label ?? it.model,
+                        )}{" "}
+                        · {historyStatus(it)}
                       </span>
                     </div>
                   </button>
                   {!batchMode && canDelete(it) && (
                     <button
                       className="history-row-delete danger"
-                      aria-label={"删除第 " + (index + 1) + " 条历史记录"}
-                      title="删除记录"
+                      aria-label={m.history_delete_n({ index: index + 1 })}
+                      title={m.history_delete_record()}
                       onClick={() => {
                         setError("");
                         setDeleteIds([it.id]);
@@ -308,7 +326,7 @@ function HistoryDetail({
         saveDirectory,
         `lutriui-${item.id.slice(0, 8)}${resultIndex ? "-" + (resultIndex + 1) : ""}.${ext}`,
       ),
-      filters: [{ name: "图片", extensions: [ext] }],
+      filters: [{ name: m.file_image(), extensions: [ext] }],
     });
     if (!path) return;
     setSaving(true);
@@ -316,7 +334,7 @@ function HistoryDetail({
       const img = await importImage(resultFile);
       await saveDataUrl(img.dataUrl, path);
     } catch (e) {
-      setSaveError("保存失败：" + String(e));
+      setSaveError(m.error_save_failed({ detail: String(e) }));
     } finally {
       setSaving(false);
     }
@@ -328,38 +346,43 @@ function HistoryDetail({
         className="history-back mb-2 self-start text-xs text-zinc-400 hover:text-zinc-200"
         onClick={onBack}
       >
-        <ArrowLeft size={12} /> 返回列表
+        <ArrowLeft size={12} /> {m.history_back()}
       </button>
 
       {resultSrc && (
         <button
           className="history-image-button"
-          aria-label="放大查看历史结果"
-          onClick={() => setPreview({ src: resultSrc, title: "历史生成结果" })}
+          aria-label={m.history_zoom()}
+          onClick={() =>
+            setPreview({ src: resultSrc, title: m.history_result_title() })
+          }
         >
           <img
             src={resultSrc}
-            alt="结果"
+            alt={m.history_result_alt()}
             className="w-full rounded-md border border-zinc-800"
           />
         </button>
       )}
       {!resultSrc && item.resultFiles.length > 0 && (
-        <p className="help">这张结果图片已从图库删除，生成参数仍然保留。</p>
+        <p className="help">{m.history_image_removed()}</p>
       )}
       {item.resultFiles.length > 1 && (
-        <div className="result-gallery mt-2" aria-label="历史生成结果">
+        <div className="result-gallery mt-2" aria-label={m.history_results()}>
           {item.resultFiles.map((path, i) => (
             <button
               key={i}
               className={resultIndex === i ? "active" : ""}
-              aria-label={"历史结果 " + (i + 1)}
+              aria-label={m.history_result_n({ index: i + 1 })}
               onClick={() => setResultIndex(i)}
             >
               {path ? (
-                <img src={assetUrl(path)} alt={"历史结果 " + (i + 1)} />
+                <img
+                  src={assetUrl(path)}
+                  alt={m.history_result_n({ index: i + 1 })}
+                />
               ) : (
-                <span className="help">图片已删除</span>
+                <span className="help">{m.history_image_gone()}</span>
               )}
             </button>
           ))}
@@ -367,30 +390,27 @@ function HistoryDetail({
       )}
 
       <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-        <Meta label="任务状态" value={historyStatus(item)} />
+        <Meta label={m.history_status()} value={historyStatus(item)} />
         <Meta
-          label="模式"
-          value={item.mode === "edit" ? "图像编辑" : "文生图"}
+          label={m.history_mode()}
+          value={item.mode === "edit" ? m.mode_image_edit() : m.mode_text()}
         />
-        <Meta label="时间" value={new Date(item.createdAt).toLocaleString()} />
+        <Meta label={m.history_time()} value={formatDateTime(item.createdAt)} />
+        <Meta label={m.history_provider()} value={providerLabel(item.provider)} />
         <Meta
-          label="提供商"
-          value={
-            providers.find((p) => p.id === item.provider)?.label ??
-            item.provider
-          }
-        />
-        <Meta
-          label="模型"
-          value={modelByAnyId(item.model)?.label ?? item.model}
+          label={m.history_model()}
+          value={modelLabel(
+            item.model,
+            modelByAnyId(item.model)?.label ?? item.model,
+          )}
         />
         {(item.provider !== "comfy" || item.usage?.credits != null) && (
           <Meta
-            label="成本"
+            label={m.history_cost()}
             value={
               item.provider === "comfy"
                 ? item.usage?.credits != null
-                  ? `${item.usage.credits} Credits`
+                  ? m.history_credits({ value: item.usage.credits })
                   : ""
                 : item.cost !== null
                   ? `$${item.cost.toFixed(4)}`
@@ -405,36 +425,46 @@ function HistoryDetail({
           }
         />
         <Meta
-          label="画布"
+          label={m.history_canvas()}
           value={
             item.canvasWidth ? `${item.canvasWidth}×${item.canvasHeight}` : "-"
           }
         />
-        <Meta label="包围盒" value={`${(item.boxes ?? []).length} 个`} />
+        <Meta
+          label={m.history_boxes()}
+          value={m.history_box_count({ count: (item.boxes ?? []).length })}
+        />
         {item.batch && (
           <Meta
-            label="生成张数"
-            value={`${item.resultFiles.length} / ${item.batch.requests.length} 张`}
+            label={m.history_output_count()}
+            value={m.history_output_ratio({
+              done: item.resultFiles.length,
+              total: item.batch.requests.length,
+            })}
           />
         )}
       </div>
-      {item.error && <p className="error-text">{item.error}</p>}
-      {item.taskId && <p className="help">供应商任务：{item.taskId}</p>}
+      {item.error && (
+        <p className="error-text">{localizeStored(item.error)}</p>
+      )}
+      {item.taskId && (
+        <p className="help">{m.history_provider_task({ id: item.taskId })}</p>
+      )}
       {(item.status === "queued" || item.status === "running") &&
         item.batch?.requests.some((request) => request.status === "queued") && (
-          <button onClick={onCancel}>停止尚未发送的请求</button>
+          <button onClick={onCancel}>{m.history_stop_unsent()}</button>
         )}
 
       <div className="mt-3">
-        <p className="mb-1 text-xs text-zinc-500">提示词</p>
+        <p className="mb-1 text-xs text-zinc-500">{m.history_prompt()}</p>
         <p className="whitespace-pre-wrap rounded border border-zinc-800 bg-zinc-900 p-2 text-xs leading-relaxed text-zinc-300">
-          {item.prompt || "（空）"}
+          {item.prompt || m.history_prompt_empty()}
         </p>
       </div>
 
       {(item.boxes ?? []).length > 0 && (
         <div className="mt-3">
-          <p className="mb-1 text-xs text-zinc-500">包围盒（画布像素坐标）</p>
+          <p className="mb-1 text-xs text-zinc-500">{m.history_boxes_px()}</p>
           <div className="flex flex-col gap-1">
             {(
               item.boxes as {
@@ -456,7 +486,7 @@ function HistoryDetail({
         </div>
       )}
       <details className="mt-3">
-        <summary>生成参数</summary>
+        <summary>{m.history_params()}</summary>
         <dl className="request-parameters">
           {Object.entries(item.params)
             .filter(
@@ -472,7 +502,7 @@ function HistoryDetail({
             )
             .map(([key, value]) => (
               <div key={key}>
-                <dt>{catalog.fields[key].label}</dt>
+                <dt>{fieldLabel(key, catalog.fields[key].label)}</dt>
                 <dd>{displayValue(key, value as string | number | boolean)}</dd>
               </div>
             ))}
@@ -481,30 +511,27 @@ function HistoryDetail({
 
       {item.batch && item.batch.requests.length > 1 && (
         <details className="mt-3">
-          <summary>逐张请求详情</summary>
+          <summary>{m.history_requests()}</summary>
           {item.batch.requests.map((request, i) => (
             <div key={request.requestId} className="help">
-              第 {i + 1} 张 ·{" "}
-              {
-                {
-                  queued: "等待执行",
-                  running: "执行中",
-                  ok: "已完成",
-                  failed: "失败",
-                  skipped: "未执行",
-                  interrupted: "已中断",
-                }[request.status]
-              }
-              {request.seed != null && ` · 种子 ${request.seed}`}
-              {request.taskId && <p>供应商任务：{request.taskId}</p>}
-              {request.error && <p className="error-text">{request.error}</p>}
+              {m.history_request_n({
+                index: i + 1,
+                status: requestStatus(request.status),
+              })}
+              {request.seed != null && m.history_seed({ seed: request.seed })}
+              {request.taskId && (
+                <p>{m.history_provider_task({ id: request.taskId })}</p>
+              )}
+              {request.error && (
+                <p className="error-text">{localizeStored(request.error)}</p>
+              )}
             </div>
           ))}
         </details>
       )}
       <details className="mt-3">
         <summary className="cursor-pointer text-xs text-zinc-500">
-          最终发送的提示词
+          {m.history_final_prompt()}
         </summary>
         <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded border border-zinc-800 bg-zinc-900 p-2 text-[10px] text-zinc-500">
           {item.finalPrompt}
@@ -514,23 +541,28 @@ function HistoryDetail({
       {inputSrc && (
         <div className="mt-3">
           <p className="mb-1 text-xs text-zinc-500">
-            当时的素材 · {item.inputFiles.length}
+            {m.history_inputs({ count: item.inputFiles.length })}
           </p>
           <div className="result-gallery">
             {item.inputFiles.map((path, i) => (
               <button
                 key={path}
-                aria-label={"查看历史素材 " + (i + 1)}
+                aria-label={m.history_view_input({ index: i + 1 })}
                 onClick={() =>
                   setPreview({
                     src: assetUrl(path),
-                    title: item.recipe?.refNames[i] ?? "素材 " + (i + 1),
+                    title:
+                      item.recipe?.refNames[i] ??
+                      m.name_material_n({ index: i + 1 }),
                   })
                 }
               >
                 <img
                   src={assetUrl(path)}
-                  alt={item.recipe?.refNames[i] ?? "素材 " + (i + 1)}
+                  alt={
+                    item.recipe?.refNames[i] ??
+                    m.name_material_n({ index: i + 1 })
+                  }
                 />
               </button>
             ))}
@@ -549,27 +581,27 @@ function HistoryDetail({
           onClick={() => onUseAsInput(resultIndex)}
           disabled={!resultSrc}
         >
-          作为当前输入继续编辑
+          {m.history_continue()}
         </button>
         <button
           className="rounded-md border border-zinc-700 px-3 py-2 text-xs hover:border-zinc-500"
           onClick={onRestoreEdit}
         >
-          恢复完整方案
+          {m.history_restore()}
         </button>
         <button
           className="rounded-md border border-zinc-700 px-3 py-2 text-xs hover:border-zinc-500"
           onClick={saveAs}
           disabled={!resultSrc || saving}
         >
-          {saving ? "保存中…" : "另存为…"}
+          {saving ? m.history_saving() : m.history_save_as()}
         </button>
         <button
           className="rounded-md border border-red-900/60 px-3 py-2 text-xs text-red-400 hover:border-red-700"
           onClick={onDelete}
           disabled={item.status === "queued" || item.status === "running"}
         >
-          <Trash size={12} /> 删除记录
+          <Trash size={12} /> {m.history_delete_record()}
         </button>
       </div>
       {preview && (
@@ -594,30 +626,16 @@ function Meta({ label, value }: { label: string; value: string }) {
   );
 }
 function historyStatus(item: HistoryItem) {
-  const phases: Record<string, string> = {
-    preparing: "准备素材",
-    submitting: "提交中",
-    queued: "供应商排队",
-    generating: "生成中",
-    waiting: "等待结果",
-    downloading: "下载结果",
-    reasoning: "处理中",
-    saving: "保存结果",
-  };
   const status =
     item.status === "running"
-      ? (phases[item.phase ?? ""] ?? "执行中")
-      : ((
-          {
-            queued: "等待执行",
-            ok: "已完成",
-            failed: "失败",
-            cancelled: "已取消",
-            interrupted: "已中断",
-            partial: "部分完成",
-          } as Record<string, string>
-        )[item.status] ?? item.status);
+      ? historyPhase(item.phase ?? "")
+      : requestStatus(item.status);
   return item.batch && item.batch.requests.length > 1
-    ? `${status} · ${item.batch.requests.filter((request) => request.status === "ok").length}/${item.batch.requests.length} 张`
+    ? m.status_with_count({
+        status,
+        done: item.batch.requests.filter((request) => request.status === "ok")
+          .length,
+        total: item.batch.requests.length,
+      })
     : status;
 }

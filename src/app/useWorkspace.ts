@@ -22,6 +22,8 @@ import {
 import { families, fieldsFor, providers, modelById } from "../models/catalog";
 import { displayValue } from "../models/parameterLabels";
 import { referenceWidth } from "../components/ResizableReferences";
+import { applyLocale, m, resolveLocale } from "../i18n";
+import { fieldLabel, modelLabel, providerLabel } from "../labels";
 import type {
   Draft,
   FamilyId,
@@ -51,6 +53,13 @@ function readPreferences(): Preferences {
       Math.min(40, Number(p.sidebarWidthPercent) || 25),
     );
     p.referenceSidebarWidth = referenceWidth(p.referenceSidebarWidth);
+    if (
+      p.locale !== "system" &&
+      p.locale !== "en" &&
+      p.locale !== "zh" &&
+      p.locale !== "ja"
+    )
+      p.locale = "system";
     return p;
   } catch {
     return DEFAULT_PREFERENCES;
@@ -61,7 +70,21 @@ export function useWorkspace(
   onNotice: (s: string) => void,
   onRequestClose?: () => void,
 ) {
-  const [prefs, setPrefs] = useState<Preferences>(readPreferences);
+  const [prefs, setPrefsState] = useState<Preferences>(() => {
+    const initial = readPreferences();
+    applyLocale(resolveLocale(initial.locale));
+    return initial;
+  });
+  const setPrefs = useCallback(
+    (value: Preferences | ((current: Preferences) => Preferences)) => {
+      setPrefsState((current) => {
+        const next = typeof value === "function" ? value(current) : value;
+        applyLocale(resolveLocale(next.locale));
+        return next;
+      });
+    },
+    [],
+  );
   const [draft, setDraft] = useState<Draft>(() => newDraft(prefs));
   const current = useRef(draft);
   const tasks = useRef<WorkspaceSession["tasks"]>({
@@ -164,13 +187,16 @@ export function useWorkspace(
         previous.params[key] !== undefined &&
         previous.params[key] !== d.params[key]
           ? [
-              `${field.label} ${displayValue(key, previous.params[key])} → ${displayValue(key, d.params[key])}`,
+              `${fieldLabel(key, field.label)} ${displayValue(key, previous.params[key])} → ${displayValue(key, d.params[key])}`,
             ]
           : [],
       );
-      const route = `${modelById(d.modelId)?.label} · ${providers.find((p) => p.id === d.provider)?.label}`;
+      const route = `${modelLabel(d.modelId, modelById(d.modelId)?.label ?? "")} · ${providerLabel(d.provider)}`;
+      const changesText = changes.length ? "；" + changes.join("，") : "";
       onNotice(
-        `${restored ? "已恢复" : "已切换至"} ${route}${restored ? " 的参数" : ""}${changes.length ? "；" + changes.join("，") : ""}`,
+        restored
+          ? m.notice_route_restored({ route, changes: changesText })
+          : m.notice_route_switched({ route, changes: changesText }),
       );
     }
   };
@@ -254,7 +280,7 @@ export function useWorkspace(
       await persist();
       await getCurrentWindow().destroy();
     } catch (e) {
-      onNotice("关闭前保存失败：" + String(e));
+      onNotice(m.notice_close_save_failed({ detail: String(e) }));
     }
   };
   useEffect(() => {
@@ -277,8 +303,7 @@ export function useWorkspace(
         if (!alive) return;
         saveAllowed.current = false;
         onNotice(
-          "草稿恢复失败，已暂停保存以保留原文件。新建方案后可重新保存：" +
-            String(e),
+          m.notice_draft_restore_failed({ detail: String(e) }),
         );
       })
       .finally(() => {
@@ -295,7 +320,9 @@ export function useWorkspace(
       saveQueue.current = saveQueue.current
         .catch(() => {})
         .then(() => api.draftSave(snapshot))
-        .catch((e) => onNotice("草稿保存失败：" + String(e)));
+        .catch((e) =>
+          onNotice(m.notice_draft_save_failed({ detail: String(e) })),
+        );
     }, 450);
     return () => window.clearTimeout(timer);
   }, [draft, ready, session, onNotice]);
@@ -314,14 +341,14 @@ export function useWorkspace(
           await persist();
           await getCurrentWindow().destroy();
         } catch (e) {
-          onNotice("关闭前保存失败：" + String(e) + "。请修复后再关闭。");
+          onNotice(m.notice_close_save_blocked({ detail: String(e) }));
         }
       })
       .then((fn) => {
         if (disposed) fn();
         else off = fn;
       })
-      .catch((e) => onNotice("关闭保护初始化失败：" + String(e)));
+      .catch((e) => onNotice(m.notice_close_guard_failed({ detail: String(e) })));
     return () => {
       disposed = true;
       off?.();
@@ -331,7 +358,7 @@ export function useWorkspace(
     try {
       localStorage.setItem("lutriui-preferences-v2", JSON.stringify(prefs));
     } catch (e) {
-      onNotice("偏好保存失败：" + String(e));
+      onNotice(m.notice_prefs_save_failed({ detail: String(e) }));
     }
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const update = () => {

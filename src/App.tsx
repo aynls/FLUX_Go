@@ -50,16 +50,17 @@ import type {
 import { getResultBase, type SavedResult } from "./app/generation";
 import { ResultStage, ResultActions } from "./components/Results";
 import { updateFluxBoxes } from "./models/flux/regions";
+import { m } from "./i18n";
 
 export default function App() {
   const [notice, setNotice] = useState("");
+  const transientNotice = useRef("");
+  const showNotice = useCallback((text: string, transient = false) => {
+    transientNotice.current = transient ? text : "";
+    setNotice(text);
+  }, []);
   useEffect(() => {
-    if (
-      !/^(已添加 \d+ 张参考图|已导入 \d+ 张图片到图库|图片已复制|结果已保存到图库|任务已完成，图片已保存在图库|已保存到 .+)$/.test(
-        notice,
-      )
-    )
-      return;
+    if (!transientNotice.current || notice !== transientNotice.current) return;
     const timer = window.setTimeout(
       () => setNotice((current) => (current === notice ? "" : current)),
       4000,
@@ -69,7 +70,7 @@ export default function App() {
   const [closeRequested, setCloseRequested] = useState(false);
   const requestClose = useCallback(() => setCloseRequested(true), []);
   const submitting = useRef(false);
-  const ws = useWorkspace(submitting, setNotice, requestClose);
+  const ws = useWorkspace(submitting, showNotice, requestClose);
   const {
     prefs,
     setPrefs,
@@ -220,14 +221,14 @@ export default function App() {
       setHistory(await api.historyList());
       setHistoryError("");
     } catch (e) {
-      setHistoryError("历史读取失败：" + String(e));
+      setHistoryError(m.notice_history_read_failed({ detail: String(e) }));
     }
     try {
       setGalleryItems(await api.galleryList());
       setGalleryReady(true);
       setGalleryError("");
     } catch (e) {
-      setGalleryError("图库读取失败：" + String(e));
+      setGalleryError(m.notice_gallery_read_failed({ detail: String(e) }));
     }
   }, []);
   const generation = useGenerationTasks(
@@ -236,22 +237,21 @@ export default function App() {
       storeResult(r, true);
       if (r.item.status === "running") return;
       // Task completion never interrupts the canvas or the user's next request.
-      setNotice(
-        r.saved
-          ? r.item.status === "partial"
-            ? "批次部分完成，成功的图片已保存在图库"
-            : "任务已完成，图片已保存在图库"
-          : "任务已完成，历史未保存，请从结果区重新保存",
-      );
+      if (r.saved && r.item.status !== "partial")
+        showNotice(m.notice_task_saved(), true);
+      else
+        showNotice(
+          r.saved ? m.notice_batch_partial() : m.notice_task_unsaved(),
+        );
     },
     refreshHistory,
-    setNotice,
+    showNotice,
   );
   const generationTask = generation.task;
   const busy = generation.tasks.length > 0;
   useEffect(() => {
     void refreshProviders().catch((e) =>
-      setNotice("无法读取提供商状态：" + String(e)),
+      showNotice(m.notice_provider_status_failed({ detail: String(e) })),
     );
     void refreshHistory();
   }, [refreshProviders, refreshHistory]);
@@ -290,13 +290,13 @@ export default function App() {
               destination === "references" &&
               current.current.refs.length + accepted.length >= max
             ) {
-              errors.push(`此路由参考图最多 ${max} 张，其余文件未导入`);
+              errors.push(m.error_refs_truncated({ count: max }));
               break;
             }
             try {
               const r = await load();
               if (r.width * r.height > 64_000_000)
-                throw new Error(r.name + " 超过 64MP");
+                throw new Error(m.error_over_64mp({ name: r.name }));
               const assetId =
                 r.assetId ?? (await api.galleryImport(r, source)).id;
               accepted.push({ ...r, assetId, uid: crypto.randomUUID() });
@@ -310,7 +310,7 @@ export default function App() {
             workspaceKey(current.current) !== target
           )
             errors.push(
-              "当前任务已切换，图片已保存在图库，请在需要的任务中重新选择",
+              m.error_task_switched_gallery(),
             );
           let added = 0;
           if (
@@ -324,7 +324,7 @@ export default function App() {
                 current.current.refs.length,
             );
             if (accepted.length > room)
-              errors.push("导入期间方案变化，超过上限的文件未导入");
+              errors.push(m.error_import_limit_changed());
             const next = {
               ...current.current,
               refs: [...current.current.refs, ...accepted.slice(0, room)],
@@ -337,34 +337,33 @@ export default function App() {
               true,
             );
           }
-          setNotice(
-            [
-              added
-                ? "已添加 " + added + " 张参考图"
-                : accepted.length
-                  ? "已导入 " + accepted.length + " 张图片到图库"
-                  : "",
-              ...errors,
-            ]
-              .filter(Boolean)
-              .join("；"),
+          const summary = added
+            ? m.notice_refs_added({ count: added })
+            : accepted.length
+              ? m.notice_images_imported({ count: accepted.length })
+              : "";
+          showNotice(
+            [summary, ...errors].filter(Boolean).join("；"),
+            Boolean(summary) && errors.length === 0,
           );
           await refreshHistory();
         })
-        .catch((e) => setNotice("导入失败：" + String(e)))
+        .catch((e) =>
+          showNotice(m.notice_import_failed({ detail: String(e) })),
+        )
         .finally(() => {
           importJobs.current--;
           if (!importJobs.current) setImporting(false);
         });
     },
-    [commit, current, refreshHistory],
+    [commit, current, refreshHistory, showNotice],
   );
   const openFiles = async () => {
     try {
       const paths = await open({
         multiple: true,
         filters: [
-          { name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif"] },
+          { name: m.file_image(), extensions: ["png", "jpg", "jpeg", "webp", "gif"] },
         ],
       });
       if (paths)
@@ -374,7 +373,7 @@ export default function App() {
           ),
         );
     } catch (e) {
-      setNotice(String(e));
+      showNotice(String(e));
     }
   };
   const importMask = async () => {
@@ -382,7 +381,7 @@ export default function App() {
     try {
       const path = await open({
         multiple: false,
-        filters: [{ name: "透明 PNG 蒙版", extensions: ["png"] }],
+        filters: [{ name: m.file_mask(), extensions: ["png"] }],
       });
       if (!path) return;
       const mask = await api.importImage(Array.isArray(path) ? path[0] : path);
@@ -390,7 +389,7 @@ export default function App() {
         current.current.family !== snapshot.family ||
         current.current.refs[0]?.uid !== snapshot.refs[0]?.uid
       )
-        throw new Error("导入期间编辑主图已改变，请重新导入蒙版");
+        throw new Error(m.error_mask_target_changed());
       commit(
         {
           ...current.current,
@@ -400,7 +399,7 @@ export default function App() {
         true,
       );
     } catch (e) {
-      setNotice("蒙版导入失败：" + String(e));
+      showNotice(m.notice_mask_import_failed({ detail: String(e) }));
     }
   };
   useEffect(() => {
@@ -418,7 +417,9 @@ export default function App() {
         if (disposed) fn();
         else off = fn;
       })
-      .catch((e) => setNotice("拖放初始化失败：" + String(e)));
+      .catch((e) =>
+        showNotice(m.notice_drop_init_failed({ detail: String(e) })),
+      );
     return () => {
       disposed = true;
       off?.();
@@ -431,7 +432,7 @@ export default function App() {
         dialogs.length &&
         !(
           dialogs.length === 1 &&
-          dialogs[0].getAttribute("aria-label") === "从图库选择" &&
+          dialogs[0].getAttribute("aria-label") === m.pick_from_gallery() &&
           (e.ctrlKey || e.metaKey) &&
           e.key.toLowerCase() === "v"
         )
@@ -515,9 +516,9 @@ export default function App() {
       const item = await api.historySave(r.item, r.files);
       markSaved({ ...r, item });
       await refreshHistory();
-      setNotice("结果已保存到图库");
+      showNotice(m.notice_result_saved(), true);
     } catch (e) {
-      setNotice("历史保存失败，可再次保存：" + String(e));
+      showNotice(m.notice_history_save_retry({ detail: String(e) }));
     } finally {
       setSavingResult(false);
     }
@@ -531,7 +532,7 @@ export default function App() {
       ...(compiled.error ? [compiled.error] : []),
     ];
     if (invalid.length) {
-      setNotice(invalid.join("；"));
+      showNotice(invalid.join("；"));
       return;
     }
     try {
@@ -540,7 +541,7 @@ export default function App() {
       if (!id) return;
       setRequestFeedback({ key: workspaceKey(snapshot), id });
     } catch (e) {
-      setNotice("提交任务失败：" + String(e));
+      showNotice(m.notice_submit_failed({ detail: String(e) }));
     }
   };
   const useResult = async (
@@ -551,7 +552,7 @@ export default function App() {
     const d = edit ? ws.draftForIntent("edit") : current.current;
     const max = routeFor(d)?.maxRefs ?? 0;
     if (!edit && d.refs.length >= max) {
-      setNotice(`参考图已达 ${max} 张，请先移除一张`);
+      showNotice(m.notice_refs_full({ count: max }));
       return false;
     }
     let keepReferences = true;
@@ -571,7 +572,7 @@ export default function App() {
       setEditHandoff(null);
       if (decision == null) return false;
       if (ws.draftForIntent("edit") !== d) {
-        setNotice("编辑草稿已变化，请重新选择主图");
+        showNotice(m.notice_edit_draft_changed());
         return false;
       }
       keepReferences = decision;
@@ -588,7 +589,7 @@ export default function App() {
       setSelected(null);
       return true;
     } catch (e) {
-      setNotice(String(e));
+      showNotice(String(e));
       return false;
     }
   };
@@ -597,13 +598,13 @@ export default function App() {
     const unique = [...new Set(ids)].filter(
       (id) => !target.refs.some((r) => r.assetId === id),
     );
-    if (!unique.length) throw new Error("所选图片已在当前任务中");
+    if (!unique.length) throw new Error(m.error_already_in_task());
     const room = Math.max(
       0,
       (routeFor(target)?.maxRefs ?? 0) - target.refs.length,
     );
     if (unique.length > room)
-      throw new Error(`当前任务还可添加 ${room} 张参考图`);
+      throw new Error(m.error_ref_room({ count: room }));
     setImporting(true);
     try {
       const images = await Promise.all(
@@ -613,7 +614,7 @@ export default function App() {
         })),
       );
       if (workspaceKey(current.current) !== workspaceKey(target))
-        throw new Error("当前任务已切换，请重新选择");
+        throw new Error(m.error_task_switched());
       const next = {
         ...current.current,
         refs: [...current.current.refs, ...images],
@@ -627,7 +628,7 @@ export default function App() {
       setGalleryPicker(false);
       setGalleryOpen(false);
       setTab("params");
-      setNotice(`已添加 ${images.length} 张参考图`);
+      showNotice(m.notice_refs_added({ count: images.length }), true);
     } finally {
       setImporting(false);
     }
@@ -648,14 +649,14 @@ export default function App() {
   };
   const restoreHistory = async (item: HistoryItem) => {
     if (importing) {
-      setNotice("请等待图片导入完成后恢复历史");
+      showNotice(m.notice_wait_import());
       return;
     }
     try {
       const refs = await Promise.all(
         item.inputFiles.map(async (path, i) => ({
           ...(await api.importImage(path)),
-          name: item.recipe?.refNames[i] ?? "参考图 " + (i + 1),
+          name: item.recipe?.refNames[i] ?? m.name_reference_n({ index: i + 1 }),
           uid: item.recipe?.refIds[i] ?? crypto.randomUUID(),
           purpose: item.recipe?.refPurposes?.[i],
           note: item.recipe?.refNotes?.[i],
@@ -664,22 +665,22 @@ export default function App() {
       const mask = item.maskFile
         ? {
             ...(await api.importImage(item.maskFile)),
-            name: item.recipe?.maskName ?? "编辑蒙版",
+            name: item.recipe?.maskName ?? m.name_mask(),
           }
         : null;
-      if (!item.recipe) throw new Error("此记录没有可恢复的方案");
+      if (!item.recipe) throw new Error(m.error_no_recipe());
       const raw = { ...item.recipe, refs, mask };
       commit(withIds(readDraft(raw)), true);
       setView("canvas");
       setTab("params");
       setSelected(null);
     } catch (e) {
-      setNotice("方案恢复失败，当前工作未改变：" + String(e));
+      showNotice(m.notice_restore_failed({ detail: String(e) }));
     }
   };
   const historyAsInput = async (item: HistoryItem) => {
     try {
-      if (!item.resultFiles[0]) throw new Error("记录没有结果图片");
+      if (!item.resultFiles[0]) throw new Error(m.error_no_result_image());
       await useResult(await api.importImage(item.resultFiles[0]), true);
     } catch (e) {
       setNotice(String(e));
@@ -706,13 +707,13 @@ export default function App() {
           uid: crypto.randomUUID(),
           dataUrl: im.dataUrl,
           ...size,
-          name: "生成结果 " + (index + 1),
+          name: m.name_result_n({ index: index + 1 }),
         },
       });
       setView("result");
       setResultPreview(preview);
     } catch (e) {
-      setNotice("结果读取失败：" + String(e));
+      showNotice(m.notice_result_read_failed({ detail: String(e) }));
     }
   };
   const saveResult = async () => {
@@ -733,14 +734,14 @@ export default function App() {
             "." +
             ext,
         ),
-        filters: [{ name: "图片", extensions: [ext] }],
+        filters: [{ name: m.file_image(), extensions: [ext] }],
       });
       if (path) {
         await api.saveDataUrl(result.image.dataUrl, path);
-        setNotice("已保存到 " + path);
+        showNotice(m.notice_saved_to({ path }), true);
       }
     } catch (e) {
-      setNotice("另存为失败：" + String(e));
+      showNotice(m.notice_save_as_failed({ detail: String(e) }));
     }
   };
   const changeBoxes = (boxes: Box[]) =>
@@ -763,7 +764,7 @@ export default function App() {
         onCopy={() =>
           void api
             .copyImage(result.image.dataUrl)
-            .then(() => setNotice("图片已复制"))
+            .then(() => showNotice(m.notice_image_copied(), true))
             .catch((e) => setNotice(String(e)))
         }
         onUse={async (image, edit) => {
@@ -820,7 +821,7 @@ export default function App() {
             <span className="brand-mark" aria-hidden="true" />
             <strong>LutriUI</strong>
           </div>
-          <div className="task-tabs segmented" aria-label="创作任务">
+          <div className="task-tabs segmented" aria-label={m.task_tabs()}>
             {(["create", "edit"] as const).map((task) => (
               <button
                 key={task}
@@ -833,7 +834,7 @@ export default function App() {
                   ws.switchIntent(task);
                 }}
               >
-                {task === "create" ? "生成" : "编辑"}
+                {task === "create" ? m.task_generate() : m.task_edit()}
               </button>
             ))}
             <button
@@ -845,14 +846,14 @@ export default function App() {
                 void refreshHistory();
               }}
             >
-              图库
+              {m.gallery()}
             </button>
           </div>
         </div>
         <div className="row">
           {generation.tasks.length > 0 && (
             <button onClick={() => setTasksOpen(true)}>
-              进行中的任务 · {generation.tasks.length}
+              {m.tasks_running({ count: generation.tasks.length })}
             </button>
           )}
           {generationTask && tab === "history" && (
@@ -863,7 +864,7 @@ export default function App() {
               }}
             >
               <span className="activity-dot" aria-hidden="true" />
-              查看任务
+              {m.tasks_view()}
             </button>
           )}
           <button
@@ -877,7 +878,7 @@ export default function App() {
             }}
           >
             <Plus size={15} />
-            新建
+            {m.action_new()}
           </button>
           <button
             disabled={galleryOpen || !undoStack.length || importing}
@@ -885,7 +886,7 @@ export default function App() {
               undo();
               setSelected(null);
             }}
-            title="撤销 Ctrl+Z"
+            title={m.action_undo()}
           >
             <ArrowCounterClockwise size={16} />
           </button>
@@ -895,13 +896,13 @@ export default function App() {
               redo();
               setSelected(null);
             }}
-            title="重做 Ctrl+Shift+Z"
+            title={m.action_redo()}
           >
             <ArrowClockwise size={16} />
           </button>
           <button onClick={() => setSettings(true)}>
             <GearSix size={16} />
-            设置
+            {m.action_settings()}
           </button>
         </div>
       </header>
@@ -923,13 +924,13 @@ export default function App() {
               className={tab === "params" ? "active" : ""}
               onClick={() => setTab("params")}
             >
-              方案
+              {m.scheme()}
             </button>
             <button
               className={tab === "history" ? "active" : ""}
               onClick={() => setTab("history")}
             >
-              历史
+              {m.history()}
             </button>
           </div>
           {tab === "params" ? (
@@ -972,7 +973,7 @@ export default function App() {
               {historyError && (
                 <div className="history-error">
                   {historyError}
-                  <button onClick={() => void refreshHistory()}>重试</button>
+                  <button onClick={() => void refreshHistory()}>{m.action_retry()}</button>
                 </div>
               )}
               <HistoryPanel
@@ -989,16 +990,18 @@ export default function App() {
         {references}
         <main
           className="main-area"
-          aria-label={familyById(draft.family).label + " 工作区"}
+          aria-label={m.workspace_label({
+            name: familyById(draft.family).label,
+          })}
         >
           <div className="canvas-toolbar">
             <div className="row">
               <strong>
                 {intent === "create"
                   ? activeLayout && view === "canvas"
-                    ? "构图"
-                    : "生成预览"
-                  : "编辑图片"}
+                    ? m.stage_compose()
+                    : m.stage_preview()
+                  : m.stage_edit()}
               </strong>
               {intent === "create" && activeLayout && result && (
                 <button
@@ -1006,7 +1009,7 @@ export default function App() {
                     setView(view === "canvas" ? "result" : "canvas")
                   }
                 >
-                  {view === "canvas" ? "查看生成结果" : "返回构图"}
+                  {view === "canvas" ? m.stage_view_result() : m.stage_back()}
                 </button>
               )}
               {intent === "edit" && result && (
@@ -1015,20 +1018,20 @@ export default function App() {
                     className={view === "canvas" ? "active" : ""}
                     onClick={() => setView("canvas")}
                   >
-                    原图
+                    {m.result_original()}
                   </button>
                   <button
                     className={view === "result" ? "active" : ""}
                     onClick={() => setView("result")}
                   >
-                    编辑结果
+                    {m.stage_edit_result()}
                   </button>
                   {resultBase && (
                     <button
                       className={view === "compare" ? "active" : ""}
                       onClick={() => setView("compare")}
                     >
-                      对照
+                      {m.stage_compare()}
                     </button>
                   )}
                 </>
@@ -1045,22 +1048,22 @@ export default function App() {
                   checked={original}
                   onChange={(e) => setOriginal(e.target.checked)}
                 />
-                查看原尺寸
+                {m.stage_full_size()}
               </label>
             ) : null}
             {ordinaryGeneration && previewAttempts.length > 0 && (
               <button
-                aria-label="关闭生成预览"
+                aria-label={m.stage_close_preview()}
                 title={
                   canClosePreview
-                    ? "关闭预览，图片保留在图库"
-                    : "请等待任务完成并保存图片后关闭"
+                    ? m.stage_close_kept()
+                    : m.stage_close_wait()
                 }
                 disabled={!canClosePreview}
                 onClick={closeGenerationPreview}
               >
                 <X size={16} />
-                关闭预览
+                {m.stage_close()}
               </button>
             )}
           </div>
@@ -1079,22 +1082,22 @@ export default function App() {
               <div className="stage workspace-empty">
                 <strong>
                   {intent === "edit"
-                    ? "添加要编辑的图片"
-                    : "描述你想生成的画面"}
+                    ? m.stage_empty_edit()
+                    : m.stage_empty_create()}
                 </strong>
                 <p className="muted">
                   {intent === "edit"
-                    ? "先指定编辑主图，再描述修改内容；参考图可以随后添加。"
-                    : "填写提示词并生成，结果会显示在这里。参考图可选。"}
+                    ? m.stage_empty_edit_help()
+                    : m.stage_empty_create_help()}
                 </p>
                 {intent === "edit" && (
                   <button disabled={importing} onClick={() => void openFiles()}>
-                    添加编辑主图
+                    {m.stage_add_main()}
                   </button>
                 )}
                 {intent === "create" && result && (
                   <button onClick={() => setView("result")}>
-                    查看生成结果
+                    {m.stage_view_result()}
                   </button>
                 )}
               </div>
@@ -1119,16 +1122,16 @@ export default function App() {
         </main>
       </div>
       {resultPreview && result && (
-        <Modal title="生成结果" large onClose={() => setResultPreview(false)}>
+        <Modal title={m.result_dialog()} large onClose={() => setResultPreview(false)}>
           <div className="gallery-preview">
-            <img src={result.image.dataUrl} alt="生成结果" />
+            <img src={result.image.dataUrl} alt={m.result_alt()} />
           </div>
           {resultActions(true)}
         </Modal>
       )}
       {galleryPicker && (
         <Modal
-          title="从图库选择"
+          title={m.pick_from_gallery()}
           large
           onClose={() => {
             if (!importing) setGalleryPicker(false);
@@ -1151,28 +1154,30 @@ export default function App() {
       {notice && (
         <div className="notice" role="status">
           <span>{notice}</span>
-          <button onClick={() => setNotice("")} aria-label="关闭通知">
+          <button onClick={() => setNotice("")} aria-label={m.notice_close()}>
             ×
           </button>
         </div>
       )}
       {tasksOpen && (
-        <Modal title="进行中的任务" onClose={() => setTasksOpen(false)}>
-          <p className="help">各次提交和批次内的多张图片并发生成。</p>
+        <Modal title={m.tasks_title()} onClose={() => setTasksOpen(false)}>
+          <p className="help">{m.tasks_help()}</p>
           {generation.tasks.map((generationTask) => (
             <div className="queue-item" key={generationTask.id}>
               <strong>
-                执行中 · {familyById(generationTask.family).label}
+                {m.tasks_active({
+                  name: familyById(generationTask.family).label,
+                })}
               </strong>
               <p>{generationTask.prompt}</p>
               {generationTask.stopRequested ? (
-                <span>后续请求已停止，等待当前结果。</span>
+                <span>{m.tasks_stopped()}</span>
               ) : (
                 (generationTask.remainingRequests ?? 0) > 0 && (
                   <button
                     onClick={() => generation.stopRemaining(generationTask.id)}
                   >
-                    停止此批次后续请求
+                    {m.tasks_stop()}
                   </button>
                 )
               )}
@@ -1182,11 +1187,11 @@ export default function App() {
                   setTasksOpen(false);
                 }}
               >
-                查看工作区
+                {m.tasks_workspace()}
               </button>
             </div>
           ))}
-          {!generation.tasks.length && <p>任务已完成，图片已保存在图库中。</p>}
+          {!generation.tasks.length && <p>{m.tasks_empty()}</p>}
         </Modal>
       )}
       {settings && (
@@ -1204,20 +1209,16 @@ export default function App() {
         />
       )}
       {closeRequested && (
-        <Modal title="关闭应用" onClose={() => setCloseRequested(false)}>
-          <p>
-            {busy
-              ? "生成任务尚未结束。关闭后远程任务可能继续计费，尚未下载的结果可能无法恢复。"
-              : "任务已结束。请确认需要保留的结果已保存。"}
-          </p>
+        <Modal title={m.close_title()} onClose={() => setCloseRequested(false)}>
+          <p>{busy ? m.close_busy() : m.close_idle()}</p>
           <div className="row close-actions">
             <button
               className="primary"
               onClick={() => setCloseRequested(false)}
             >
-              {busy ? "继续等待" : "返回应用"}
+              {busy ? m.close_wait() : m.close_back()}
             </button>
-            <button onClick={() => void ws.closeApp()}>仍然关闭</button>
+            <button onClick={() => void ws.closeApp()}>{m.close_anyway()}</button>
           </div>
         </Modal>
       )}
@@ -1230,7 +1231,7 @@ export default function App() {
       )}
       {reference && (
         <Modal
-          title={"参考图 · " + reference.name}
+          title={m.preview_ref({ name: reference.name })}
           large
           onClose={() => setRefPreview(null)}
         >
@@ -1243,9 +1244,9 @@ export default function App() {
         </Modal>
       )}
       {urlDialog && (
-        <Modal title="从 URL 添加参考图" onClose={() => setUrlDialog(false)}>
+        <Modal title={m.url_title()} onClose={() => setUrlDialog(false)}>
           <label>
-            图片地址
+            {m.url_label()}
             <input
               type="url"
               placeholder="https://…"
@@ -1253,9 +1254,7 @@ export default function App() {
               onChange={(e) => setImageUrl(e.target.value)}
             />
           </label>
-          <p className="help">
-            下载并保存本地副本，后续恢复不依赖原链接。仅支持 http/https 图片。
-          </p>
+          <p className="help">{m.url_help()}</p>
           <button
             className="primary"
             disabled={!imageUrl.trim()}
@@ -1266,7 +1265,7 @@ export default function App() {
               setImageUrl("");
             }}
           >
-            添加参考图
+            {m.url_add()}
           </button>
         </Modal>
       )}

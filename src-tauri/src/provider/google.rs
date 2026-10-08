@@ -69,7 +69,10 @@ pub fn native_payload(req: &GenerateRequest, vertex: bool) -> Result<Value, Prov
 pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
     let model = crate::models::resolve(req)?;
     if req.provider != "google" || model.family != "gemini" {
-        return Err(ProviderError::msg("Google 官方路由仅支持 Gemini Image"));
+        return Err(ProviderError::coded(
+            "backend_google_gemini_only",
+            "The official Google route only supports Gemini Image",
+        ));
     }
     native_payload(req, false)
 }
@@ -115,7 +118,10 @@ pub async fn images(body: &Value) -> Result<Vec<OutputImage>, ProviderError> {
         }
     }
     if images.is_empty() {
-        let mut error = ProviderError::msg("Gemini 没有返回图片，请检查内容限制或提示词");
+        let mut error = ProviderError::coded(
+            "backend_gemini_no_image",
+            "Gemini returned no image. Check the content limits or the prompt",
+        );
         let explanation = body
             .pointer("/candidates/0")
             .and_then(response_details)
@@ -127,7 +133,10 @@ pub async fn images(body: &Value) -> Result<Vec<OutputImage>, ProviderError> {
             .pointer("/promptFeedback/blockReason")
             .and_then(Value::as_str)
         {
-            error.hint = Some(format!("供应商原因：{reason}"));
+            error = error
+                .with_hint(format!("Provider reason: {reason}"))
+                .with_hint_code("backend_provider_reason")
+                .with_param("reason", reason);
         }
         return Err(error);
     }
@@ -226,7 +235,12 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(900))
         .build()
-        .map_err(|_| ProviderError::msg("Google HTTP 客户端初始化失败"))?;
+        .map_err(|_| {
+            ProviderError::coded(
+                "backend_google_client",
+                "Couldn't initialize the Google HTTP client",
+            )
+        })?;
     let (_, body) = transport::json(
         client
             .post(format!("{endpoint}/{}:generateContent", model.wire_id()))

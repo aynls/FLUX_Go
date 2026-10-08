@@ -1,3 +1,4 @@
+import { m } from "../i18n";
 import { generate } from "../lib/api";
 import { downscaleDataUrl, imageSize } from "../lib/image";
 import { buildRequest } from "../models";
@@ -102,12 +103,12 @@ export async function executeGeneration(
   }
   await beforeSubmit?.();
   const out = await generate(request, onProgress);
-  if (!out.images[0]) throw new Error("服务返回成功，但没有图片");
+  if (!out.images[0]) throw new Error(m.error_no_image());
   const image: WorkingImage = {
     uid: crypto.randomUUID(),
     dataUrl: out.images[0].dataUrl,
     ...(await imageSize(out.images[0].dataUrl)),
-    name: "生成结果",
+    name: m.name_result(),
   };
   const { refs, mask: originalMask, ...recipe } = snapshot;
   const item: HistoryItem = {

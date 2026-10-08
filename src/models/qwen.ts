@@ -1,4 +1,5 @@
 import type { Draft } from "../lib/types";
+import { formatNumber, m } from "../i18n";
 import { fieldsFor, routeFor } from "./catalog";
 
 export function validateQwen(d: Draft): string[] {
@@ -7,14 +8,14 @@ export function validateQwen(d: Draft): string[] {
     fieldsFor(d).width &&
     (d.params.width === null) !== (d.params.height === null)
   )
-    errors.push("宽度和高度须同时设置");
+    errors.push(m.error_dimensions_together());
   if (
     fieldsFor(d).width &&
     !fieldsFor(d).width.nullable &&
     d.params.width === null &&
     d.params.height === null
   )
-    errors.push("当前供应商需要指定宽度和高度");
+    errors.push(m.error_dimensions_required());
   if (
     fieldsFor(d).width &&
     !(
@@ -31,7 +32,9 @@ export function validateQwen(d: Draft): string[] {
       Math.max(w, h) / Math.min(w, h) > 8
     )
       errors.push(
-        `Qwen 尺寸面积须为 262,144–${(routeFor(d)?.maxPixels ?? 4194304).toLocaleString()}px，宽高比例至多 8:1`,
+        m.error_qwen_area({
+          max: formatNumber(routeFor(d)?.maxPixels ?? 4194304),
+        }),
       );
   }
   if (
@@ -40,6 +43,6 @@ export function validateQwen(d: Draft): string[] {
     d.refs.length &&
     d.params.promptExtendMode === "agent"
   )
-    errors.push("Qwen 参考图编辑仅支持 direct 扩写");
+    errors.push(m.error_qwen_direct());
   return errors;
 }

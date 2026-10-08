@@ -1,4 +1,5 @@
 import type { Draft } from "../lib/types";
+import { formatNumber, m } from "../i18n";
 import { defaultsFor, fieldsFor, routeFor } from "./catalog";
 import { sentSize } from "../lib/workspace";
 
@@ -18,14 +19,14 @@ export function validateImage(d: Draft): string[] {
         (route.maxInputPixels != null &&
           size.w * size.h > route.maxInputPixels))
     )
-      errors.push("参考图尺寸或宽高比超过此路由限制，请缩小或裁剪图片");
+      errors.push(m.error_ref_dimensions());
   }
   if (fields.width) {
     const w = p.width,
       h = p.height;
-    if ((w == null) !== (h == null)) errors.push("宽度和高度须同时设置");
+    if ((w == null) !== (h == null)) errors.push(m.error_dimensions_together());
     if ((w == null || h == null) && !fields.width.nullable)
-      errors.push("当前供应商需要指定宽度和高度");
+      errors.push(m.error_dimensions_required());
     if (
       w != null &&
       h != null &&
@@ -34,7 +35,17 @@ export function validateImage(d: Draft): string[] {
         Math.max(w, h) / Math.min(w, h) > (route.maxAspect ?? Infinity))
     )
       errors.push(
-        `输出面积须为 ${route.minPixels?.toLocaleString()}–${route.maxPixels?.toLocaleString()}px，比例至多 ${route.maxAspect}:1`,
+        m.error_output_area({
+          min:
+            typeof route.minPixels === "number"
+              ? formatNumber(route.minPixels)
+              : String(route.minPixels),
+          max:
+            typeof route.maxPixels === "number"
+              ? formatNumber(route.maxPixels)
+              : String(route.maxPixels),
+          aspect: String(route.maxAspect),
+        }),
       );
   }
   if (
@@ -43,6 +54,6 @@ export function validateImage(d: Draft): string[] {
     p.aspectRatio === "auto" &&
     !d.refs.length
   )
-    errors.push("自动比例需要参考图，请选择输出比例");
+    errors.push(m.error_auto_aspect_needs_ref());
   return errors;
 }

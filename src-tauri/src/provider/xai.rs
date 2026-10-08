@@ -10,7 +10,10 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
     crate::models::validate(req)?;
     let model = crate::models::resolve(req)?;
     if model.family != "grok" || !matches!(req.provider.as_str(), "xai" | "comfy") {
-        return Err(ProviderError::msg("此路由仅支持 Grok Imagine"));
+        return Err(ProviderError::coded(
+            "backend_grok_only",
+            "This route only supports Grok Imagine",
+        ));
     }
     let mut body = json!({
         "model": model.wire_id().strip_prefix("xai/").unwrap_or(model.wire_id()),
@@ -36,15 +39,17 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
 
 pub async fn images(body: &Value) -> Result<Vec<OutputImage>, ProviderError> {
     if let Some(reason) = body["block_reason"].as_str().filter(|s| !s.is_empty()) {
-        return Err(ProviderError::msg(format!("Grok 未生成图片：{reason}")));
+        return Err(ProviderError::coded(
+            "backend_grok_blocked",
+            format!("Grok did not generate an image: {reason}"),
+        )
+        .with_param("reason", reason));
     }
     if let Some(error) = body.get("error").filter(|v| !v.is_null()) {
-        return Err(ProviderError::msg(
-            error["message"]
-                .as_str()
-                .or(error.as_str())
-                .unwrap_or("Grok 生成失败"),
-        ));
+        return Err(match error["message"].as_str().or(error.as_str()) {
+            Some(message) => ProviderError::msg(message),
+            None => ProviderError::coded("backend_grok_failed", "Grok generation failed"),
+        });
     }
     transport::openai_images(body, "jpeg").await
 }
@@ -57,7 +62,10 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
 #[doc(hidden)]
 pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> ProviderResult {
     if req.provider != "xai" {
-        return Err(ProviderError::msg("Grok 官方路由无效"));
+        return Err(ProviderError::coded(
+            "backend_grok_route",
+            "The official Grok route is invalid",
+        ));
     }
     let payload = build_payload(req)?;
     let operation = if req.images.is_empty() {
@@ -68,7 +76,12 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(900))
         .build()
-        .map_err(|_| ProviderError::msg("Grok HTTP 客户端初始化失败"))?;
+        .map_err(|_| {
+            ProviderError::coded(
+                "backend_grok_client",
+                "Couldn't initialize the Grok HTTP client",
+            )
+        })?;
     super::progress::report("waiting", None, None, None);
     let (_, body) = transport::json(
         client

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { m } from "../../i18n";
 import Canvas from "../../components/Canvas";
 import Modal from "../../components/Modal";
 import { RectFields } from "./RectFields";
@@ -19,7 +20,7 @@ export default function SourceRegionEditor(p: {
       scaleRect(p.box.rect, p.canvas, { w: p.image.width, h: p.image.height }),
   );
   return (
-    <Modal title={`来源区域 · ${p.box.id}`} large onClose={p.onClose}>
+    <Modal title={m.flux_source_title({ id: p.box.id })} large onClose={p.onClose}>
       <div className="source-region-editor">
         <p>
           {p.image.name} · {p.image.width}×{p.image.height}
@@ -40,10 +41,10 @@ export default function SourceRegionEditor(p: {
           />
         </div>
         <p className="help">
-          右键拖动重新画框，左键移动或调整边缘。此处只修改来源区域。
+          {m.flux_source_help()}
         </p>
         <RectFields
-          label="来源区域 · 0–1000"
+          label={m.flux_source_region()}
           rect={rect}
           width={p.image.width}
           height={p.image.height}
@@ -51,13 +52,13 @@ export default function SourceRegionEditor(p: {
           onValidityChange={setValid}
         />
         <div className="row close-actions">
-          <button onClick={p.onClose}>取消</button>
+          <button onClick={p.onClose}>{m.action_cancel()}</button>
           <button
             className="primary"
             disabled={!valid}
             onClick={() => p.onApply(rect)}
           >
-            应用来源区域
+            {m.flux_apply_source()}
           </button>
         </div>
       </div>

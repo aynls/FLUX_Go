@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { m } from "../i18n";
 export default function Modal({
   title,
   onClose,
@@ -27,8 +28,8 @@ export default function Modal({
     >
       <div className="modal-heading">
         <h2>{title}</h2>
-        <button onClick={onClose} aria-label="关闭">
-          关闭
+        <button onClick={onClose} aria-label={m.action_close()}>
+          {m.action_close()}
         </button>
       </div>
       <div className="modal-body">{children}</div>

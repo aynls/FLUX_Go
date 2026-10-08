@@ -12,6 +12,8 @@ import {
 import { save } from "@tauri-apps/plugin-dialog";
 import type { GalleryItem } from "../lib/types";
 import * as api from "../lib/api";
+import { activeLocale, m, formatDate, formatDateTime } from "../i18n";
+import { modelLabel } from "../labels";
 import { modelByAnyId } from "../models/catalog";
 import { exportDefaultPath } from "../lib/export";
 import Modal from "./Modal";
@@ -51,19 +53,23 @@ export default function Gallery(p: {
               : item.source !== "generated")) &&
           [
             item.name,
-            item.model && (modelByAnyId(item.model)?.label ?? item.model),
+            item.model &&
+              modelLabel(
+                item.model,
+                modelByAnyId(item.model)?.label ?? item.model,
+              ),
           ]
             .filter(Boolean)
             .join(" ")
             .toLocaleLowerCase()
             .includes(query.trim().toLocaleLowerCase()),
       ),
-    [p.items, filter, query],
+    [p.items, filter, query, activeLocale()],
   );
   const preview = p.items.find((item) => item.id === previewId);
   const groups = new Map<string, GalleryItem[]>();
   for (const item of filtered.slice(0, visibleCount)) {
-    const date = new Date(item.createdAt).toLocaleDateString();
+    const date = formatDate(item.createdAt);
     groups.set(date, [...(groups.get(date) ?? []), item]);
   }
   useEffect(() => {
@@ -124,7 +130,7 @@ export default function Gallery(p: {
       .replace(/[<>:"/\\|?*]/g, "_");
     const path = await save({
       defaultPath: exportDefaultPath(p.saveDirectory, `${name}.${ext}`),
-      filters: [{ name: "图片", extensions: [ext] }],
+      filters: [{ name: m.file_image(), extensions: [ext] }],
     });
     if (path)
       await api.saveDataUrl((await api.galleryRead(item.id)).dataUrl, path);
@@ -135,17 +141,19 @@ export default function Gallery(p: {
       <div className="gallery-toolbar">
         <div className="gallery-title">
           <Images size={23} />
-          <h2>{p.picker ? "选择参考素材" : "图库"}</h2>
-          <span className="muted">{p.items.length} 张</span>
+          <h2>{p.picker ? m.gallery_pick() : m.gallery()}</h2>
+          <span className="muted">
+            {m.count_images({ count: p.items.length })}
+          </span>
         </div>
         <div className="row">
           <button disabled={locked} onClick={p.onFiles}>
             <Plus size={16} />
-            导入图片
+            {m.gallery_import()}
           </button>
           <button disabled={locked} onClick={p.onPaste}>
             <Clipboard size={16} />
-            粘贴
+            {m.gallery_paste()}
           </button>
           {!p.picker && (
             <button
@@ -157,21 +165,23 @@ export default function Gallery(p: {
                 setError("");
               }}
             >
-              {selecting ? "完成选择" : "选择"}
+              {selecting ? m.gallery_done() : m.gallery_select()}
             </button>
           )}
         </div>
       </div>
       <div className="gallery-filters">
-        <div className="segmented" aria-label="图片来源">
-          {[
-            ["all", "全部"],
-            ["generated", "生成"],
-            ["imported", "导入"],
-          ].map(([value, label]) => (
+        <div className="segmented" aria-label={m.gallery_source()}>
+          {(
+            [
+              ["all", m.gallery_all()],
+              ["generated", m.gallery_generated()],
+              ["imported", m.gallery_imported()],
+            ] as const
+          ).map(([value, label]) => (
             <button
               key={value}
-              aria-label={"筛选" + label + "图片"}
+              aria-label={m.gallery_filter({ label })}
               aria-pressed={filter === value}
               className={filter === value ? "active" : ""}
               onClick={() => setFilter(value)}
@@ -181,28 +191,29 @@ export default function Gallery(p: {
           ))}
         </div>
         <input
-          aria-label="搜索图库"
+          aria-label={m.gallery_search()}
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索名称或模型"
+          placeholder={m.gallery_search_placeholder()}
         />
       </div>
       {p.picker && (
         <p className="gallery-hint">
-          选择顺序即添加顺序 · 还可添加 {Math.max(0, limit - selection.length)}{" "}
-          张
+          {m.gallery_room({
+            count: Math.max(0, limit - selection.length),
+          })}
         </p>
       )}
       {(error || p.error) && (
         <div className="gallery-error" role="alert">
           {error || p.error}
-          <button onClick={() => void run(p.onRefresh)}>刷新图库</button>
+          <button onClick={() => void run(p.onRefresh)}>{m.gallery_refresh()}</button>
         </div>
       )}
       {p.importing && (
         <p className="gallery-hint" role="status">
-          正在保存图片到图库…
+          {m.gallery_saving()}
         </p>
       )}
       <div className="gallery-scroll">
@@ -210,12 +221,12 @@ export default function Gallery(p: {
           <div className="gallery-empty">
             <Images size={44} weight="thin" />
             <strong>
-              {p.items.length ? "没有匹配的图片" : "把创作素材放在一起"}
+              {p.items.length ? m.gallery_no_match() : m.gallery_empty_title()}
             </strong>
             <p>
               {p.items.length
-                ? "尝试其他名称、模型或来源。"
-                : "导入本机图片或粘贴图片，生成结果也会自动保存在这里。"}
+                ? m.gallery_no_match_help()
+                : m.gallery_empty_help()}
             </p>
           </div>
         )}
@@ -231,7 +242,9 @@ export default function Gallery(p: {
                     <button
                       className={"gallery-tile" + (checked ? " selected" : "")}
                       aria-label={
-                        (selecting ? "选择图片 " : "查看图片 ") + item.name
+                        selecting
+                          ? m.gallery_select_named({ name: item.name })
+                          : m.gallery_view_named({ name: item.name })
                       }
                       aria-pressed={selecting ? checked : undefined}
                       disabled={
@@ -260,10 +273,12 @@ export default function Gallery(p: {
                       )}
                       {item.pendingDelete ? (
                         <span className="gallery-tile-label">
-                          删除未完成 · 重试
+                          {m.gallery_delete_incomplete()}
                         </span>
                       ) : already ? (
-                        <span className="gallery-tile-label">已在当前任务</span>
+                        <span className="gallery-tile-label">
+                          {m.gallery_in_task()}
+                        </span>
                       ) : (
                         selecting && (
                           <span
@@ -284,7 +299,7 @@ export default function Gallery(p: {
                     {p.picker && !item.pendingDelete && (
                       <button
                         className="gallery-peek"
-                        aria-label={"预览图片 " + item.name}
+                        aria-label={m.gallery_preview_named({ name: item.name })}
                         onClick={() => setPreviewId(item.id)}
                       >
                         <Eye size={16} />
@@ -301,7 +316,7 @@ export default function Gallery(p: {
             className="gallery-more"
             onClick={() => setVisibleCount((n) => n + 120)}
           >
-            加载更多 · 还有 {filtered.length - visibleCount} 张
+            {m.gallery_load_more({ count: filtered.length - visibleCount })}
           </button>
         )}
       </div>
@@ -309,21 +324,23 @@ export default function Gallery(p: {
         <div
           className="gallery-selection"
           role="region"
-          aria-label="图库选择操作"
+          aria-label={m.gallery_selection_actions()}
         >
-          <span>已选 {selection.length} 张</span>
+          <span>{m.gallery_selected({ count: selection.length })}</span>
           <button
             disabled={locked || !selection.length}
             onClick={() => setSelection([])}
           >
-            清空选择
+            {m.gallery_clear()}
           </button>
           <button
             className="primary"
             disabled={locked || !selection.length}
             onClick={() => void run(() => p.onUse(selection))}
           >
-            添加为参考素材{selection.length ? ` · ${selection.length} 张` : ""}
+            {selection.length
+              ? m.gallery_add_refs_count({ count: selection.length })
+              : m.gallery_add_refs()}
           </button>
           {!p.picker && (
             <button
@@ -335,7 +352,7 @@ export default function Gallery(p: {
               }}
             >
               <Trash size={16} />
-              删除
+              {m.action_delete()}
             </button>
           )}
         </div>
@@ -360,10 +377,13 @@ export default function Gallery(p: {
             </span>
             <span>
               {preview.model
-                ? (modelByAnyId(preview.model)?.label ?? preview.model)
-                : "导入图片"}
+                ? modelLabel(
+                    preview.model,
+                    modelByAnyId(preview.model)?.label ?? preview.model,
+                  )
+                : m.gallery_imported_image()}
             </span>
-            <span>{new Date(preview.createdAt).toLocaleString()}</span>
+            <span>{formatDateTime(preview.createdAt)}</span>
           </div>
           <GenerationInfo details={preview.details} />
           {error && (
@@ -380,7 +400,7 @@ export default function Gallery(p: {
               }}
             >
               <ArrowLeft size={16} />
-              返回图库
+              {m.gallery_back()}
             </button>
             <button
               disabled={locked || preview.pendingDelete}
@@ -392,7 +412,7 @@ export default function Gallery(p: {
               }
             >
               <Copy size={16} />
-              {copiedId === preview.id ? "已复制图片" : "复制图片"}
+              {copiedId === preview.id ? m.gallery_copied() : m.action_copy_image()}
             </button>
             {p.picker ? (
               <button
@@ -407,7 +427,9 @@ export default function Gallery(p: {
                   setPreviewId(null);
                 }}
               >
-                {selection.includes(preview.id) ? "取消选择" : "选择这张图片"}
+                {selection.includes(preview.id)
+                  ? m.gallery_unselect()
+                  : m.gallery_select_this()}
               </button>
             ) : (
               <>
@@ -420,7 +442,7 @@ export default function Gallery(p: {
                     })
                   }
                 >
-                  添加为参考素材
+                  {m.gallery_add_refs()}
                 </button>
                 <button
                   className="primary"
@@ -432,13 +454,13 @@ export default function Gallery(p: {
                     })
                   }
                 >
-                  用这张图开始编辑
+                  {m.gallery_edit_this()}
                 </button>
                 <button
                   disabled={locked || preview.pendingDelete}
                   onClick={() => void run(() => saveImage(preview))}
                 >
-                  另存为
+                  {m.action_save_as()}
                 </button>
                 <button
                   className="danger"
@@ -449,7 +471,7 @@ export default function Gallery(p: {
                   }}
                 >
                   <Trash size={16} />
-                  删除
+                  {m.action_delete()}
                 </button>
               </>
             )}
@@ -458,7 +480,7 @@ export default function Gallery(p: {
       )}
       {!!deleteIds.length && (
         <Modal
-          title="删除图库图片"
+          title={m.gallery_delete_title()}
           onClose={() => {
             if (!busy) {
               setDeleteIds([]);
@@ -467,8 +489,7 @@ export default function Gallery(p: {
           }}
         >
           <p>
-            永久删除 {deleteIds.length}{" "}
-            张图片及其图库文件？本机导入源文件和当前任务中的工作副本会保留。
+            {m.gallery_delete_body({ count: deleteIds.length })}
           </p>
           {error && (
             <p className="error-text" role="alert">
@@ -483,14 +504,14 @@ export default function Gallery(p: {
                 setError("");
               }}
             >
-              取消
+              {m.action_cancel()}
             </button>
             <button
               className="danger"
               disabled={busy}
               onClick={() => void run(remove)}
             >
-              {busy ? "正在删除…" : "确认删除图片"}
+              {busy ? m.gallery_deleting() : m.gallery_confirm_delete()}
             </button>
           </div>
         </Modal>

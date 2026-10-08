@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
+import { m } from "../i18n";
 
 export const MIN_SIDEBAR_WIDTH = 20;
 export const MAX_SIDEBAR_WIDTH = 40;
@@ -13,7 +14,7 @@ export default function ResizableSidebar({ widthPercent, onWidthChange, children
   const finish = () => { drag.current = null; setResizing(false); };
   return <aside className={"sidebar" + (resizing ? " resizing" : "")} style={{ width: width + "%" }}>
     {children}
-    <div className="sidebar-resizer" role="separator" aria-label="调整侧栏宽度" aria-orientation="vertical" aria-valuemin={MIN_SIDEBAR_WIDTH} aria-valuemax={MAX_SIDEBAR_WIDTH} aria-valuenow={Math.round(width)} aria-valuetext={Math.round(width) + "%"} tabIndex={0}
+    <div className="sidebar-resizer" role="separator" aria-label={m.sidebar_resize()} aria-orientation="vertical" aria-valuemin={MIN_SIDEBAR_WIDTH} aria-valuemax={MAX_SIDEBAR_WIDTH} aria-valuenow={Math.round(width)} aria-valuetext={Math.round(width) + "%"} tabIndex={0}
       onPointerDown={e => {
         if (e.button !== 0 || !e.isPrimary) return;
         const workspaceWidth = e.currentTarget.parentElement?.parentElement?.getBoundingClientRect().width ?? 0;

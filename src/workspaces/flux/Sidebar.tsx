@@ -18,8 +18,17 @@ import { regionsEnabled, requiresLayout } from "../../models/flux/layout";
 import { RectFields } from "./RectFields";
 export { RectFields } from "./RectFields";
 import SourceRegionEditor from "./SourceRegionEditor";
-import { ROLE_LABELS } from "../../models/flux/roles";
-import type { Box, Draft, ProviderStatus, FamilyId } from "../../lib/types";
+import { m } from "../../i18n";
+import type { Box, BoxRole, Draft, ProviderStatus, FamilyId } from "../../lib/types";
+
+const fluxRoles: Record<BoxRole, () => string> = {
+  new: m.role_new,
+  modify: m.role_modify,
+  remove: m.role_remove,
+  move: m.role_move,
+  anchor: m.role_anchor,
+  place: m.role_place,
+};
 import type { GenerationTask } from "../../lib/types";
 
 export interface SidebarProps {
@@ -143,7 +152,7 @@ export default function Sidebar(p: SidebarProps) {
         <RouteControls {...p} />
         <PromptEditor {...p} />
         <section>
-          <h2>输出</h2>
+          <h2>{m.flux_output()}</h2>
           <ParameterFields {...p} keys={["resolution", "aspectRatio"]} />
         </section>
         <section>
@@ -156,19 +165,19 @@ export default function Sidebar(p: SidebarProps) {
                 p.onChange({ ...d, layoutEnabled: e.target.checked })
               }
             />
-            {taskIntent(d) === "create" ? "区域构图" : "区域编辑"}
+            {taskIntent(d) === "create" ? m.flux_compose() : m.flux_edit()}
           </label>
           {requiresLayout(d) ? (
-            <p className="help">此路由需要至少一个放置区域。</p>
+            <p className="help">{m.flux_need_place()}</p>
           ) : !regionsEnabled(d) && d.boxes.length > 0 ? (
-            <p className="help">保留 {d.boxes.length} 个区域，当前不会发送。</p>
+            <p className="help">{m.regions_kept({ count: d.boxes.length })}</p>
           ) : null}
         </section>
         {regionsEnabled(d) && (
           <section>
             <div className="section-heading">
-              <h2>区域 · {d.boxes.length}</h2>
-              <span className="muted">在画布上右键拖拽画框</span>
+              <h2>{m.flux_regions({ count: d.boxes.length })}</h2>
+              <span className="muted">{m.flux_draw()}</span>
             </div>
             {renameError && (
               <p role="alert" className="error-text">
@@ -193,8 +202,8 @@ export default function Sidebar(p: SidebarProps) {
                   <div className="box-heading">
                     <button
                       className="box-sort-handle"
-                      aria-label={"排序 " + b.id}
-                      title="拖动排序，或用 ↑ / ↓ 键调整"
+                      aria-label={m.flux_sort({ id: b.id })}
+                      title={m.flux_sort_title()}
                       disabled={d.boxes.length < 2}
                       onPointerDown={(e) => {
                         if (e.button !== 0 || !e.isPrimary || !b.uid) return;
@@ -279,14 +288,14 @@ export default function Sidebar(p: SidebarProps) {
                         b.id === p.selectedId && b.uid !== collapsedUid
                       }
                       aria-label={
-                        (b.id === p.selectedId && b.uid !== collapsedUid
-                          ? "收起 "
-                          : "展开 ") + b.id
+                        b.id === p.selectedId && b.uid !== collapsedUid
+                          ? m.flux_collapse({ id: b.id })
+                          : m.flux_expand({ id: b.id })
                       }
                       title={
                         b.id === p.selectedId && b.uid !== collapsedUid
-                          ? "收起"
-                          : "展开"
+                          ? m.action_collapse()
+                          : m.action_expand()
                       }
                       onClick={() => toggleBox(b)}
                     >
@@ -298,8 +307,8 @@ export default function Sidebar(p: SidebarProps) {
                     </button>
                     <button
                       className="box-header-action danger"
-                      aria-label={"删除 " + b.id}
-                      title="删除包围盒"
+                      aria-label={m.flux_delete({ id: b.id })}
+                      title={m.flux_delete_title()}
                       onClick={() => {
                         if (drag.current?.uid === b.uid) finishDrag();
                         p.onChange({
@@ -316,7 +325,7 @@ export default function Sidebar(p: SidebarProps) {
                     <>
                       <div className="field-grid">
                         <label>
-                          引用名称
+                          {m.flux_name()}
                           <NameField
                             value={b.id}
                             onCommit={(id) => {
@@ -326,9 +335,7 @@ export default function Sidebar(p: SidebarProps) {
                                   (x) => x.uid !== b.uid && x.id === id,
                                 )
                               ) {
-                                setRenameError(
-                                  "名称须唯一，只含字母、数字、下划线",
-                                );
+                                setRenameError(m.flux_name_invalid());
                                 return false;
                               }
                               setRenameError("");
@@ -338,9 +345,9 @@ export default function Sidebar(p: SidebarProps) {
                           />
                         </label>
                         <label>
-                          操作
+                          {m.flux_operation()}
                           <select
-                            aria-label="区域操作"
+                            aria-label={m.flux_operation_label()}
                             value={
                               d.refs.length && b.role === "place"
                                 ? "new"
@@ -357,21 +364,21 @@ export default function Sidebar(p: SidebarProps) {
                               : ["place"]
                             ).map((role) => (
                               <option key={role} value={role}>
-                                {ROLE_LABELS[role as Box["role"]]}
+                                {fluxRoles[role as Box["role"]]()}
                               </option>
                             ))}
                           </select>
                         </label>
                       </div>
                       <label>
-                        区域描述
+                        {m.flux_desc()}
                         <textarea
                           rows={2}
                           value={b.desc}
                           placeholder={
                             b.role === "remove"
-                              ? "描述要移除的物体"
-                              : "描述该区域中的内容或期望外观"
+                              ? m.flux_desc_remove()
+                              : m.flux_desc_content()
                           }
                           onChange={(e) =>
                             updateBox({ ...b, desc: e.target.value })
@@ -380,7 +387,7 @@ export default function Sidebar(p: SidebarProps) {
                       </label>
                       {b.role !== "remove" && b.role !== "anchor" && (
                         <RectFields
-                          label="目标区域 · 0–1000"
+                          label={m.flux_target()}
                           showLabel={false}
                           rect={b.rect}
                           width={d.canvas.w}
@@ -391,7 +398,7 @@ export default function Sidebar(p: SidebarProps) {
                       {["move", "anchor", "remove"].includes(b.role) && (
                         <>
                           <label>
-                            来源参考图
+                            {m.flux_source_ref()}
                             <select
                               value={b.sourceId ?? ""}
                               onChange={(e) => {
@@ -411,11 +418,14 @@ export default function Sidebar(p: SidebarProps) {
                               }}
                             >
                               <option value="" disabled>
-                                请选择来源
+                                {m.flux_choose_source()}
                               </option>
                               {d.refs.map((r, i) => (
                                 <option key={r.uid} value={r.uid}>
-                                  图片 {i + 1} · {r.name}
+                                  {m.flux_image_named({
+                                    index: i + 1,
+                                    name: r.name,
+                                  })}
                                 </option>
                               ))}
                             </select>
@@ -424,7 +434,7 @@ export default function Sidebar(p: SidebarProps) {
                             disabled={!d.refs.some((r) => r.uid === b.sourceId)}
                             onClick={() => setSourceEditorUid(b.uid!)}
                           >
-                            在参考图上框选
+                            {m.flux_pick_on_ref()}
                           </button>
                           {(() => {
                             const source = d.refs.find(
@@ -434,7 +444,7 @@ export default function Sidebar(p: SidebarProps) {
                               source &&
                               b.srcRect && (
                                 <RectFields
-                                  label="来源区域 · 0–1000"
+                                  label={m.flux_source_region()}
                                   rect={b.srcRect}
                                   width={source.width}
                                   height={source.height}
@@ -455,7 +465,7 @@ export default function Sidebar(p: SidebarProps) {
           </section>
         )}
         <details>
-          <summary>高级参数</summary>
+          <summary>{m.flux_advanced()}</summary>
           <ParameterFields
             {...p}
             keys={["safetyTolerance", "grounding", "version"]}
@@ -464,7 +474,7 @@ export default function Sidebar(p: SidebarProps) {
         <InputOptions {...p} />
         {d.provider === "runware" && (
           <details>
-            <summary>输出文件</summary>
+            <summary>{m.output_file()}</summary>
             <ParameterFields
               {...p}
               keys={["outputFormat", "outputCompression"]}
@@ -509,7 +519,7 @@ function NameField({
   }, [value]);
   return (
     <input
-      aria-label="区域名称"
+      aria-label={m.flux_region_name()}
       value={text}
       onChange={(e) => setText(e.target.value)}
       onBlur={() => {

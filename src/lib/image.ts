@@ -1,10 +1,12 @@
 // 前端图像处理：尺寸读取、按上限缩放、缩略图生成。
 
+import { m } from "../i18n";
+
 export function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("图片解码失败"));
+    img.onerror = () => reject(new Error(m.error_decode_image()));
     img.src = src;
   });
 }
@@ -24,7 +26,7 @@ function drawToDataUrl(
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("无法创建画布上下文");
+  if (!ctx) throw new Error(m.error_no_canvas());
   if (mime === "image/jpeg") {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, w, h);

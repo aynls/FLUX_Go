@@ -3,6 +3,8 @@ import Modal from "./Modal";
 import { primaryImage, editReferences } from "../lib/workspace";
 import { modelById, providers, routeFor } from "../models/catalog";
 import type { Draft, WorkingImage } from "../lib/types";
+import { m } from "../i18n";
+import { modelLabel, providerLabel } from "../labels";
 
 export default function EditHandoff(p: {
   draft: Draft;
@@ -14,33 +16,43 @@ export default function EditHandoff(p: {
   const references = editReferences(p.draft, p.image);
   const max = routeFor(p.draft)?.maxRefs ?? 0;
   const cleared = [
-    p.draft.prompt.trim() && "编辑指令",
-    p.draft.boxes.length && `${p.draft.boxes.length} 个区域`,
-    p.draft.mask && "蒙版",
+    p.draft.prompt.trim() && m.handoff_instruction(),
+    p.draft.boxes.length &&
+      m.handoff_regions({ count: p.draft.boxes.length }),
+    p.draft.mask && m.handoff_mask(),
   ].filter(Boolean);
+  const model = modelById(p.draft.modelId);
   return (
-    <Modal title="开始新的图片编辑" onClose={() => p.onDecision(null)}>
+    <Modal title={m.handoff_title()} onClose={() => p.onDecision(null)}>
       <div className="edit-handoff-images">
         <figure>
           {main ? (
-            <img src={main.dataUrl} alt="当前编辑主图" />
+            <img src={main.dataUrl} alt={m.handoff_current_alt()} />
           ) : (
-            <div className="edit-handoff-empty">尚无主图</div>
+            <div className="edit-handoff-empty">{m.handoff_no_main()}</div>
           )}
-          <figcaption>当前：{main?.name ?? "编辑草稿"}</figcaption>
+          <figcaption>
+            {m.handoff_current({ name: main?.name ?? m.handoff_draft() })}
+          </figcaption>
         </figure>
         <figure>
-          <img src={p.image.dataUrl} alt="新的编辑主图" />
-          <figcaption>替换为：{p.image.name}</figcaption>
+          <img src={p.image.dataUrl} alt={m.handoff_next_alt()} />
+          <figcaption>
+            {m.handoff_replace_with({ name: p.image.name })}
+          </figcaption>
         </figure>
       </div>
       <p>
-        编辑模型：{modelById(p.draft.modelId)?.label} ·{" "}
-        {providers.find((v) => v.id === p.draft.provider)?.label}
+        {m.handoff_model({
+          model: modelLabel(model?.id, model?.label ?? ""),
+          provider: providerLabel(
+            providers.find((v) => v.id === p.draft.provider)?.id,
+          ),
+        })}
       </p>
       {cleared.length > 0 && (
         <p className="help">
-          新一轮编辑会清空{cleared.join("、")}，可撤销恢复。
+          {m.handoff_clears({ items: cleared.join("、") })}
         </p>
       )}
       {references.length > 0 && (
@@ -50,25 +62,23 @@ export default function EditHandoff(p: {
             checked={keep}
             onChange={(e) => setKeep(e.target.checked)}
           />
-          沿用其他参考素材（{references.length} 张）
+          {m.handoff_keep({ count: references.length })}
         </label>
       )}
       {keep && (
         <p className="help">{references.map((r) => r.name).join("、")}</p>
       )}
       {keep && references.length + 1 > max && (
-        <p className="error-text">
-          此模型最多接收 {max} 张图片，请取消沿用参考素材。
-        </p>
+        <p className="error-text">{m.handoff_too_many({ count: max })}</p>
       )}
       <div className="row close-actions">
-        <button onClick={() => p.onDecision(null)}>取消</button>
+        <button onClick={() => p.onDecision(null)}>{m.action_cancel()}</button>
         <button
           className="primary"
           disabled={keep && references.length + 1 > max}
           onClick={() => p.onDecision(keep)}
         >
-          替换并开始编辑
+          {m.handoff_replace()}
         </button>
       </div>
     </Modal>

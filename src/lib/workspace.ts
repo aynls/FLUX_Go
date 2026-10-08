@@ -23,12 +23,14 @@ import {
 } from "../models/catalog";
 import { validateModel } from "../models";
 import { gptSize } from "../models/gpt";
+import { m } from "../i18n";
 
 export const DEFAULT_PREFERENCES: Preferences = {
   defaultFamily: "flux",
   sidebarWidthPercent: 25,
   referenceSidebarWidth: 238,
   saveDirectory: "",
+  locale: "system",
   theme: "system",
   provider: "openrouter",
   params: DEFAULT_PARAMS,
@@ -73,9 +75,9 @@ export function newDraft(
 }
 
 export function readDraft(value: unknown): Draft {
-  if (!value || typeof value !== "object") throw new Error("草稿内容无效");
+  if (!value || typeof value !== "object") throw new Error(m.error_draft_invalid());
   const raw = value as Record<string, unknown>;
-  if (raw.schema !== 4) throw new Error("草稿版本不兼容");
+  if (raw.schema !== 4) throw new Error(m.error_draft_schema());
   const family = raw.family;
   const modelId = raw.modelId;
   const model = typeof modelId === "string" ? modelById(modelId) : undefined;
@@ -84,7 +86,7 @@ export function readDraft(value: unknown): Draft {
     model.family !== family ||
     !providers.some((p) => p.id === raw.provider)
   )
-    throw new Error("草稿的模型或供应商无效");
+    throw new Error(m.error_draft_route());
   const canvas = raw.canvas as Draft["canvas"] | undefined;
   if (
     !Array.isArray(raw.refs) ||
@@ -99,7 +101,7 @@ export function readDraft(value: unknown): Draft {
     !raw.params ||
     typeof raw.params !== "object"
   )
-    throw new Error("草稿缺少必要内容");
+    throw new Error(m.error_draft_incomplete());
   for (const ref of raw.refs as WorkingImage[])
     if (
       !ref ||
@@ -107,7 +109,7 @@ export function readDraft(value: unknown): Draft {
       typeof ref.name !== "string" ||
       !(ref.width > 0 && ref.height > 0)
     )
-      throw new Error("草稿参考图无效");
+      throw new Error(m.error_draft_refs());
   const draft = withIds({
     ...newDraft(DEFAULT_PREFERENCES, model.family),
     ...raw,
@@ -136,14 +138,14 @@ export function readSession(value: unknown): WorkspaceSession | null {
     !raw.tasks ||
     !["create", "edit"].includes(raw.activeIntent ?? "")
   )
-    throw new Error("工作区版本或内容不兼容");
+    throw new Error(m.error_workspace_incompatible());
   const tasks: WorkspaceSession["tasks"] = {};
   for (const [key, value] of Object.entries(raw.tasks)) {
     const draft = readDraft(value);
-    if (draft.intent !== key) throw new Error("工作区任务不匹配");
+    if (draft.intent !== key) throw new Error(m.error_workspace_task());
     tasks[draft.intent] = draft;
   }
-  if (!tasks[raw.activeIntent!]) throw new Error("活动工作区缺失");
+  if (!tasks[raw.activeIntent!]) throw new Error(m.error_workspace_missing());
   return { schema: 2, activeIntent: raw.activeIntent!, tasks };
 }
 /** A model change keeps the task's creative content and restores that route's controls. */
@@ -302,7 +304,7 @@ export function beginImageEdit(
   const refs = [main, ...(keepReferences ? editReferences(d, image) : [])];
   const max = routeFor(d)?.maxRefs ?? 0;
   if (refs.length > max)
-    throw new Error(`此模型最多接收 ${max} 张图片，请减少参考素材`);
+    throw new Error(m.error_too_many_images({ count: max }));
   return {
     ...d,
     intent: "edit",
@@ -323,9 +325,9 @@ export function beginImageEdit(
 /** Changing the primary image changes API order and remaps exact image tags together. */
 export function setPrimaryImage(d: Draft, uid: string): Draft {
   const image = d.refs.find((r) => r.uid === uid);
-  if (!image) throw new Error("主图不存在");
+  if (!image) throw new Error(m.error_main_missing());
   if (d.mask && d.refs[0]?.uid !== uid)
-    throw new Error("请先移除当前主图的蒙版，再替换主图");
+    throw new Error(m.error_remove_mask_before_replace());
   const next = {
     ...reorderRefs(d, [image, ...d.refs.filter((r) => r.uid !== uid)]),
     intent: "edit" as const,
@@ -345,7 +347,7 @@ export function setPrimaryImage(d: Draft, uid: string): Draft {
 }
 export function setTaskIntent(d: Draft, intent: TaskIntent): Draft {
   if (intent === "create" && d.mask)
-    throw new Error("请先移除编辑蒙版，再生成新画面");
+    throw new Error(m.error_remove_mask_before_create());
   if (intent === "edit" && d.refs.length)
     return setPrimaryImage(
       d,
@@ -368,18 +370,13 @@ export function validateDraft(d: Draft): string[] {
       d.maxInputEdge < 256 ||
       d.maxInputEdge > 8192)
   )
-    errors.push("压缩长边上限须为 256–8192 的整数");
+    errors.push(m.error_edge_limit());
   if (d.family === "flux" && ["bfl", "comfy"].includes(d.provider))
     for (const r of d.refs) {
       const s = sentSize(r, d.compressEnabled, d.maxInputEdge);
       if (s.w < 256 || s.h < 256 || s.w * s.h > 16_000_000)
         errors.push(
-          r.name +
-            " 发送尺寸 " +
-            s.w +
-            "×" +
-            s.h +
-            " 不符合 BFL：每边至少 256px、面积至多 16MP。请提高压缩上限或替换图片。",
+          m.error_bfl_size({ name: r.name, width: s.w, height: s.h }),
         );
     }
   return errors;
