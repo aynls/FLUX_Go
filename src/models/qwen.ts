@@ -4,38 +4,34 @@ import { fieldsFor, routeFor } from "./catalog";
 
 export function validateQwen(d: Draft): string[] {
   const errors: string[] = [];
-  if (
-    fieldsFor(d).width &&
-    (d.params.width === null) !== (d.params.height === null)
-  )
+  const fields = fieldsFor(d);
+  const route = routeFor(d);
+  if (fields.width && (d.params.width === null) !== (d.params.height === null))
     errors.push(m.error_dimensions_together());
   if (
-    fieldsFor(d).width &&
-    !fieldsFor(d).width.nullable &&
+    fields.width &&
+    !fields.width.nullable &&
     d.params.width === null &&
     d.params.height === null
   )
     errors.push(m.error_dimensions_required());
   if (
-    fieldsFor(d).width &&
+    fields.width &&
     !(
       d.params.width === null &&
       d.params.height === null &&
-      fieldsFor(d).width.nullable
+      fields.width.nullable
     )
   ) {
     const w = d.params.width ?? 1024,
       h = d.params.height ?? 1024;
+    const max = route?.maxPixels ?? 4194304;
     if (
-      w * h < 262144 ||
-      w * h > (routeFor(d)?.maxPixels ?? 4194304) ||
-      Math.max(w, h) / Math.min(w, h) > 8
+      w * h < (route?.minPixels ?? 262144) ||
+      w * h > max ||
+      Math.max(w, h) / Math.min(w, h) > (route?.maxAspect ?? 8)
     )
-      errors.push(
-        m.error_qwen_area({
-          max: formatNumber(routeFor(d)?.maxPixels ?? 4194304),
-        }),
-      );
+      errors.push(m.error_qwen_area({ max: formatNumber(max) }));
   }
   if (
     fieldsFor(d).promptExtendMode &&

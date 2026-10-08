@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { composePrompt } from "./protocol";
+import { composePrompt } from "../models/flux/protocol";
 import type { Box } from "./types";
 
 test("编辑模式把目标框按 [y0, x0, y1, x1] 追加到指令后", () => {

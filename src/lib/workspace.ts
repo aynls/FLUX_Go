@@ -345,16 +345,6 @@ export function setPrimaryImage(d: Draft, uid: string): Draft {
     ? resizeCanvas(next, { w: image.width, h: image.height })
     : next;
 }
-export function setTaskIntent(d: Draft, intent: TaskIntent): Draft {
-  if (intent === "create" && d.mask)
-    throw new Error(m.error_remove_mask_before_create());
-  if (intent === "edit" && d.refs.length)
-    return setPrimaryImage(
-      d,
-      primaryImage({ ...d, intent })?.uid ?? d.refs[0].uid!,
-    );
-  return { ...d, intent, baseId: intent === "create" ? null : d.baseId };
-}
 export function sentSize(r: WorkingImage, enabled: boolean, edge: number) {
   const k = enabled ? Math.min(1, edge / Math.max(r.width, r.height)) : 1;
   return {
@@ -405,6 +395,13 @@ export function outputEstimate(d: Draft) {
       d.params.aspectRatio ?? "1:1"
     ];
   if (dimensions) return { w: dimensions[0], h: dimensions[1] };
+  if (d.family === "flux" && d.provider === "runware") {
+    const sized =
+      catalog.fluxDimensions[d.params.resolution ?? "1K"]?.[
+        d.params.aspectRatio ?? "1:1"
+      ];
+    if (sized) return { w: sized[0], h: sized[1] };
+  }
   if (fieldsFor(d).size) return gptSize(d.params.size) ?? { w: 1024, h: 1024 };
   if (fieldsFor(d).width && d.params.width != null && d.params.height != null)
     return { w: d.params.width ?? 1024, h: d.params.height ?? 1024 };

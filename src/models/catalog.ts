@@ -63,6 +63,7 @@ export const catalog = raw as unknown as {
   families: FamilyDefinition[];
   models: ModelDefinition[];
   fields: Record<string, FieldDefinition>;
+  fluxDimensions: Record<string, Record<string, [number, number]>>;
   imageDimensions: Record<
     string,
     Record<string, Record<string, [number, number]>>

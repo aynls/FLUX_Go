@@ -488,7 +488,7 @@ test("new image families expose official routes, color icons and independent rou
     ui.container
       .querySelector(".model-family-control img")
       ?.getAttribute("src"),
-  ).toBe("/seeddream.png");
+  ).toBe("/seedream.png");
   const provider = ui.getByRole("combobox", { name: "提供商" });
   expect(provider.querySelector('option[value="ark"]')).not.toBeNull();
   expect(provider.querySelector('option[value="byteplus"]')).not.toBeNull();

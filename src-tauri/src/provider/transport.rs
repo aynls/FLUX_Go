@@ -2,16 +2,35 @@
 use super::{OutputImage, ProviderError};
 use base64::Engine;
 use serde_json::Value;
-use std::{sync::OnceLock, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Mutex, OnceLock},
+    time::Duration,
+};
 
-pub fn client() -> &'static reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(Duration::from_secs(120))
-            .build()
-            .expect("HTTP client initialization failed")
-    })
+pub fn client() -> reqwest::Client {
+    client_with_timeout(120).expect("HTTP client initialization failed")
+}
+
+/// 按超时秒数复用客户端。`reqwest::Client` 内部共享连接池，克隆成本很低。
+pub fn client_with_timeout(secs: u64) -> Result<reqwest::Client, ProviderError> {
+    static CLIENTS: OnceLock<Mutex<HashMap<u64, reqwest::Client>>> = OnceLock::new();
+    let clients = CLIENTS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = clients.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some(client) = guard.get(&secs) {
+        return Ok(client.clone());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(secs))
+        .build()
+        .map_err(|_| {
+            ProviderError::coded(
+                "backend_network_client_failed",
+                "Couldn't initialize the network client",
+            )
+        })?;
+    guard.insert(secs, client.clone());
+    Ok(client)
 }
 pub fn key(provider: &str) -> Result<String, ProviderError> {
     super::configured_key(provider).ok_or_else(|| {
@@ -31,7 +50,7 @@ pub async fn json(
     let (status, body, _) = json_with_retry_after(request, provider).await?;
     Ok((status, body))
 }
-pub async fn json_with_retry_after(
+async fn json_with_retry_after(
     request: reqwest::RequestBuilder,
     provider: &str,
 ) -> Result<(u16, Value, Option<Duration>), ProviderError> {
@@ -64,16 +83,13 @@ pub async fn json_with_metadata(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok())
         .map(|s| Duration::from_secs(s.clamp(1, 60)));
-    let body: Value = response
-        .json()
-        .await
-        .map_err(|_| {
-            ProviderError::coded(
-                "backend_unparseable_response",
-                format!("{provider} returned a response that could not be parsed"),
-            )
-            .with_param("provider", provider)
-        })?;
+    let body: Value = response.json().await.map_err(|_| {
+        ProviderError::coded(
+            "backend_unparseable_response",
+            format!("{provider} returned a response that could not be parsed"),
+        )
+        .with_param("provider", provider)
+    })?;
     if !(200..300).contains(&status) {
         let upstream = body
             .pointer("/error/message")
@@ -111,8 +127,12 @@ pub async fn download_image(url: &str) -> Result<OutputImage, ProviderError> {
             media_type: mime,
         });
     }
-    let parsed = reqwest::Url::parse(url)
-        .map_err(|_| ProviderError::coded("backend_result_url_invalid", "The result image URL is invalid"))?;
+    let parsed = reqwest::Url::parse(url).map_err(|_| {
+        ProviderError::coded(
+            "backend_result_url_invalid",
+            "The result image URL is invalid",
+        )
+    })?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(ProviderError::coded(
             "backend_result_url_scheme",
@@ -182,21 +202,22 @@ pub async fn openai_images(
     body: &Value,
     default_format: &str,
 ) -> Result<Vec<OutputImage>, ProviderError> {
-    let items = body["data"]
-        .as_array()
-        .ok_or_else(|| {
-            ProviderError::coded(
-                "backend_missing_image_data",
-                "The response is missing image data",
-            )
-        })?;
+    let items = body["data"].as_array().ok_or_else(|| {
+        ProviderError::coded(
+            "backend_missing_image_data",
+            "The response is missing image data",
+        )
+    })?;
     let mut images = Vec::new();
     for item in items {
         if let Some(b64) = item["b64_json"].as_str() {
             let fallback = format!("image/{default_format}");
             images.push(base64_image(
                 b64,
-                item["media_type"].as_str().or_else(|| item["mime_type"].as_str()).unwrap_or(&fallback),
+                item["media_type"]
+                    .as_str()
+                    .or_else(|| item["mime_type"].as_str())
+                    .unwrap_or(&fallback),
             )?);
         } else if let Some(url) = item["url"].as_str() {
             images.push(download_image(url).await?);

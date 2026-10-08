@@ -15,4 +15,4 @@ LutriUI 是基于 Tauri、React、TypeScript 和 Rust 的桌面图像生成与�
 
 # 验证
 
-使用 Bun 管理前端。运行 `bun run app:dev` 启动桌面应用，`bun run dev` 仅用于界面预览。按改动范围运行 `bun test`、`bun run build` 和 `cargo test --manifest-path src-tauri/Cargo.toml`；需要检查桌面构建时运行 `bun run tauri build --no-bundle`。验证报告区分自动测试、模拟请求、真实 API 调用与桌面实测。
+使用 Bun 管理前端。运行 `bun run app:dev` 启动桌面应用，`bun run dev` 仅用于界面预览。界面文案改 `scripts/emit-messages.ts` 后运行 `bun run i18n:emit`。按改动范围运行 `bun test`、`bun run build` 和 `cargo test --manifest-path src-tauri/Cargo.toml`；需要检查桌面构建时运行 `bun run tauri build --no-bundle`。验证报告区分自动测试、模拟请求、真实 API 调用与桌面实测。

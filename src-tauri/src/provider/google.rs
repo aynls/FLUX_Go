@@ -232,15 +232,7 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
     let payload = build_payload(req)?;
     let model = crate::models::resolve(req)?;
     super::progress::report("waiting", None, None, None);
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(900))
-        .build()
-        .map_err(|_| {
-            ProviderError::coded(
-                "backend_google_client",
-                "Couldn't initialize the Google HTTP client",
-            )
-        })?;
+    let client = transport::client_with_timeout(900)?;
     let (_, body) = transport::json(
         client
             .post(format!("{endpoint}/{}:generateContent", model.wire_id()))

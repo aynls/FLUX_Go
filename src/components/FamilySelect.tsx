@@ -7,7 +7,7 @@ import { m } from "../i18n";
 
 const icons: Record<FamilyId, string> = {
   flux: "/flux.png", gpt: "/openai.png", qwen: "/qwen-color.png",
-  gemini: "/nano-banana.png", seedream: "/seeddream.png", grok: "/grok.svg",
+  gemini: "/nano-banana.png", seedream: "/seedream.png", grok: "/grok.svg",
 };
 function Icon({ family }: { family: FamilyId }) {
   return <img className={"family-icon" + (["flux", "gpt", "grok"].includes(family) ? " monochrome" : "")} src={icons[family]} alt="" aria-hidden="true" />;

@@ -73,15 +73,7 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
     } else {
         "edits"
     };
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(900))
-        .build()
-        .map_err(|_| {
-            ProviderError::coded(
-                "backend_grok_client",
-                "Couldn't initialize the Grok HTTP client",
-            )
-        })?;
+    let client = transport::client_with_timeout(900)?;
     super::progress::report("waiting", None, None, None);
     let (_, body) = transport::json(
         client

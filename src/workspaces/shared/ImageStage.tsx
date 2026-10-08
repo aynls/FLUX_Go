@@ -1,19 +1,20 @@
 import { m } from "../../i18n";
 import Canvas from "../../components/Canvas";
 import { outputEstimate, primaryImage } from "../../lib/workspace";
-import type { StageProps } from "../shared/Stage";
-export default function QwenStage(p: StageProps) {
+import type { StageProps } from "./Stage";
+
+export default function ImageStage(p: StageProps) {
   const d = p.draft;
   return (
-    <div className="qwen-work-area">
-      <div className="qwen-composer">
+    <div className="image-work-area">
+      <div className="image-composer">
         <div className="model-stage-heading">
           <strong>
             {primaryImage(d)
-              ? m.qwen_main()
+              ? m.stage_main()
               : d.params.width === null
-                ? m.qwen_auto_size()
-                : m.qwen_output()}
+                ? m.stage_auto_size()
+                : m.stage_output()}
           </strong>
         </div>
         <div className="stage">

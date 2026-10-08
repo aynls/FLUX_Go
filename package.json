@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "i18n:emit": "bun scripts/emit-messages.ts",
     "i18n:compile": "paraglide-js compile --project ./project.inlang --output-structure locale-modules --emit-ts-declarations --no-emit-git-ignore --no-emit-readme --no-emit-prettier-ignore",
     "dev": "bun run i18n:compile && vite",
     "app:dev": "bun run i18n:compile && tauri dev",
