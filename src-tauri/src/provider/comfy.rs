@@ -76,12 +76,7 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
     } else {
         format!("{endpoint}/{}/requests", model.wire_id())
     };
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(900))
-        .build()
-        .map_err(|_| {
-            ProviderError::coded("backend_comfy_client", "Couldn't initialize the Comfy HTTP client")
-        })?;
+    let client = transport::client_with_timeout(900)?;
     let (_, submit, _, mut actual_credits) = transport::json_with_metadata(
         client
             .post(&url)
@@ -186,7 +181,9 @@ pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> Pr
                 "backend_comfy_timeout",
                 "Timed out waiting for the Comfy result",
             )
-            .with_hint(format!("Task {id} may still be running. It was not submitted again."))
+            .with_hint(format!(
+                "Task {id} may still be running. It was not submitted again."
+            ))
             .with_hint_code("backend_task_still_running")
             .with_param("id", id));
         }

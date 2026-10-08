@@ -6,7 +6,7 @@ import {
   InputOptions,
   GenerateFooter,
   Validation,
-  QwenSizeFields,
+  FrameSizeFields,
   type WorkspaceControlsProps,
 } from "../shared/Controls";
 export default function QwenSidebar(p: WorkspaceControlsProps) {
@@ -17,7 +17,7 @@ export default function QwenSidebar(p: WorkspaceControlsProps) {
         <PromptEditor {...p} />
         <section>
           <h2>{m.frame_size()}</h2>
-          <QwenSizeFields {...p} />
+          <FrameSizeFields {...p} />
         </section>
         <section>
           <h2>{m.generation_controls()}</h2>

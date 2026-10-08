@@ -3,7 +3,7 @@ import {
   RouteControls,
   PromptEditor,
   ParameterFields,
-  QwenSizeFields,
+  FrameSizeFields,
   InputOptions,
   GenerateFooter,
   Validation,
@@ -21,7 +21,7 @@ export default function ImageSidebar(p: WorkspaceControlsProps) {
         <section>
           <h2>{m.frame_size()}</h2>
           {fields.width ? (
-            <QwenSizeFields {...p} />
+            <FrameSizeFields {...p} />
           ) : (
             <ParameterFields {...p} keys={["resolution", "aspectRatio"]} />
           )}

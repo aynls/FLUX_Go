@@ -930,7 +930,7 @@ pre {
   font-size: 14px;
 }
 .gpt-editor,
-.qwen-composer {
+.image-composer {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1036,7 +1036,7 @@ pre {
 }
 .flux-work-area,
 .gpt-work-area,
-.qwen-work-area,
+.image-work-area,
 .result-work-area {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

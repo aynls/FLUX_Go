@@ -11,9 +11,6 @@
 import type { Box, Rect, WorkingImage } from "../../lib/types";
 import { m } from "../../i18n";
 
-export const MODEL_FLUX3 = "black-forest-labs/flux-3-image";
-export const MODEL_NAME = "FLUX.3 Image";
-
 export type WireBbox = [number, number, number, number];
 
 function clamp01(v: number): number {
@@ -29,19 +26,6 @@ export function rectToWire(r: Rect, iw: number, ih: number): WireBbox {
   const y1 = Math.min(1000, Math.max(y0 + 1, sy(r.y + r.h)));
   const x1 = Math.min(1000, Math.max(x0 + 1, sx(r.x + r.w)));
   return [y0, x0, y1, x1];
-}
-
-/** 协议坐标 → 画布像素矩形（历史回填用） */
-export function wireToRect(wire: unknown, iw: number, ih: number): Rect {
-  if (!Array.isArray(wire) || wire.length < 4)
-    return { x: 0, y: 0, w: iw / 4, h: ih / 4 };
-  const [y0, x0, y1, x1] = wire as number[];
-  return {
-    x: ((x0 ?? 0) / 1000) * iw,
-    y: ((y0 ?? 0) / 1000) * ih,
-    w: Math.max(1, (((x1 ?? 0) - (x0 ?? 0)) / 1000) * iw),
-    h: Math.max(1, (((y1 ?? 0) - (y0 ?? 0)) / 1000) * ih),
-  };
 }
 
 export interface EditRow {

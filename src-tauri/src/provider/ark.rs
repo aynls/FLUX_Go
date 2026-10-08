@@ -56,18 +56,14 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
 pub async fn generate_at(req: &GenerateRequest, key: &str, endpoint: &str) -> ProviderResult {
     let payload = build_payload(req)?;
     super::progress::report("waiting", None, None, None);
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(900))
-        .build()
-        .map_err(|_| {
-            ProviderError::coded(
-                "backend_seedream_client",
-                "Couldn't initialize the Seedream HTTP client",
-            )
-        })?;
+    let client = transport::client_with_timeout(900)?;
     let (_, body) = transport::json(
         client.post(endpoint).bearer_auth(key).json(&payload),
-        if req.provider == "ark" { "Ark" } else { "BytePlus" },
+        if req.provider == "ark" {
+            "Ark"
+        } else {
+            "BytePlus"
+        },
     )
     .await?;
     if let Some(error) = body.get("error").filter(|e| !e.is_null()) {

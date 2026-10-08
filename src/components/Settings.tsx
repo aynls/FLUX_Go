@@ -26,7 +26,7 @@ import {
   changeRoute,
   validateFields,
 } from "../models/catalog";
-import { ParameterFields, QwenSizeFields } from "../workspaces/shared/Controls";
+import { ParameterFields, FrameSizeFields } from "../workspaces/shared/Controls";
 import { m } from "../i18n";
 import { modelLabel, providerLabel } from "../labels";
 
@@ -218,7 +218,7 @@ export default function Settings({
                   </select>
                 </label>
                 {family === "qwen" && (
-                  <QwenSizeFields draft={defaults} onChange={updateDefaults} />
+                  <FrameSizeFields draft={defaults} onChange={updateDefaults} />
                 )}
                 <ParameterFields
                   draft={defaults}

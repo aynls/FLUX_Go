@@ -45,7 +45,7 @@ FLUX 的来源框与目标框独立编辑。移动、固定、移除区域可打
 
 ## API 参数与结果信息
 
-共享模型目录是前后端契约。控件按当前路由出现，请求只发送该路由白名单内的字段。11 个模型、41 条路由的控件覆盖检查包含自动/自定义尺寸、JPEG/WebP 压缩、扩写方式等有条件出现的字段。生成张数由应用队列控制，每次请求一张图片。
+共享模型目录是前后端契约。控件按当前路由出现，请求只发送该路由白名单内的字段。当前目录为 6 个家族、12 个模型、47 条路由；控件覆盖包含自动/自定义尺寸、JPEG/WebP 压缩、扩写方式等有条件出现的字段。生成张数由应用队列控制，每次请求一张图片。
 
 | 层级 | 内容 |
 | --- | --- |
@@ -56,41 +56,14 @@ FLUX 的来源框与目标框独立编辑。移动、固定、移除区域可打
 
 字段说明统一显示，复杂控件占整行。提示词计数使用编译后的 Unicode 字符数，包含参考用途与区域指令；超限内容不会截断，提交被阻止并显示当前路由限制。PNG 不发送有损压缩，关闭扩写不发送扩写方式。
 
-Nano Banana 2.1 已接入 OpenRouter 与 Google：1K/2K/4K、14 种比例、最多 14 张参考图，Google 另有自动比例，不接受旧模型的 512 档。模型目录和原生请求映射均有离线测试。[OpenRouter 模型目录](https://openrouter.ai/api/v1/images/models)、[Google 模型说明](https://ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1)。
+Nano Banana 2.1 已接入 OpenRouter、Google、Comfy 与 Runware：1K/2K/4K、最多 14 张参考图，不接受 512 档。OpenRouter、Google 与 Runware 使用 14 种固定比例，Comfy 另有 9:21；除 OpenRouter 外可选自动比例。模型目录和原生请求映射均有离线测试。[OpenRouter 模型目录](https://openrouter.ai/api/v1/images/models)、[Google 模型说明](https://ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1)。
 
 Google 的 Nano Banana 2.1 提供 minimal/medium/high，Nano Banana 2 提供 minimal/high，Pro 不提供思考级别控件。支持选择返回文字说明、思考摘要和联网搜索；图片搜索只向支持的模型开放。结果逐图保留来源页面、搜索词和搜索建议，思考阶段图片不进入最终图库。搜索建议在禁止脚本的 iframe 中显示，HTTP(S) 来源链接通过系统浏览器打开。[Google 图像生成文档](https://ai.google.dev/gemini-api/docs/generate-content/image-generation)。
 
 当前编辑使用有序图片与单次指令，不维持供应商多轮会话。视频输入、会话式聊天与队列优先级不属于本轮图像创作工作流。
 
-## 验证与剩余边界
+## 验证
 
-本轮前端 72 项测试、Rust 27 项非付费测试通过。自动验证覆盖跨模型编辑、草稿隔离与恢复、蒙版保护、来源/目标坐标、批次停止、逐张保存、图库导入及有序选图、删除后重启、保存重试不恢复已删除资产，以及每个声明参数的控件可达性。生产前端构建和 Windows Tauri 调试构建（不打包安装器）通过。
+离线测试覆盖跨模型编辑、草稿隔离与恢复、蒙版保护、来源与目标坐标、批次停止、逐张保存、图库导入与有序选图、删除后重启，以及保存重试不会恢复已删除资产。命令是 `bun test` 和 `cargo test --manifest-path src-tauri/Cargo.toml`。这些测试使用本地图片和 HTTP 模拟，不调用付费 API。
 
-浏览器隔离夹具使用测试图片和模拟响应，检查了明暗主题、1024×640 窗口、候选图转编辑、图库选图、主图/参考色框、来源框弹窗和 Google 来源展示。来源链接调用也经过模拟验证；这些结果不替代原生文件对话框、系统剪贴板和系统浏览器的桌面实测。
-
-Windows 原生验收使用独立应用标识 `app.lutriui.verification`、1024×640 窗口和专门创建的测试图片。已完成文件对话框多图导入、图库缩略图与大图、复制到系统剪贴板、选图弹窗 Ctrl+V 入库、有序多选参考、FLUX 转 Gemini Nano Banana 2.1 编辑，以及关闭后重启恢复。图库保存 4 项、8 个图片文件；三张本机图片与受管副本的 SHA-256 一致，剪贴板导入另存一份。原生验收发现并修复 asset 协议 403：存储创建后显式注册历史和图库图片目录，其他应用数据不进入 asset 访问范围。
-
-| 用户要求 | 完成证据 |
-| --- | --- |
-| 同一提示词批量生成、逐张挑图继续编辑 | 队列及跨模型组件测试；浏览器候选网格与交接弹窗验收 |
-| 生图与编辑可使用不同模型 | 请求编译与草稿测试；原生 FLUX → Nano Banana 2.1 切换和重启恢复；Comfy FLUX → GPT 真实调用成功 |
-| 主图与其他参考清晰区分 | 主图第一位、标签重排测试；原生主图绿框和参考紫框 |
-| 普通生成不占用画布，编辑和区域构图保留画布 | 工作区条件渲染测试；浏览器区域构图和原生生成/编辑页面验收 |
-| 底部历史不再被压扁 | 编辑结果面板可折叠；普通生成改为候选网格；浏览器最小尺寸验收 |
-| 所有已声明 API 参数可编辑 | 11 个模型、41 条路由逐字段控件检查；Rust 请求与 HTTP 传输测试 |
-| 本机与剪贴板导入复制进图库 | 原生文件对话框、剪贴板实测及文件哈希验证 |
-| 所有生成结果进入图库 | 逐张保存、部分失败、重试与去重测试；原图和元数据存储测试 |
-| 图库删除同时删除文件与记录 | Rust 文件删除与重启测试；组件取消、失败重试测试，未对用户图库执行删除 |
-| 图库方便转为参考素材 | 原生有序多选、已使用标记、Ctrl+V 入库；引用同一资产的测试 |
-| Nano Banana 2.1 | 目录、参数、原生请求映射和桌面入口通过；真实调用受下述供应商条件限制 |
-| 不迁移旧数据 | 会话和图库使用新契约；无旧目录扫描或迁移 |
-
-原生截图与存储证据保存在本机忽略目录：`.cache/native-gallery-proof.png`、`.cache/native-edit-restored-proof.png`、`.cache/native-storage-evidence.json`。图库删除的真实文件语义由隔离 Rust 测试覆盖；系统浏览器打开来源链接尚未做原生点击验收。
-
-真实调用证据单独记录：OpenRouter Nano Banana 2.1 第一条 1K 生成请求约 2.2 秒后返回 HTTP 403，响应为 “The request is prohibited due to a violation of provider Terms Of Service.”，未重试，第二条编辑请求未发送。证据位于本机 `.cache/verification/nano-banana-21/1791314248241/failure.json`。Google 官方验证因本机未配置凭据，在发送前停止，没有产生请求。两者都不算真实生成验收通过。
-
-Comfy 真实工作流共发送三次请求：FLUX 第一张 1024×1024 候选图约 38 秒成功，第二张约 19 秒返回上游 502；未重发失败请求，直接使用第一张成功结果调用 GPT Image 2.5 Flare，约 19 秒完成编辑。查看输出确认蓝色花瓶改为陶土色，花朵、构图和背景保留。接口没有报告实际扣费，未将其计为零费用。批次并非全部成功，跨模型编辑链路成功。生成及失败证据在 `.cache/verification/creative-workflow/719f9070-60a8-4b50-8e0d-b80e2b170fb7/`，编辑证据在同目录下的 `b66d2069-c62a-4cf1-8d8c-312341664b8f/`。
-
-`src-tauri/tests/live_nano_banana.rs` 的两个验证默认忽略，必须显式启用；分别计划两次付费请求。Google 验证包含搜索生成和参考图编辑，读取应用当前凭据来源，输出和响应详情只保存到本机忽略目录。
-
-`src-tauri/tests/live_creative_workflow.rs` 默认忽略，完整流程计划三次 Comfy 付费请求。设置 `LUTRIUI_TEST_CANDIDATE` 为已有验证 PNG 的绝对路径时，只执行一次跨模型编辑，不重新生成候选图。
+真实调用放在 `src-tauri/tests/live_nano_banana.rs` 与 `src-tauri/tests/live_creative_workflow.rs`，默认 `#[ignore]`。前者按供应商各计划两次付费请求；后者完整流程计划三次 Comfy 请求。设置 `LUTRIUI_TEST_CANDIDATE` 为已有 PNG 的绝对路径时，创意流程只做一次跨模型编辑。会话和图库使用当前契约，不扫描、不迁移旧目录。

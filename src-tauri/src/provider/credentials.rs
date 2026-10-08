@@ -17,45 +17,27 @@ static KEY_SETTINGS: OnceLock<RwLock<HashMap<String, CredentialSettings>>> = Onc
 static KEY_SETTINGS_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 pub fn default_env_name(provider: &str) -> &'static str {
-    match provider {
-        "bfl" => "BFL_API_KEY",
-        "comfy" => "COMFY_API_KEY",
-        "runware" => "RUNWARE_API_KEY",
-        "google" => "GEMINI_API_KEY",
-        "ark" => "ARK_API_KEY",
-        "byteplus" => "BYTEPLUS_API_KEY",
-        "xai" => "XAI_API_KEY",
-        _ => "OPENROUTER_API_KEY",
-    }
+    crate::models::default_env_name(provider)
 }
 
 fn default_key_settings() -> HashMap<String, CredentialSettings> {
-    [
-        "openrouter",
-        "bfl",
-        "comfy",
-        "runware",
-        "google",
-        "ark",
-        "byteplus",
-        "xai",
-    ]
-    .into_iter()
-    .map(|p| {
-        (
-            p.to_string(),
-            CredentialSettings {
-                source: if stored_key(p).is_some() {
-                    "manual"
-                } else {
-                    "environment"
-                }
-                .into(),
-                env_name: default_env_name(p).into(),
-            },
-        )
-    })
-    .collect()
+    crate::models::provider_ids()
+        .into_iter()
+        .map(|p| {
+            (
+                p.to_string(),
+                CredentialSettings {
+                    source: if stored_key(p).is_some() {
+                        "manual"
+                    } else {
+                        "environment"
+                    }
+                    .into(),
+                    env_name: default_env_name(p).into(),
+                },
+            )
+        })
+        .collect()
 }
 
 pub fn init_key_settings(dir: &Path) -> Result<(), String> {
@@ -107,10 +89,7 @@ pub fn key_settings(provider: &str) -> CredentialSettings {
 }
 
 fn validate_key_settings(provider: &str, config: &CredentialSettings) -> Result<(), String> {
-    if !matches!(
-        provider,
-        "openrouter" | "bfl" | "comfy" | "runware" | "google" | "ark" | "byteplus" | "xai"
-    ) {
+    if !crate::models::known_provider(provider) {
         return Err(unknown_provider(provider));
     }
     if !matches!(config.source.as_str(), "environment" | "manual") {
@@ -178,10 +157,7 @@ pub fn save_key_settings(provider: &str, config: CredentialSettings) -> Result<(
 }
 
 pub fn credential_entry(provider: &str) -> Result<keyring::Entry, String> {
-    if !matches!(
-        provider,
-        "bfl" | "openrouter" | "comfy" | "runware" | "google" | "ark" | "byteplus" | "xai"
-    ) {
+    if !crate::models::known_provider(provider) {
         return Err(unknown_provider(provider));
     }
     keyring::Entry::new("app.lutriui.desktop", provider).map_err(|_| {
@@ -201,10 +177,7 @@ pub fn stored_key(provider: &str) -> Option<String> {
 }
 
 pub fn configured_key(provider: &str) -> Option<String> {
-    if !matches!(
-        provider,
-        "openrouter" | "bfl" | "comfy" | "runware" | "google" | "ark" | "byteplus" | "xai"
-    ) {
+    if !crate::models::known_provider(provider) {
         return None;
     }
     let config = key_settings(provider);

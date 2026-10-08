@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { m } from "../../i18n";
 import type { Rect } from "../../lib/types";
-import { rectToWire } from "../../lib/protocol";
+import { rectToWire } from "../../models/flux/protocol";
 
 export function RectFields({
   label,

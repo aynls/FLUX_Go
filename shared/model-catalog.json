@@ -932,6 +932,8 @@
             "watermark": {}
           },
           "maxPixels": 6553600,
+          "minPixels": 262144,
+          "maxAspect": 8,
           "docs": "https://docs.comfy.org/router-schemas/qwen/qwen-image-3.0.json"
         },
         "runware": {
@@ -957,6 +959,8 @@
             }
           },
           "maxPixels": 4194304,
+          "minPixels": 262144,
+          "maxAspect": 8,
           "docs": "https://runware.ai/docs/models/alibaba-qwen-image-3-0",
           "defaults": {
             "count": 1,
@@ -1027,6 +1031,8 @@
             "watermark": {}
           },
           "maxPixels": 6553600,
+          "minPixels": 262144,
+          "maxAspect": 8,
           "docs": "https://docs.comfy.org/router-schemas/qwen/qwen-image-3.0-pro.json"
         },
         "runware": {
@@ -1052,6 +1058,8 @@
             }
           },
           "maxPixels": 4194304,
+          "minPixels": 262144,
+          "maxAspect": 8,
           "docs": "https://runware.ai/docs/models/alibaba-qwen-image-3-0-pro",
           "defaults": {
             "count": 1,

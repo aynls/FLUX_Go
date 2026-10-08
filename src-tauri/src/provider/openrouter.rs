@@ -1,29 +1,16 @@
 //! OpenRouter Image API 适配器。
 //!
-//! 端点: POST https://openrouter.ai/api/v1/images（同步返回 base64 图片）。
-//! 请求字段仅限官方文档与 flux-3-image 端点 supported_parameters 中列出的项：
-//! model, prompt, resolution, aspect_ratio, safety_tolerance(透传), input_references。
-//! OpenRouter 未开放任何结构化包围盒字段——包围盒位于 final_prompt 内
-//! （FLUX.3 官方布局协议），本适配器不做任何坐标改写。
-
-use std::sync::OnceLock;
-use std::time::Duration;
+//! 端点: POST https://openrouter.ai/api/v1/images（同步返回图片）。
+//! 可发送的字段由模型目录中该路由的参数白名单决定。FLUX 区域写在提示词里，
+//! 本适配器不另加结构化包围盒字段。
 
 use serde_json::{json, Map, Value};
 
-use super::{GenerateOutput, GenerateRequest, OutputImage, ProviderError, ProviderResult};
+use super::{
+    transport, GenerateOutput, GenerateRequest, OutputImage, ProviderError, ProviderResult,
+};
 
 pub const ENDPOINT: &str = "https://openrouter.ai/api/v1/images";
-
-fn client() -> &'static reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(Duration::from_secs(300))
-            .build()
-            .expect("HTTP client initialization failed")
-    })
-}
 
 fn read_key() -> Result<String, ProviderError> {
     super::configured_key("openrouter").ok_or_else(|| {
@@ -103,7 +90,7 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
     let payload = build_payload(req)?;
     super::progress::report("waiting", None, None, None);
 
-    let resp = client()
+    let resp = transport::client_with_timeout(300)?
         .post(ENDPOINT)
         .bearer_auth(key)
         .header("X-Title", "LutriUI")
@@ -172,15 +159,12 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
         });
     }
 
-    let data = body
-        .get("data")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| {
-            ProviderError::coded(
-                "backend_openrouter_missing_data",
-                "The OpenRouter response is missing the data field",
-            )
-        })?;
+    let data = body.get("data").and_then(|v| v.as_array()).ok_or_else(|| {
+        ProviderError::coded(
+            "backend_openrouter_missing_data",
+            "The OpenRouter response is missing the data field",
+        )
+    })?;
     if data.is_empty() {
         return Err(ProviderError::coded(
             "backend_openrouter_no_image",

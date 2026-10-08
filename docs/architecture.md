@@ -35,11 +35,11 @@ LutriUI 将模型契约、工作区和供应商传输分开。新增模型时，
 
 ## 工作区与 API 差异
 
-FLUX 工作区保留参考图、来源区域和输出区域。BFL、Comfy 与 OpenRouter 将区域协议附在提示词中；Runware 使用 `settings.boundingBoxes`，单独发送不含区域 JSON 的指令。Runware 的 FLUX 文生图需要至少一个放置区域；指定分辨率和比例时，适配器使用文档中的尺寸表，有参考图且比例为 `auto` 时使用分辨率预设。四个供应商的 FLUX 内容审核容忍度均限制为 0–4，0 最严格。Runware 还开放 PNG/JPEG/WebP 与 20–99 的压缩质量；PNG 不发送压缩质量。[BFL 文档](https://docs.bfl.ai/flux_3/flux3_image_overview)、[Runware 文档](https://runware.ai/docs/models/bfl-flux-3-image)。
+FLUX 工作区保留参考图、来源区域和输出区域。BFL、Comfy 与 OpenRouter 将区域协议附在提示词中；Runware 使用 `settings.boundingBoxes`，单独发送不含区域 JSON 的指令。Runware 的 FLUX 文生图需要至少一个放置区域；指定分辨率和比例时，适配器与画布预估都读取目录里的 `fluxDimensions`，有参考图且比例为 `auto` 时使用分辨率预设。四个供应商的 FLUX 内容审核容忍度均限制为 0–4，0 最严格。Runware 还开放 PNG/JPEG/WebP 与 20–99 的压缩质量；PNG 不发送压缩质量。[BFL 文档](https://docs.bfl.ai/flux_3/flux3_image_overview)、[Runware 文档](https://runware.ai/docs/models/bfl-flux-3-image)。
 
 GPT Image 工作区使用主图、参考图列表、质量、背景和输出格式。Comfy 与 Runware 支持自定义尺寸和蒙版；OpenRouter 当前路由使用宽高比，暂未开放蒙版和任意尺寸。内部蒙版使用透明 PNG，完全透明区域用于编辑，尺寸与第一张参考图一致；Runware 适配器转换为白色编辑、黑色保留的蒙版。参考图与蒙版按同一比例缩放。尺寸、透明背景与 JPEG 的冲突在提交前校验。[OpenAI 文档](https://developers.openai.com/api/docs/guides/image-generation)、[Comfy schema](https://docs.comfy.org/router-schemas/openai/gpt-image-2.5-flare.json)、[Runware 文档](https://runware.ai/docs/models/openai-gpt-image-2-5-flare)。
 
-Qwen 工作区使用有序参考图和文字指令，支持 3.0 与 3.0 Pro。OpenRouter 路由开放分辨率、宽高比、种子与张数，参考图上限为 4；Comfy 和 Runware 使用像素尺寸、负面提示词和扩写控制，参考图上限为 3。Comfy 将尺寸编码为 `宽*高`；选择自动尺寸时省略该字段，并对 Pro 显示费用区间。Runware 使用独立宽高字段，并开放输出格式与压缩质量。有参考图时只支持 `direct` 扩写，关闭扩写时省略扩写方式。[OpenRouter 路由](https://openrouter.ai/api/v1/images/models/qwen/qwen-image-3/endpoints)、[Comfy schema](https://docs.comfy.org/router-schemas/qwen/qwen-image-3.0.json)、[Runware 文档](https://runware.ai/docs/models/alibaba-qwen-image-3-0)。
+Qwen 工作区使用有序参考图和文字指令，支持 3.0 与 3.0 Pro。OpenRouter 路由开放分辨率、宽高比、种子与张数，参考图上限为 4；Comfy 和 Runware 使用像素尺寸、负面提示词和扩写控制，参考图上限为 3。像素路由的最小面积、最大面积和长宽比写在目录的 `minPixels`、`maxPixels`、`maxAspect` 中，前后端读取同一组数字。Comfy 将尺寸编码为 `宽*高`；选择自动尺寸时省略该字段，并对 Pro 显示费用区间。Runware 使用独立宽高字段，并开放输出格式与压缩质量。有参考图时只支持 `direct` 扩写，关闭扩写时省略扩写方式。[OpenRouter 路由](https://openrouter.ai/api/v1/images/models/qwen/qwen-image-3/endpoints)、[Comfy schema](https://docs.comfy.org/router-schemas/qwen/qwen-image-3.0.json)、[Runware 文档](https://runware.ai/docs/models/alibaba-qwen-image-3-0)。
 
 Grok Imagine 2 的规范编号为 `grok-imagine-image-2.0`，四条路由均支持 1K/2K 与低/中质量，不开放种子、蒙版或 FLUX 区域。OpenRouter 使用 `x-ai/grok-imagine-image-2.0`，有序参考图最多 3 张；Runware 使用 `xai:grok-imagine@image-2.0`，同样最多 3 张，并开放 PNG/JPEG/WebP 与压缩质量。Runware 的质量映射到 `settings.quality`，固定比例按目录内独立的 26 档尺寸表发送宽高；自动比例仅在有参考图时可用，发送分辨率预设并省略宽高。[OpenRouter 路由](https://openrouter.ai/api/v1/images/models/x-ai/grok-imagine-image-2.0/endpoints)、[Runware 文档](https://runware.ai/docs/models/xai-grok-imagine-image-2-0)。
 
@@ -61,7 +61,7 @@ Seedream 官方分为火山方舟（国内）与 BytePlus ModelArk（国际）�
 
 任务模式区分生成新画面与编辑图片。编辑主图始终排在请求的第一位，供自动比例、GPT 蒙版和结果对照使用。指定新主图时，程序同步重排素材并重映射提示词中的精确图片标签；已有蒙版时阻止更换主图，避免把蒙版作用于另一张图片。
 
-参考素材可指定风格、主体、构图或自定义用途。`models/referenceInstructions.ts` 将用途和任务模式编译成生成指令，供应商请求不增加未支持的角色字段。历史配方保存 `intent`、素材用途、用途说明和路由参数。旧草稿的 `baseId` 仅用于显示底图；迁移保留原请求顺序与原提示词，直到用户明确设置任务模式或用途。
+参考素材可指定风格、主体、构图或自定义用途。`models/referenceInstructions.ts` 将用途和任务模式编译成生成指令，供应商请求不增加未支持的角色字段。历史配方保存 `intent`、素材用途、用途说明和路由参数。`baseId` 标记编辑主图；读入草稿时若顺序与主图不一致，会把主图排回第一位，并同步精确图片标签。
 
 FLUX 主图等比显示。移除区域保留虚线标记。来源标记的显示与拖动计入主图留白，发送时仍使用各自独立的来源与输出坐标。构图画布尺寸不承诺 API 返回的精确像素尺寸。
 
@@ -79,13 +79,13 @@ FLUX 主图等比显示。移除区域保留虚线标记。来源标记的显示
 
 图库采用按日期分组的等尺寸网格、缩略图懒加载与每页 120 张的分段加载。工作区选图复用网格，按选择顺序读入独立工作副本，检查已用素材和剩余名额。删除仅接受资产 ID，后端解析 UUID 对应的受管目录；先持久化删除日志，再删除文件和数据项，中断后可在重启时继续。生成输出使用记录 ID 与批次结果序号去重，删除后保留内部去重标记，防止下一次批次保存恢复已删图片。删除图库图像不删除生成参数记录，记录中的对应结果显示已删除；删除生成记录不删除图库文件。新存储不读取或迁移旧 `history/` 目录。
 
-所有工作区共用左侧提示词、中央画布、右侧参考素材的布局。蒙版在原图像素空间绘制，画笔清除 alpha、橡皮恢复不透明像素；每次笔划结束保存一张 PNG，并作为一次撤销操作。矩形和导入蒙版可与笔划叠加。
+所有工作区共用「参数栏 → 参考素材栏 → 画布或生成结果」的布局。蒙版在原图像素空间绘制，画笔清除 alpha、橡皮恢复不透明像素；每次笔划结束保存一张 PNG，并作为一次撤销操作。矩形和导入蒙版可与笔划叠加。
 
 Comfy 预估独立保存在 `shared/comfy-pricing.json`，记录核验日期与官方来源。FLUX 使用分辨率价格，Qwen 使用输出张数、Pro 面积档位和参考图数量，GPT 使用质量和尺寸的官方预估区间并估算输入费用。预估不作为扣费凭据。实际 Credits 从提交和结果轮询响应的 `X-Comfy-Credits-Used` 读取，后续响应缺失时保留已有值，不累加重复轮询返回的费用。该响应头只对部分模型和成功响应提供；上游响应体的 `cost` 或 `credits` 不代表 Comfy 扣费。没有实际扣费信息时，结果及历史隐藏成本项。[Comfy 计费说明](https://docs.comfy.org/development/comfy-router/billing)。
 
-草稿使用 `WorkspaceSession` 保存五个家族的独立 `Draft`。旧版 schema 2 的 FLUX 草稿迁移到 schema 3；无法识别的版本或损坏内容暂停自动保存，保留原文件。新建方案可恢复保存。
+会话 `WorkspaceSession.schema = 2` 只保存生成与编辑两份 `Draft`。每份草稿用 `familyRoutes` 记住六个家族最近使用的模型与供应商。无法识别的版本或损坏内容暂停自动保存，保留原文件，不迁移旧 schema。新建方案可恢复保存。
 
-每个家族进一步拆分生成和编辑任务。`taskWorkspaces` 按 `family:intent` 保存独立草稿，`workspaces` 保留各家族最近活动的任务，用于恢复入口和读取此前的单任务会话。撤销记录、结果选择和本会话最近 20 次尝试按相同任务键隔离；结果原图来自请求快照，后台完成只更新发起任务的结果。任务切换属于导航，替换编辑主图属于可撤销修改。重启恢复草稿，完整结果通过本地历史查看。
+撤销记录、结果选择和本会话最近 20 次尝试按任务意图隔离。结果原图来自请求快照，后台完成只更新发起任务的结果。任务切换属于导航，替换编辑主图属于可撤销修改。重启恢复草稿，完整结果通过本地历史查看。
 
 `useGenerationTasks` 保存不可变任务快照并并发执行：先持久化 `queued` 历史与原始素材，再保存 `running` 状态，最后调用供应商。每张请求使用独立请求 ID，同一批次共享历史 ID；完成与失败更新同一条记录。可停止尚未发送的批次请求，已经发出的请求继续接收并保存结果。仅同一历史记录的本地写入串行，供应商调用不等待其他请求的结果。记录未落盘时不调用供应商，失败不会自动重发。供应商任务 ID 和实际进度在 Rust 历史存储中更新。启动时将上次的 `running` 标记为 `interrupted`，只恢复 `queued` 请求；中断请求可能仍在供应商执行。恢复的未开始批次同样并发执行。React StrictMode 的过期恢复过程不启动任务，避免恢复两次。
 
@@ -99,8 +99,6 @@ Comfy 预估独立保存在 `shared/comfy-pricing.json`，记录核验日期与�
 4. 新增供应商时，添加凭据来源、状态与连接检查，在 `provider::dispatch` 中注册适配器，并将相应路由加入目录。
 5. 补充模型契约与交互测试。运行 `bun test`、`bun run build`、`cargo test --manifest-path src-tauri/Cargo.toml`，再构建桌面应用。
 
-自动验证覆盖参数投影、路由往返恢复、家族默认值、旧草稿迁移、区域坐标与留白、蒙版转换、多张结果和本地 HTTP 模拟。隔离浏览器使用本地测试替身验证主图切换、用途编译、移除区域、任务阶段、历史大图以及 1024×640 窗口中的固定导航；这些验证不调用付费 API。此前真实调用验证过 Runware Qwen 3.0 和 Comfy GPT Image 2.5 Flare，本轮交互优化未新增付费验证。本机桌面拖拽尚未验证。
-
-2026-10-07 新增 Nano Banana 2.1 的 Comfy、Runware 路由验证：前端 73 项测试与生产构建通过；离线契约覆盖两条路由的参数隔离、参考顺序、14 张上限、独立尺寸、种子边界和原生请求映射。真实 API 各成功生成一张 1024×1024 图片；随后各执行一次参考图编辑，均在任务提交后被上游内容审核拒绝，未重新生成。Runware 错误数组现保留具体原因，并以本地 HTTP 模拟覆盖轮询拒绝和不重复提交。此次没有进行桌面交互实测。
+自动验证覆盖参数投影、路由往返恢复、家族默认值、损坏草稿保留、区域坐标与留白、蒙版转换、多张结果和本地 HTTP 模拟。运行 `bun test`、`bun run build` 和 `cargo test --manifest-path src-tauri/Cargo.toml`。`src-tauri/tests/live_*.rs` 里的真实 API 用例带 `#[ignore]`，只有显式启用才会付费请求。界面文案以 `scripts/emit-messages.ts` 为源，写入 `messages/` 后再执行 `bun run i18n:compile`。供应商名单和默认环境变量名从目录的 `providers` 读取，不再在凭据模块里另写一份。
 
 工作台采用「参数栏 → 参考素材栏 → 画布／生成结果」布局。素材栏独立于各模型的画布与结果视图，切换视图时保留素材操作位置；左侧两栏分别滚动并保存宽度。素材栏右边界支持拖拽和方向键调节，窄窗口优先为右侧工作区保留 320px；不足时允许横向滚动。

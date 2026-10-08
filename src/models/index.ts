@@ -1,6 +1,6 @@
 import type { Draft, GenerateRequestPayload, LayoutRegion } from "../lib/types";
 import { m } from "../i18n";
-import { composePrompt } from "../lib/protocol";
+import { composePrompt } from "./flux/protocol";
 import { routeFor, validateFields, pickParams, defaultsFor } from "./catalog";
 import { validateGpt } from "./gpt";
 import { validateQwen } from "./qwen";

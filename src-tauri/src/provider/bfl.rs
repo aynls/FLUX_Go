@@ -5,28 +5,18 @@
 //! 该端点严格校验未知字段（422），载荷只包含官方文档列出的字段。
 //! 使用 BFL_API_KEY。
 
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use serde_json::{json, Map, Value};
 
 use super::{
-    localized_note, GenerateOutput, GenerateRequest, OutputImage, ProviderError, ProviderResult,
+    localized_note, transport, GenerateOutput, GenerateRequest, OutputImage, ProviderError,
+    ProviderResult,
 };
 
 pub const ENDPOINT: &str = "https://api.bfl.ai/v1/flux-3-image";
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const POLL_TIMEOUT: Duration = Duration::from_secs(600);
-
-fn client() -> &'static reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(Duration::from_secs(120))
-            .build()
-            .expect("HTTP client initialization failed")
-    })
-}
 
 fn read_key() -> Result<String, ProviderError> {
     super::configured_key("bfl").ok_or_else(|| {
@@ -45,46 +35,14 @@ pub fn build_payload(req: &GenerateRequest) -> Result<Value, ProviderError> {
             "The BFL adapter only supports FLUX.3 Image",
         ));
     }
-    if req.params.safety_tolerance.is_some_and(|s| s > 4) {
-        return Err(ProviderError::coded(
-            "backend_bfl_safety",
-            "BFL safety_tolerance must be between 0 and 4",
-        ));
-    }
-    if let Some(a) = &req.params.aspect_ratio {
-        if ![
-            "21:9", "2:1", "16:9", "3:2", "7:5", "4:3", "5:4", "1:1", "4:5", "3:4", "5:7", "2:3",
-            "9:16", "1:2", "9:21", "auto",
-        ]
-        .contains(&a.as_str())
-        {
-            return Err(ProviderError::coded(
-                "backend_invalid_aspect",
-                format!("Invalid aspect_ratio: {a}"),
-            )
-            .with_param("value", a.clone()));
-        }
-    }
     if req.final_prompt.trim().is_empty() {
         return Err(ProviderError::coded(
             "backend_empty_prompt",
             "The prompt cannot be empty",
         ));
     }
-    if req.images.len() > 10 {
-        return Err(ProviderError::coded(
-            "backend_bfl_max_refs",
-            "At most 10 reference images are allowed",
-        ));
-    }
     let mut p = Map::new();
     if let Some(version) = &req.params.version {
-        if version != "latest" {
-            return Err(ProviderError::coded(
-                "backend_bfl_version",
-                "BFL version only supports latest",
-            ));
-        }
         p.insert("version".into(), json!(version));
     }
     p.insert("prompt".into(), json!(req.final_prompt));
@@ -159,7 +117,8 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
     let key = read_key()?;
     let payload = build_payload(req)?;
 
-    let resp = client()
+    let http = transport::client();
+    let resp = http
         .post(ENDPOINT)
         .header("x-key", &key)
         .json(&payload)
@@ -201,7 +160,7 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
     let deadline = std::time::Instant::now() + POLL_TIMEOUT;
     let result: Value = loop {
         tokio::time::sleep(POLL_INTERVAL).await;
-        let poll = client()
+        let poll = http
             .get(&polling_url)
             .header("x-key", &key)
             .send()
@@ -264,17 +223,13 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
                 "The BFL result is missing a sample URL",
             )
         })?;
-    let img = client()
-        .get(sample)
-        .send()
-        .await
-        .map_err(|e| {
-            ProviderError::coded(
-                "backend_download_result",
-                format!("Couldn't download the result image: {e}"),
-            )
-            .with_param("detail", e.to_string())
-        })?;
+    let img = http.get(sample).send().await.map_err(|e| {
+        ProviderError::coded(
+            "backend_download_result",
+            format!("Couldn't download the result image: {e}"),
+        )
+        .with_param("detail", e.to_string())
+    })?;
     if !img.status().is_success() {
         return Err(ProviderError::coded(
             "backend_download_result_failed",
@@ -291,16 +246,13 @@ pub async fn generate(req: &GenerateRequest) -> ProviderResult {
         .next()
         .unwrap_or("image/jpeg")
         .to_string();
-    let bytes = img
-        .bytes()
-        .await
-        .map_err(|e| {
-            ProviderError::coded(
-                "backend_download_result",
-                format!("Couldn't download the result image: {e}"),
-            )
-            .with_param("detail", e.to_string())
-        })?;
+    let bytes = img.bytes().await.map_err(|e| {
+        ProviderError::coded(
+            "backend_download_result",
+            format!("Couldn't download the result image: {e}"),
+        )
+        .with_param("detail", e.to_string())
+    })?;
     use base64::Engine;
     let data_url = format!(
         "data:{media_type};base64,{}",

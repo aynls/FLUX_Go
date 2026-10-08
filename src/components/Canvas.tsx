@@ -19,7 +19,7 @@ import {
   type View,
 } from "../lib/coords";
 import type { Box, WorkingImage } from "../lib/types";
-import { rectToWire } from "../lib/protocol";
+import { rectToWire } from "../models/flux/protocol";
 import { BOX_COLORS } from "../lib/boxColors";
 import { m } from "../i18n";
 

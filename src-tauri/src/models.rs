@@ -6,8 +6,33 @@ use std::sync::OnceLock;
 pub fn catalog() -> &'static Value {
     static CATALOG: OnceLock<Value> = OnceLock::new();
     CATALOG.get_or_init(|| {
-        serde_json::from_str(include_str!("../../shared/model-catalog.json")).expect("invalid model catalog")
+        serde_json::from_str(include_str!("../../shared/model-catalog.json"))
+            .expect("invalid model catalog")
     })
+}
+
+pub fn provider_ids() -> Vec<&'static str> {
+    catalog()["providers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|provider| provider["id"].as_str())
+        .collect()
+}
+
+pub fn known_provider(id: &str) -> bool {
+    provider_ids().iter().any(|provider| *provider == id)
+}
+
+pub fn default_env_name(provider: &str) -> &'static str {
+    catalog()["providers"]
+        .as_array()
+        .and_then(|list| {
+            list.iter()
+                .find(|item| item["id"].as_str() == Some(provider))
+                .and_then(|item| item["envName"].as_str())
+        })
+        .unwrap_or("OPENROUTER_API_KEY")
 }
 pub struct ResolvedModel {
     pub id: &'static str,
@@ -32,8 +57,11 @@ pub fn resolve(req: &GenerateRequest) -> Result<ResolvedModel, ProviderError> {
                     .any(|r| r["model"].as_str() == Some(&req.model))
         })
         .ok_or_else(|| {
-            ProviderError::coded("backend_unknown_model", format!("Unknown model: {}", req.model))
-                .with_param("name", req.model.clone())
+            ProviderError::coded(
+                "backend_unknown_model",
+                format!("Unknown model: {}", req.model),
+            )
+            .with_param("name", req.model.clone())
         })?;
     let route = model["routes"]
         .get(&req.provider)
@@ -171,9 +199,13 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
         if m.family == "seedream" && req.provider != "openrouter" {
             let (w, h) = image::ImageReader::new(std::io::Cursor::new(bytes))
                 .with_guessed_format()
-                .map_err(|_| ProviderError::coded("backend_ref_invalid", "The reference image is invalid"))?
+                .map_err(|_| {
+                    ProviderError::coded("backend_ref_invalid", "The reference image is invalid")
+                })?
                 .into_dimensions()
-                .map_err(|_| ProviderError::coded("backend_ref_invalid", "The reference image is invalid"))?;
+                .map_err(|_| {
+                    ProviderError::coded("backend_ref_invalid", "The reference image is invalid")
+                })?;
             if w.min(h) < 15
                 || w.max(h) as f64 / w.min(h) as f64 > 16.0
                 || u64::from(w) * u64::from(h)
@@ -313,9 +345,12 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
         }
         if let (Some(w), Some(h)) = (req.params.width, req.params.height) {
             let area = u64::from(w) * u64::from(h);
-            if area < 262144
-                || area > m.route["maxPixels"].as_u64().unwrap_or(4194304)
-                || w.max(h) as f64 / w.min(h) as f64 > 8.0
+            let min_pixels = m.route["minPixels"].as_u64().unwrap_or(262_144);
+            let max_pixels = m.route["maxPixels"].as_u64().unwrap_or(4_194_304);
+            let max_aspect = m.route["maxAspect"].as_f64().unwrap_or(8.0);
+            if area < min_pixels
+                || area > max_pixels
+                || w.max(h) as f64 / w.min(h) as f64 > max_aspect
             {
                 return Err(ProviderError::coded(
                     "backend_qwen_output",
@@ -343,15 +378,12 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
                 "This route does not support masks",
             ));
         }
-        let first = req
-            .images
-            .first()
-            .ok_or_else(|| {
-                ProviderError::coded(
-                    "backend_mask_needs_ref",
-                    "A mask needs the first reference image",
-                )
-            })?;
+        let first = req.images.first().ok_or_else(|| {
+            ProviderError::coded(
+                "backend_mask_needs_ref",
+                "A mask needs the first reference image",
+            )
+        })?;
         let (mime, bytes) = parse_data_url(mask)?;
         if mime != "image/png" || bytes.len() >= 4 * 1024 * 1024 {
             return Err(ProviderError::coded(
@@ -359,16 +391,19 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
                 "The mask must be a transparent PNG under 4MiB",
             ));
         }
-        let im =
-            image::load_from_memory(&bytes).map_err(|_| {
-                ProviderError::coded("backend_mask_invalid", "The mask is not a valid image")
-            })?;
+        let im = image::load_from_memory(&bytes).map_err(|_| {
+            ProviderError::coded("backend_mask_invalid", "The mask is not a valid image")
+        })?;
         let (_, first_bytes) = parse_data_url(first)?;
         let reference = image::ImageReader::new(std::io::Cursor::new(first_bytes))
             .with_guessed_format()
-            .map_err(|_| ProviderError::coded("backend_ref_invalid", "The reference image is invalid"))?
+            .map_err(|_| {
+                ProviderError::coded("backend_ref_invalid", "The reference image is invalid")
+            })?
             .into_dimensions()
-            .map_err(|_| ProviderError::coded("backend_ref_invalid", "The reference image is invalid"))?;
+            .map_err(|_| {
+                ProviderError::coded("backend_ref_invalid", "The reference image is invalid")
+            })?;
         if !im.color().has_alpha() || (im.width(), im.height()) != reference {
             return Err(ProviderError::coded(
                 "backend_mask_match",

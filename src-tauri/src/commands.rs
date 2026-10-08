@@ -54,16 +54,7 @@ pub async fn provider_status() -> ProviderStatus {
     let mut sources = std::collections::HashMap::new();
     let mut settings = std::collections::HashMap::new();
     let mut stored_keys = std::collections::HashMap::new();
-    for p in [
-        "openrouter",
-        "bfl",
-        "comfy",
-        "runware",
-        "google",
-        "ark",
-        "byteplus",
-        "xai",
-    ] {
+    for p in crate::models::provider_ids() {
         let config = crate::provider::key_settings(p);
         let source = if config.source == "manual" {
             "system"
@@ -141,15 +132,7 @@ pub async fn credential_check(provider: String) -> Result<String, String> {
             "No key is configured for this provider",
         )
     })?;
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|_| {
-            coded(
-                "backend_network_client_failed",
-                "Couldn't initialize the network client",
-            )
-        })?;
+    let client = crate::provider::transport::client_with_timeout(30)?;
     let req = match provider.as_str() {
         "openrouter" => client
             .get("https://openrouter.ai/api/v1/key")
@@ -306,18 +289,12 @@ pub async fn import_url(url: String) -> Result<ImportedImage, String> {
         .filter(|s| !s.is_empty())
         .unwrap_or_default()
         .to_string();
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|_| {
-            coded(
-                "backend_network_client_failed",
-                "Couldn't initialize the network client",
-            )
-        })?;
-    let mut response = client.get(parsed).send().await.map_err(|_| {
-        coded("backend_download_failed", "Image download failed")
-    })?;
+    let client = crate::provider::transport::client_with_timeout(60)?;
+    let mut response = client
+        .get(parsed)
+        .send()
+        .await
+        .map_err(|_| coded("backend_download_failed", "Image download failed"))?;
     if !response.status().is_success() {
         let status = response.status().as_u16();
         return Err(coded(
@@ -375,7 +352,11 @@ pub fn clipboard_image() -> Result<ImportedImage, String> {
 }
 
 fn clipboard_unavailable() -> String {
-    coded("backend_clipboard_unavailable", "Couldn't access the clipboard").into()
+    coded(
+        "backend_clipboard_unavailable",
+        "Couldn't access the clipboard",
+    )
+    .into()
 }
 
 #[tauri::command]
@@ -391,13 +372,7 @@ pub fn copy_image(data_url: String) -> Result<(), String> {
             height: rgba.height() as usize,
             bytes: std::borrow::Cow::Owned(rgba.into_raw()),
         })
-        .map_err(|_| {
-            coded(
-                "backend_clipboard_copy_failed",
-                "Couldn't copy the image",
-            )
-            .into()
-        })
+        .map_err(|_| coded("backend_clipboard_copy_failed", "Couldn't copy the image").into())
 }
 
 #[tauri::command]

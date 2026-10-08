@@ -8,8 +8,8 @@ import {
   providerLabel,
   valueLabel,
 } from "../../labels";
+import { displayValue } from "../../models/parameterLabels";
 import { promptLength } from "../../models";
-export { displayValue } from "../../models/parameterLabels";
 import {
   defaultsFor,
   fieldsFor,
@@ -35,12 +35,8 @@ import type {
   FamilyId,
 } from "../../lib/types";
 
-function localizedValue(key: string, value: GenerateParams[string]) {
-  if (value == null)
-    return key === "seed" ? m.state_random() : m.state_provider_default();
-  if (typeof value === "boolean") return value ? m.state_on() : m.state_off();
-  return valueLabel(String(value));
-}
+export { displayValue };
+
 export interface WorkspaceControlsProps {
   draft: Draft;
   onChange: (draft: Draft) => void;
@@ -192,7 +188,7 @@ export function ParameterFields({
                 <div className="fixed-field" key={key}>
                   <span>{label}</span>
                   <span>
-                    {localizedValue(key, value ?? field.values[0])}
+                    {displayValue(key, value ?? field.values[0])}
                   </span>
                   {value != null && !field.values.includes(String(value)) && (
                     <button onClick={() => change(key, field.values![0])}>
@@ -473,7 +469,7 @@ export function SizeField({
     </div>
   );
 }
-export function QwenSizeFields(
+export function FrameSizeFields(
   p: Pick<WorkspaceControlsProps, "draft" | "onChange">,
 ) {
   const fields = fieldsFor(p.draft),
@@ -665,7 +661,7 @@ export function InputOptions({
           .map(([key, value]) => (
             <div key={key}>
               <dt>{fieldLabel(key, catalog.fields[key]?.label ?? key)}</dt>
-              <dd>{localizedValue(key, value)}</dd>
+              <dd>{displayValue(key, value)}</dd>
             </div>
           ))}
       </dl>
