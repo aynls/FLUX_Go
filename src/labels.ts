@@ -9,6 +9,7 @@ const providers: Record<string, () => string> = {
   google: m.provider_google,
   ark: m.provider_ark,
   byteplus: m.provider_byteplus,
+  qwencloud: m.provider_qwencloud,
 };
 
 const models: Record<string, () => string> = {
@@ -43,6 +44,7 @@ const fields: Record<string, () => string> = {
   negativePrompt: m.field_negativePrompt,
   promptExtend: m.field_promptExtend,
   promptExtendMode: m.field_promptExtendMode,
+  enableThinking: m.field_enableThinking,
   watermark: m.field_watermark,
 };
 
@@ -54,6 +56,7 @@ const help: Record<string, () => string> = {
   size: m.field_size_help,
   outputCompression: m.field_outputCompression_help,
   seed: m.field_seed_help,
+  enableThinking: m.field_enableThinking_help,
 };
 
 const values: Record<string, () => string> = {

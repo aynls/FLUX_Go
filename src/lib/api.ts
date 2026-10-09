@@ -89,6 +89,7 @@ export async function providerStatus(): Promise<ProviderStatus> {
       ark: false,
       byteplus: false,
       xai: false,
+      qwencloud: false,
     };
   return call<ProviderStatus>("provider_status");
 }

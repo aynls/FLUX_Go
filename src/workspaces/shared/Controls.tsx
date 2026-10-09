@@ -175,7 +175,10 @@ export function ParameterFields({
             key !== "count" &&
             fields[key] &&
             !(key === "outputCompression" && values.outputFormat === "png") &&
-            !(key === "promptExtendMode" && values.promptExtend === false),
+            !(
+              (key === "promptExtendMode" || key === "enableThinking") &&
+              values.promptExtend === false
+            ),
         )
         .map((key) => {
           const field = fields[key];
@@ -656,7 +659,10 @@ export function InputOptions({
               !(
                 key === "outputCompression" && d.params.outputFormat === "png"
               ) &&
-              !(key === "promptExtendMode" && d.params.promptExtend === false),
+              !(
+                (key === "promptExtendMode" || key === "enableThinking") &&
+                d.params.promptExtend === false
+              ),
           )
           .map(([key, value]) => (
             <div key={key}>

@@ -179,7 +179,8 @@ export function validateFields(d: Draft): string[] {
   for (const [key, f] of Object.entries(fieldsFor(d))) {
     if (
       (key === "outputCompression" && merged.outputFormat === "png") ||
-      (key === "promptExtendMode" && merged.promptExtend === false)
+      ((key === "promptExtendMode" || key === "enableThinking") &&
+        merged.promptExtend === false)
     )
       continue;
     const v: ParamValue | undefined = merged[key];

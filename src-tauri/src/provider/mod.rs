@@ -8,11 +8,12 @@ pub mod bfl;
 pub mod comfy;
 mod credentials;
 pub mod google;
-pub mod xai;
 pub mod openrouter;
 pub mod progress;
+pub mod qwencloud;
 pub mod runware;
 pub mod transport;
+pub mod xai;
 pub use credentials::*;
 
 use serde::{Deserialize, Serialize};
@@ -92,6 +93,8 @@ pub struct GenerateParams {
     pub prompt_extend: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_extend_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_thinking: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watermark: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -210,11 +213,7 @@ impl From<ProviderError> for String {
 }
 
 /// 结果备注：持久化稳定码和英文回退，界面按当前语言展示。
-pub fn localized_note(
-    code: &str,
-    message: impl Into<String>,
-    params: &[(&str, String)],
-) -> String {
+pub fn localized_note(code: &str, message: impl Into<String>, params: &[(&str, String)]) -> String {
     let mut body = Map::new();
     body.insert("code".into(), json!(code));
     body.insert("message".into(), json!(message.into()));
@@ -230,8 +229,11 @@ pub fn localized_note(
 
 /// 本地文件或系统操作失败；系统原始细节只作为参数，文案由前端本地化。
 pub fn io_failed(error: impl std::fmt::Display) -> ProviderError {
-    ProviderError::coded("backend_io_failed", format!("File operation failed: {error}"))
-        .with_param("detail", error.to_string())
+    ProviderError::coded(
+        "backend_io_failed",
+        format!("File operation failed: {error}"),
+    )
+    .with_param("detail", error.to_string())
 }
 
 pub type ProviderResult = Result<GenerateOutput, ProviderError>;
@@ -245,6 +247,7 @@ pub async fn dispatch(req: &GenerateRequest) -> ProviderResult {
         "runware" => runware::generate(req).await,
         "google" => google::generate(req).await,
         "xai" => xai::generate(req).await,
+        "qwencloud" => qwencloud::generate(req).await,
         "ark" | "byteplus" => ark::generate(req).await,
         other => Err(ProviderError::coded(
             "backend_unknown_provider",
@@ -256,14 +259,9 @@ pub async fn dispatch(req: &GenerateRequest) -> ProviderResult {
 
 /// 校验并解码 data URL，返回 (mime, bytes)
 pub fn parse_data_url(url: &str) -> Result<(String, Vec<u8>), ProviderError> {
-    let rest = url
-        .strip_prefix("data:")
-        .ok_or_else(|| {
-            ProviderError::coded(
-                "backend_data_url",
-                "Images must be provided as data URLs",
-            )
-        })?;
+    let rest = url.strip_prefix("data:").ok_or_else(|| {
+        ProviderError::coded("backend_data_url", "Images must be provided as data URLs")
+    })?;
     let (meta, b64) = rest.split_once(";base64,").ok_or_else(|| {
         ProviderError::coded(
             "backend_data_url_payload",

@@ -81,6 +81,9 @@ pub fn build_payload(req: &GenerateRequest, task_id: &str) -> Result<Value, Prov
             if p.prompt_extend != Some(false) {
                 task["settings"]["promptExtendMode"] =
                     json!(p.prompt_extend_mode.as_deref().unwrap_or("direct"));
+                if let Some(thinking) = p.enable_thinking {
+                    task["settings"]["thinking"] = json!(thinking);
+                }
             }
         }
         "gemini" => {
@@ -91,8 +94,14 @@ pub fn build_payload(req: &GenerateRequest, task_id: &str) -> Result<Value, Prov
                 settings.insert("thinkingLevel".into(), json!(level));
             }
             if let Some(mode) = p.search_mode.as_deref() {
-                settings.insert("webSearch".into(), json!(matches!(mode, "web" | "web_images")));
-                settings.insert("imageSearch".into(), json!(matches!(mode, "images" | "web_images")));
+                settings.insert(
+                    "webSearch".into(),
+                    json!(matches!(mode, "web" | "web_images")),
+                );
+                settings.insert(
+                    "imageSearch".into(),
+                    json!(matches!(mode, "images" | "web_images")),
+                );
             }
             if !settings.is_empty() {
                 task["settings"] = Value::Object(settings);
@@ -155,22 +164,18 @@ pub fn build_payload(req: &GenerateRequest, task_id: &str) -> Result<Value, Prov
                 task["width"] = pair[0].clone();
                 task["height"] = pair[1].clone();
             } else {
-                task["width"] = json!(p
-                    .width
-                    .ok_or_else(|| {
-                        ProviderError::coded(
-                            "backend_seedream_width",
-                            "Seedream requires an output width",
-                        )
-                    })?);
-                task["height"] = json!(p
-                    .height
-                    .ok_or_else(|| {
-                        ProviderError::coded(
-                            "backend_seedream_height",
-                            "Seedream requires an output height",
-                        )
-                    })?);
+                task["width"] = json!(p.width.ok_or_else(|| {
+                    ProviderError::coded(
+                        "backend_seedream_width",
+                        "Seedream requires an output width",
+                    )
+                })?);
+                task["height"] = json!(p.height.ok_or_else(|| {
+                    ProviderError::coded(
+                        "backend_seedream_height",
+                        "Seedream requires an output height",
+                    )
+                })?);
             }
             if m.id == "seedream-5-lite" {
                 task["settings"] = json!({"maxSequentialImages":1});

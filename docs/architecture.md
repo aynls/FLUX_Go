@@ -26,12 +26,13 @@ LutriUI 将模型契约、工作区和供应商传输分开。新增模型时，
 | FLUX.3 Image  | FLUX.3 Image    | OpenRouter、BFL、Comfy、Runware |
 | GPT Image 2.5 | Flare、Sunburst | OpenRouter、Comfy、Runware      |
 | Qwen Image    | 3.0、3.0 Pro    | OpenRouter、Comfy、Runware      |
+| Qwen Image    | 2.1 Pro、2.1 Turbo | QwenCloud；2.1 Pro 另有 Runware |
 | Gemini Image  | Nano Banana 2.1 | OpenRouter、Comfy、Runware、Google |
 | Gemini Image  | Nano Banana 2、Pro | OpenRouter、Comfy、Runware、Google |
 | Seedream      | 5.0 Pro、Lite、Flash | OpenRouter、Comfy、Runware、火山方舟、BytePlus |
 | Grok Imagine 2 | Image 2.0 | OpenRouter、Runware、Comfy、Grok 官方（xAI） |
 
-目录于 2026-10-06 根据公开 API 资料核对，2026-10-07 补充核对 Nano Banana 2.1 的 OpenRouter、Google、Comfy 与 Runware 路由。账户权限、价格与供应商后续变更仍以供应商实际响应为准。
+目录于 2026-10-06 根据公开 API 资料核对，2026-10-07 补充核对 Nano Banana 2.1 的 OpenRouter、Google、Comfy 与 Runware 路由，2026-10-09 补充核对 Qwen Image 2.1 的 QwenCloud 与 Runware 路由。账户权限、价格与供应商后续变更仍以供应商实际响应为准。
 
 ## 工作区与 API 差异
 
@@ -39,7 +40,9 @@ FLUX 工作区保留参考图、来源区域和输出区域。BFL、Comfy 与 Op
 
 GPT Image 工作区使用主图、参考图列表、质量、背景和输出格式。Comfy 与 Runware 支持自定义尺寸和蒙版；OpenRouter 当前路由使用宽高比，暂未开放蒙版和任意尺寸。内部蒙版使用透明 PNG，完全透明区域用于编辑，尺寸与第一张参考图一致；Runware 适配器转换为白色编辑、黑色保留的蒙版。参考图与蒙版按同一比例缩放。尺寸、透明背景与 JPEG 的冲突在提交前校验。[OpenAI 文档](https://developers.openai.com/api/docs/guides/image-generation)、[Comfy schema](https://docs.comfy.org/router-schemas/openai/gpt-image-2.5-flare.json)、[Runware 文档](https://runware.ai/docs/models/openai-gpt-image-2-5-flare)。
 
-Qwen 工作区使用有序参考图和文字指令，支持 3.0 与 3.0 Pro。OpenRouter 路由开放分辨率、宽高比、种子与张数，参考图上限为 4；Comfy 和 Runware 使用像素尺寸、负面提示词和扩写控制，参考图上限为 3。像素路由的最小面积、最大面积和长宽比写在目录的 `minPixels`、`maxPixels`、`maxAspect` 中，前后端读取同一组数字。Comfy 将尺寸编码为 `宽*高`；选择自动尺寸时省略该字段，并对 Pro 显示费用区间。Runware 使用独立宽高字段，并开放输出格式与压缩质量。有参考图时只支持 `direct` 扩写，关闭扩写时省略扩写方式。[OpenRouter 路由](https://openrouter.ai/api/v1/images/models/qwen/qwen-image-3/endpoints)、[Comfy schema](https://docs.comfy.org/router-schemas/qwen/qwen-image-3.0.json)、[Runware 文档](https://runware.ai/docs/models/alibaba-qwen-image-3-0)。
+Qwen 工作区使用有序参考图和文字指令。3.0 与 3.0 Pro 走 OpenRouter、Comfy 和 Runware。OpenRouter 开放分辨率、宽高比、种子与张数，参考图上限为 4；Comfy 和 Runware 使用像素尺寸、负面提示词和扩写控制，参考图上限为 3。像素路由的最小面积、最大面积和长宽比写在目录的 `minPixels`、`maxPixels`、`maxAspect` 中，前后端读取同一组数字。Comfy 将尺寸编码为 `宽*高`；选择自动尺寸时省略该字段，并对 Pro 显示费用区间。Runware 使用独立宽高字段，并开放输出格式与压缩质量。有参考图时只支持 `direct` 扩写，关闭扩写时省略扩写方式。[OpenRouter 路由](https://openrouter.ai/api/v1/images/models/qwen/qwen-image-3/endpoints)、[Comfy schema](https://docs.comfy.org/router-schemas/qwen/qwen-image-3.0.json)、[Runware 文档](https://runware.ai/docs/models/alibaba-qwen-image-3-0)。
+
+2.1 系列的规范编号是 `qwen-image-2.1-pro` 与 `qwen-image-2.1-turbo`。QwenCloud 同步接口为 `POST https://maas.qwencloudapi.com/api/v1/services/aigc/multimodal-generation/generation`，使用 `DASHSCOPE_API_KEY` 做 Bearer 鉴权；按量密钥走该地址，Token Plan 密钥不能混用。请求把参考图放在文字之前，编辑主图仍在第一位。尺寸使用 `宽*高`，省略时由模型决定；面积为 262,144–4,194,304 像素，比例至多 8:1。两个版本都支持最多 10 张参考图和 1–6 张输出，透明通道由提示词决定，不另发背景字段。Pro 支持 `direct` / `agent` 扩写和思考；思考只在扩写开启时发送，`agent` 不能用于有参考图的请求，也不支持负面提示词。Turbo 只保留扩写开关、水印、种子和最多 500 字的负面提示词，不发送扩写方式或思考。Runware 的 Pro 编号是 `alibaba:qwen-image@2.1-pro`，宽高各边为 192–4096，并开放输出格式与压缩质量；思考写入 `settings.thinking`。OpenRouter 与 Comfy Router 目前没有 2.1 路由。QwenCloud 尚无已确认的免费密钥检查接口。[QwenCloud 同步接口](https://docs.qwencloud.com/api-reference/image-generation/qwen-text-to-image)、[QwenCloud 编辑](https://docs.qwencloud.com/api-reference/image-generation/qwen-image-editing)、[Runware 2.1 Pro](https://runware.ai/docs/models/alibaba-qwen-image-2-1-pro)。
 
 Grok Imagine 2 的规范编号为 `grok-imagine-image-2.0`，四条路由均支持 1K/2K 与低/中质量，不开放种子、蒙版或 FLUX 区域。OpenRouter 使用 `x-ai/grok-imagine-image-2.0`，有序参考图最多 3 张；Runware 使用 `xai:grok-imagine@image-2.0`，同样最多 3 张，并开放 PNG/JPEG/WebP 与压缩质量。Runware 的质量映射到 `settings.quality`，固定比例按目录内独立的 26 档尺寸表发送宽高；自动比例仅在有参考图时可用，发送分辨率预设并省略宽高。[OpenRouter 路由](https://openrouter.ai/api/v1/images/models/x-ai/grok-imagine-image-2.0/endpoints)、[Runware 文档](https://runware.ai/docs/models/xai-grok-imagine-image-2-0)。
 

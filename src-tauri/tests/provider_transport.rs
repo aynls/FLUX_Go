@@ -1,6 +1,6 @@
 //! Local HTTP simulations validate admission, auth, polling and single submission.
 use base64::Engine;
-use lutriui_lib::provider::{ark, comfy, google, runware, xai, GenerateRequest};
+use lutriui_lib::provider::{ark, comfy, google, qwencloud, runware, xai, GenerateRequest};
 use serde_json::{json, Value};
 use std::{
     io::{Read, Write},
@@ -97,34 +97,61 @@ fn grok_req(provider: &str) -> GenerateRequest {
 async fn grok_official_selects_json_generation_or_edit_endpoint_and_normalizes_cost() {
     for count in [0, 1, 5] {
         let im = png();
-        let (url, handle) = server(vec![(200, json!({"data":[{"b64_json":im.split_once(',').unwrap().1,"mime_type":"image/png"}],"usage":{"cost_in_usd_ticks":600000000}}))]);
+        let (url, handle) = server(vec![(
+            200,
+            json!({"data":[{"b64_json":im.split_once(',').unwrap().1,"mime_type":"image/png"}],"usage":{"cost_in_usd_ticks":600000000}}),
+        )]);
         let mut r = grok_req("xai");
-        r.images = vec![im;count];
-        let out = xai::generate_at(&r, "test-only-key", &format!("{url}/v1/images")).await.unwrap();
+        r.images = vec![im; count];
+        let out = xai::generate_at(&r, "test-only-key", &format!("{url}/v1/images"))
+            .await
+            .unwrap();
         assert_eq!(out.images.len(), 1);
         assert_eq!(out.images[0].media_type, "image/png");
         assert_eq!(out.usage["cost"], 0.06);
         let requests = handle.join().unwrap();
-        assert_eq!(requests.len(),1);
-        let path = if count == 0 {"generations"} else {"edits"};
-        assert!(requests[0].0.starts_with(&format!("POST /v1/images/{path} ")));
-        assert!(requests[0].0.to_lowercase().contains("authorization: bearer test-only-key"));
-        assert!(requests[0].0.to_lowercase().contains("content-type: application/json"));
-        assert_eq!(requests[0].1["n"],1);
+        assert_eq!(requests.len(), 1);
+        let path = if count == 0 { "generations" } else { "edits" };
+        assert!(requests[0]
+            .0
+            .starts_with(&format!("POST /v1/images/{path} ")));
+        assert!(requests[0]
+            .0
+            .to_lowercase()
+            .contains("authorization: bearer test-only-key"));
+        assert!(requests[0]
+            .0
+            .to_lowercase()
+            .contains("content-type: application/json"));
+        assert_eq!(requests[0].1["n"], 1);
     }
 }
 
 #[tokio::test]
 async fn grok_comfy_direct_result_uses_idempotency_and_header_credits_without_polling() {
-    let (url, handle) = server(vec![(200, json!({"data":[{"url":png()}],"usage":{"cost_in_usd_ticks":600000000}}))]);
-    let out = comfy::generate_at(&grok_req("comfy"), "test-only-key", &format!("{url}/v2/models")).await.unwrap();
-    assert_eq!(out.images.len(),1);
-    assert_eq!(out.usage["credits"],12.75);
+    let (url, handle) = server(vec![(
+        200,
+        json!({"data":[{"url":png()}],"usage":{"cost_in_usd_ticks":600000000}}),
+    )]);
+    let out = comfy::generate_at(
+        &grok_req("comfy"),
+        "test-only-key",
+        &format!("{url}/v2/models"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(out.images.len(), 1);
+    assert_eq!(out.usage["credits"], 12.75);
     assert!(out.usage.get("cost").is_none());
     let requests = handle.join().unwrap();
-    assert_eq!(requests.len(),1);
-    assert!(requests[0].0.starts_with("POST /v2/models/xai/grok-imagine-image-2.0 "));
-    assert!(requests[0].0.to_lowercase().contains("x-api-key: test-only-key"));
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0]
+        .0
+        .starts_with("POST /v2/models/xai/grok-imagine-image-2.0 "));
+    assert!(requests[0]
+        .0
+        .to_lowercase()
+        .contains("x-api-key: test-only-key"));
     assert!(requests[0].0.to_lowercase().contains("idempotency-key:"));
 }
 
@@ -132,15 +159,27 @@ async fn grok_comfy_direct_result_uses_idempotency_and_header_credits_without_po
 async fn grok_moderation_and_empty_results_fail_without_resubmission() {
     for provider in ["xai", "comfy"] {
         for (status, body, expected) in [
-            (200,json!({"block_reason":"input moderation refused","usage":{}}),"input moderation refused"),
-            (200,json!({"data":[{}]}),"no image"),
-            (429,json!({"error":{"message":"rate limited"}}),"rate limited"),
+            (
+                200,
+                json!({"block_reason":"input moderation refused","usage":{}}),
+                "input moderation refused",
+            ),
+            (200, json!({"data":[{}]}), "no image"),
+            (
+                429,
+                json!({"error":{"message":"rate limited"}}),
+                "rate limited",
+            ),
         ] {
-            let (url, handle) = server(vec![(status,body)]);
+            let (url, handle) = server(vec![(status, body)]);
             let r = grok_req(provider);
-            let result = if provider == "xai" { xai::generate_at(&r,"test-only-key",&url).await } else { comfy::generate_at(&r,"test-only-key",&url).await };
+            let result = if provider == "xai" {
+                xai::generate_at(&r, "test-only-key", &url).await
+            } else {
+                comfy::generate_at(&r, "test-only-key", &url).await
+            };
             assert!(result.unwrap_err().message.contains(expected));
-            assert_eq!(handle.join().unwrap().len(),1);
+            assert_eq!(handle.join().unwrap().len(), 1);
         }
     }
 }
@@ -309,9 +348,14 @@ async fn runware_polling_rejection_keeps_provider_message_without_resubmitting()
     let id = "50836053-a0ee-4cf5-b9d6-ae7c5d140ada";
     let (url, handle) = server(vec![
         (200, json!({"data":[{"taskUUID":id}]})),
-        (400, json!({"errors":[{"taskUUID":id,"code":"invalidProviderContent","message":"Rejected by Google's content moderation system."}]})),
+        (
+            400,
+            json!({"errors":[{"taskUUID":id,"code":"invalidProviderContent","message":"Rejected by Google's content moderation system."}]}),
+        ),
     ]);
-    let error = runware::generate_at(&req("runware", 1), "test-only-key", &url).await.unwrap_err();
+    let error = runware::generate_at(&req("runware", 1), "test-only-key", &url)
+        .await
+        .unwrap_err();
     assert_eq!(error.status, Some(400));
     assert!(error.message.contains("Google's content moderation"));
     let requests = handle.join().unwrap();
@@ -366,6 +410,53 @@ async fn google_keeps_candidate_sources_and_summaries_without_saving_thought_ima
     let second = out.images[1].details.as_ref().unwrap();
     assert_eq!(second.text, "Second candidate");
     assert!(second.sources.is_empty());
+}
+#[tokio::test]
+async fn qwencloud_posts_once_and_keeps_the_dashscope_image() {
+    let image = png();
+    let (url, handle) = server(vec![(
+        200,
+        json!({
+            "output": {"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": [{"image": image}]}}]},
+            "usage": {"image_count": 1, "width": 1024, "height": 1024},
+            "request_id": "req-1"
+        }),
+    )]);
+    let request: GenerateRequest = serde_json::from_value(json!({
+        "provider": "qwencloud",
+        "model": "qwen-image-2.1-pro",
+        "finalPrompt": "a clear poster",
+        "params": {"width": 1024, "height": 1024, "promptExtend": true, "promptExtendMode": "direct", "enableThinking": true, "watermark": false, "count": 1}
+    }))
+    .unwrap();
+    let out = qwencloud::generate_at(&request, "test-only-key", &url)
+        .await
+        .unwrap();
+    let requests = handle.join().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].0.starts_with("POST / "));
+    assert!(requests[0]
+        .0
+        .to_lowercase()
+        .contains("authorization: bearer test-only-key"));
+    assert_eq!(requests[0].1["model"], "qwen-image-2.1-pro");
+    assert_eq!(requests[0].1["parameters"]["size"], "1024*1024");
+    assert_eq!(requests[0].1["parameters"]["enable_thinking"], true);
+    assert_eq!(out.images.len(), 1);
+    assert_eq!(out.usage["requestId"], "req-1");
+    assert_eq!(out.usage["image_count"], 1);
+    assert!(out.usage.get("cost").is_none());
+
+    let (url, handle) = server(vec![(
+        400,
+        json!({"code":"InvalidParameter","message":"bad size"}),
+    )]);
+    let err = qwencloud::generate_at(&request, "test-only-key", &url)
+        .await
+        .unwrap_err();
+    assert_eq!(err.status, Some(400));
+    assert!(err.message.contains("bad size"));
+    assert_eq!(handle.join().unwrap().len(), 1);
 }
 fn req_google_details() -> GenerateRequest {
     serde_json::from_value(json!({"provider":"google","model":"gemini-nano-banana-2.1","finalPrompt":"a flower","params":{"thinkingLevel":"medium","includeThoughts":true,"searchMode":"web_images","responseText":true}})).unwrap()

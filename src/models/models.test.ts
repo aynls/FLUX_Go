@@ -52,3 +52,47 @@ test("切换路由会保留蒙版，并拒绝当前路由不支持的蒙版", ()
   expect(incompatible.mask).toBe(d.mask);
   expect(validateDraft(incompatible).join()).toContain("不支持蒙版");
 });
+
+test("Qwen Image 2.1 只发送当前路由支持的字段", () => {
+  const pro = changeRoute(
+    { ...newDraft(DEFAULT_PREFERENCES, "qwen"), prompt: "a poster" },
+    "qwencloud",
+    "qwen-image-2.1-pro",
+  );
+  const sent = buildRequest(
+    {
+      ...pro,
+      params: {
+        ...pro.params,
+        promptExtend: false,
+        enableThinking: true,
+        negativePrompt: "blur",
+      },
+    },
+    [],
+  );
+  expect(sent.provider).toBe("qwencloud");
+  expect(sent.model).toBe("qwen-image-2.1-pro");
+  expect(sent.params.promptExtend).toBe(false);
+  expect(sent.params.enableThinking).toBeUndefined();
+  expect(sent.params.promptExtendMode).toBeUndefined();
+  expect(sent.params.negativePrompt).toBeUndefined();
+
+  const turbo = changeRoute(pro, "qwencloud", "qwen-image-2.1-turbo");
+  const turboSent = buildRequest(
+    {
+      ...turbo,
+      params: {
+        ...turbo.params,
+        negativePrompt: "blur",
+        enableThinking: true,
+        promptExtendMode: "agent",
+      },
+    },
+    [],
+  );
+  expect(turboSent.params.negativePrompt).toBe("blur");
+  expect(turboSent.params.enableThinking).toBeUndefined();
+  expect(turboSent.params.promptExtendMode).toBeUndefined();
+  expect(turboSent.params.promptExtend).toBe(true);
+});

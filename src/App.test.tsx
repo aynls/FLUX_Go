@@ -111,6 +111,7 @@ mock.module("./lib/api", () => ({
     ark: true,
     byteplus: true,
     xai: true,
+    qwencloud: true,
   }),
   draftLoad: async () =>
     initial && "tasks" in initial

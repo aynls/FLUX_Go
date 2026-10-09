@@ -69,7 +69,7 @@
       "9:21": [2688, 6256]
     }
   },
-  "checkedAt": "2026-10-07",
+  "checkedAt": "2026-10-09",
   "providers": [
     {
       "id": "xai",
@@ -118,6 +118,12 @@
       "label": "BytePlus（Global）",
       "envName": "BYTEPLUS_API_KEY",
       "keyUrl": "https://ai.byteplus.com/ark/region:ap-southeast-1/apikey"
+    },
+    {
+      "id": "qwencloud",
+      "label": "QwenCloud",
+      "envName": "DASHSCOPE_API_KEY",
+      "keyUrl": "https://www.qwencloud.com/"
     }
   ],
   "fields": {
@@ -246,6 +252,11 @@
         "agent"
       ]
     },
+    "enableThinking": {
+      "label": "思考",
+      "kind": "boolean",
+      "help": "模型先思考再作画，通常更慢；仅在开启扩写时生效。"
+    },
     "watermark": {
       "label": "添加水印",
       "kind": "boolean"
@@ -309,6 +320,7 @@
         "count": 1,
         "promptExtend": true,
         "promptExtendMode": "direct",
+        "enableThinking": true,
         "watermark": false
       }
     },
@@ -1066,6 +1078,110 @@
             "outputFormat": "png",
             "outputCompression": 95
           }
+        }
+      }
+    },
+    {
+      "id": "qwen-image-2.1-pro",
+      "family": "qwen",
+      "label": "Qwen Image 2.1 Pro",
+      "routes": {
+        "qwencloud": {
+          "model": "qwen-image-2.1-pro",
+          "maxRefs": 10,
+          "mask": false,
+          "parameters": {
+            "width": {
+              "nullable": true
+            },
+            "height": {
+              "nullable": true
+            },
+            "seed": {},
+            "count": {
+              "max": 6
+            },
+            "promptExtend": {},
+            "promptExtendMode": {},
+            "enableThinking": {},
+            "watermark": {}
+          },
+          "maxPixels": 4194304,
+          "minPixels": 262144,
+          "maxAspect": 8,
+          "maxInputBytes": 10485760,
+          "docs": "https://docs.qwencloud.com/api-reference/image-generation/qwen-text-to-image"
+        },
+        "runware": {
+          "model": "alibaba:qwen-image@2.1-pro",
+          "maxRefs": 10,
+          "mask": false,
+          "parameters": {
+            "width": {
+              "min": 192,
+              "max": 4096
+            },
+            "height": {
+              "min": 192,
+              "max": 4096
+            },
+            "seed": {},
+            "count": {
+              "max": 20
+            },
+            "promptExtend": {},
+            "promptExtendMode": {},
+            "enableThinking": {},
+            "outputFormat": {},
+            "outputCompression": {
+              "min": 20,
+              "max": 99
+            }
+          },
+          "maxPixels": 4194304,
+          "minPixels": 262144,
+          "maxAspect": 8,
+          "docs": "https://runware.ai/docs/models/alibaba-qwen-image-2-1-pro",
+          "minPrompt": 2,
+          "defaults": {
+            "count": 1,
+            "outputFormat": "png",
+            "outputCompression": 95
+          }
+        }
+      }
+    },
+    {
+      "id": "qwen-image-2.1-turbo",
+      "family": "qwen",
+      "label": "Qwen Image 2.1 Turbo",
+      "routes": {
+        "qwencloud": {
+          "model": "qwen-image-2.1-turbo",
+          "maxRefs": 10,
+          "mask": false,
+          "parameters": {
+            "width": {
+              "nullable": true
+            },
+            "height": {
+              "nullable": true
+            },
+            "seed": {},
+            "negativePrompt": {
+              "maxLength": 500
+            },
+            "count": {
+              "max": 6
+            },
+            "promptExtend": {},
+            "watermark": {}
+          },
+          "maxPixels": 4194304,
+          "minPixels": 262144,
+          "maxAspect": 8,
+          "maxInputBytes": 10485760,
+          "docs": "https://docs.qwencloud.com/api-reference/image-generation/qwen-text-to-image"
         }
       }
     },

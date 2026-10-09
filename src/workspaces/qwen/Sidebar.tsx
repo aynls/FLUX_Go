@@ -1,4 +1,5 @@
 import { m } from "../../i18n";
+import { fieldsFor } from "../../models/catalog";
 import {
   RouteControls,
   PromptEditor,
@@ -10,6 +11,7 @@ import {
   type WorkspaceControlsProps,
 } from "../shared/Controls";
 export default function QwenSidebar(p: WorkspaceControlsProps) {
+  const fields = fieldsFor(p.draft);
   return (
     <>
       <div className="sidebar-body">
@@ -23,10 +25,16 @@ export default function QwenSidebar(p: WorkspaceControlsProps) {
           <h2>{m.generation_controls()}</h2>
           <ParameterFields
             {...p}
-            keys={["seed", "promptExtend", "promptExtendMode", "watermark"]}
+            keys={[
+              "seed",
+              "promptExtend",
+              "promptExtendMode",
+              "enableThinking",
+              "watermark",
+            ]}
           />
         </section>
-        {p.draft.provider !== "openrouter" && (
+        {fields.negativePrompt && (
           <details>
             <summary>{m.negative_prompt()}</summary>
             <ParameterFields {...p} keys={["negativePrompt"]} />

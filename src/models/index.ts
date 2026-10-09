@@ -116,7 +116,10 @@ export function buildRequest(
   if (params.outputFormat === "png") delete params.outputCompression;
   const size = gptSize(params.size);
   if (size) params.size = `${size.w}x${size.h}`;
-  if (params.promptExtend === false) delete params.promptExtendMode;
+  if (params.promptExtend === false) {
+    delete params.promptExtendMode;
+    delete params.enableThinking;
+  }
   return {
     provider: d.provider,
     model: d.modelId,

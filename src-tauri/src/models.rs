@@ -370,6 +370,12 @@ pub fn validate(req: &GenerateRequest) -> Result<(), ProviderError> {
                 "Omit the expansion method when expansion is off",
             ));
         }
+        if req.params.prompt_extend == Some(false) && req.params.enable_thinking.is_some() {
+            return Err(ProviderError::coded(
+                "backend_qwen_thinking",
+                "Turn thinking off when expansion is off",
+            ));
+        }
     }
     if let Some(mask) = &req.mask {
         if !m.route["mask"].as_bool().unwrap_or(false) {

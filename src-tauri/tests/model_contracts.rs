@@ -2,7 +2,9 @@
 use base64::Engine;
 use lutriui_lib::{
     models,
-    provider::{ark, comfy, google, openrouter, parse_data_url, runware, xai, GenerateRequest},
+    provider::{
+        ark, comfy, google, openrouter, parse_data_url, qwencloud, runware, xai, GenerateRequest,
+    },
 };
 use serde_json::{json, Value};
 
@@ -26,13 +28,24 @@ fn png(alpha: bool) -> String {
 #[test]
 fn grok_native_payloads_keep_route_capabilities_and_order() {
     for provider in ["xai", "comfy", "openrouter", "runware"] {
-        let mut r = req(provider, "grok-imagine-image-2.0", json!({"resolution":"2K", "aspectRatio":"9:20", "quality":"low"}));
+        let mut r = req(
+            provider,
+            "grok-imagine-image-2.0",
+            json!({"resolution":"2K", "aspectRatio":"9:20", "quality":"low"}),
+        );
         let a = png(false);
         let b = png(true);
-        if provider != "comfy" { r.images = vec![a.clone(), b.clone()]; }
+        if provider != "comfy" {
+            r.images = vec![a.clone(), b.clone()];
+        }
         match provider {
             "xai" | "comfy" => {
-                let p = if provider == "comfy" { comfy::build_payload(&r) } else { xai::build_payload(&r) }.unwrap();
+                let p = if provider == "comfy" {
+                    comfy::build_payload(&r)
+                } else {
+                    xai::build_payload(&r)
+                }
+                .unwrap();
                 assert_eq!(p["model"], "grok-imagine-image-2.0");
                 assert_eq!(p["resolution"], "2k");
                 assert_eq!(p["quality"], "low");
@@ -64,7 +77,7 @@ fn grok_native_payloads_keep_route_capabilities_and_order() {
                 assert_eq!(p[0]["width"], 1440);
                 assert_eq!(p[0]["height"], 3200);
                 assert_eq!(p[0]["settings"]["quality"], "low");
-                assert_eq!(p[0]["inputs"]["referenceImages"], json!([a,b]));
+                assert_eq!(p[0]["inputs"]["referenceImages"], json!([a, b]));
                 assert!(p[0].get("resolution").is_none());
                 r.params.aspect_ratio = Some("auto".into());
                 let p = runware::build_payload(&r, "task").unwrap();
@@ -79,8 +92,12 @@ fn grok_native_payloads_keep_route_capabilities_and_order() {
 
 #[test]
 fn grok_rejects_unsupported_quality_refs_masks_and_fields() {
-    for (provider, limit) in [("xai",5),("openrouter",3),("runware",3),("comfy",0)] {
-        let mut r = req(provider, "grok-imagine-image-2.0", json!({"quality":"high"}));
+    for (provider, limit) in [("xai", 5), ("openrouter", 3), ("runware", 3), ("comfy", 0)] {
+        let mut r = req(
+            provider,
+            "grok-imagine-image-2.0",
+            json!({"quality":"high"}),
+        );
         assert!(models::validate(&r).is_err());
         r.params.quality = Some("auto".into());
         assert_eq!(models::validate(&r).is_ok(), provider == "xai");
@@ -96,7 +113,10 @@ fn grok_rejects_unsupported_quality_refs_masks_and_fields() {
         r.params.seed = Some(1);
         assert!(models::validate(&r).is_err());
     }
-    assert_eq!(lutriui_lib::provider::default_env_name("xai"), "XAI_API_KEY");
+    assert_eq!(
+        lutriui_lib::provider::default_env_name("xai"),
+        "XAI_API_KEY"
+    );
 }
 #[test]
 fn every_catalog_route_builds_a_provider_native_request() {
@@ -137,6 +157,7 @@ fn every_catalog_route_builds_a_provider_native_request() {
                 "comfy" => comfy::build_payload(&request),
                 "google" => google::build_payload(&request),
                 "xai" => xai::build_payload(&request),
+                "qwencloud" => qwencloud::build_payload(&request),
                 "ark" | "byteplus" => ark::build_payload(&request),
                 "runware" => {
                     runware::build_payload(&request, "50836053-a0ee-4cf5-b9d6-ae7c5d140ada")
@@ -146,6 +167,14 @@ fn every_catalog_route_builds_a_provider_native_request() {
             .unwrap();
             if provider == "openrouter" {
                 assert_eq!(payload["model"], route["model"]);
+            }
+            if provider == "qwencloud" {
+                assert_eq!(payload["model"], route["model"]);
+                assert!(payload["input"]["messages"][0]["content"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|part| part["text"].as_str() == Some(&request.final_prompt)));
             }
             if provider == "runware" {
                 assert_eq!(payload[0]["model"], route["model"]);
@@ -221,35 +250,64 @@ fn nano_banana_21_enforces_its_own_routes_and_preserves_edit_references() {
 
 #[test]
 fn nano_banana_21_comfy_and_runware_encode_route_specific_controls() {
-    let mut request = req("comfy", "gemini-nano-banana-2.1", json!({
-        "resolution":"4K", "aspectRatio":"9:21", "outputFormat":"jpeg",
-        "thinkingLevel":"high", "includeThoughts":true, "responseText":true
-    }));
+    let mut request = req(
+        "comfy",
+        "gemini-nano-banana-2.1",
+        json!({
+            "resolution":"4K", "aspectRatio":"9:21", "outputFormat":"jpeg",
+            "thinkingLevel":"high", "includeThoughts":true, "responseText":true
+        }),
+    );
     request.images = vec![png(false), png(true)];
     let payload = comfy::build_payload(&request).unwrap();
-    assert_eq!(models::resolve(&request).unwrap().wire_id(), "vertexai/gemini-nano-banana-2.1");
-    assert_eq!(payload["generationConfig"]["imageConfig"], json!({
-        "imageSize":"4K", "aspectRatio":"9:21", "imageOutputOptions":{"mimeType":"image/jpeg"}
-    }));
-    assert_eq!(payload["generationConfig"]["thinkingConfig"], json!({"thinkingLevel":"HIGH","includeThoughts":true}));
-    assert_eq!(payload["generationConfig"]["responseModalities"], json!(["TEXT","IMAGE"]));
+    assert_eq!(
+        models::resolve(&request).unwrap().wire_id(),
+        "vertexai/gemini-nano-banana-2.1"
+    );
+    assert_eq!(
+        payload["generationConfig"]["imageConfig"],
+        json!({
+            "imageSize":"4K", "aspectRatio":"9:21", "imageOutputOptions":{"mimeType":"image/jpeg"}
+        })
+    );
+    assert_eq!(
+        payload["generationConfig"]["thinkingConfig"],
+        json!({"thinkingLevel":"HIGH","includeThoughts":true})
+    );
+    assert_eq!(
+        payload["generationConfig"]["responseModalities"],
+        json!(["TEXT", "IMAGE"])
+    );
     for (i, url) in request.images.iter().enumerate() {
-        assert_eq!(payload["contents"][0]["parts"][i]["inlineData"]["data"], url.split_once(',').unwrap().1);
+        assert_eq!(
+            payload["contents"][0]["parts"][i]["inlineData"]["data"],
+            url.split_once(',').unwrap().1
+        );
     }
     request.params.search_mode = Some("web".into());
     assert!(models::validate(&request).is_err());
 
-    request = req("runware", "gemini-nano-banana-2.1", json!({
-        "resolution":"4K", "aspectRatio":"8:1", "outputFormat":"webp", "outputCompression":90,
-        "thinkingLevel":"medium", "searchMode":"web_images", "seed":2147483647
-    }));
+    request = req(
+        "runware",
+        "gemini-nano-banana-2.1",
+        json!({
+            "resolution":"4K", "aspectRatio":"8:1", "outputFormat":"webp", "outputCompression":90,
+            "thinkingLevel":"medium", "searchMode":"web_images", "seed":2147483647
+        }),
+    );
     request.images = vec![png(false), png(true)];
     let payload = runware::build_payload(&request, "test").unwrap();
     assert_eq!(payload[0]["model"], "google:nano-banana@2.1");
     assert_eq!(payload[0]["width"], 11712);
     assert_eq!(payload[0]["height"], 1408);
-    assert_eq!(payload[0]["inputs"]["referenceImages"], json!(request.images));
-    assert_eq!(payload[0]["settings"], json!({"thinkingLevel":"medium","webSearch":true,"imageSearch":true}));
+    assert_eq!(
+        payload[0]["inputs"]["referenceImages"],
+        json!(request.images)
+    );
+    assert_eq!(
+        payload[0]["settings"],
+        json!({"thinkingLevel":"medium","webSearch":true,"imageSearch":true})
+    );
     assert_eq!(payload[0]["outputFormat"], "WEBP");
     assert_eq!(payload[0]["outputQuality"], 90);
     assert_eq!(payload[0]["seed"], 2147483647_u64);
@@ -266,7 +324,11 @@ fn nano_banana_21_comfy_and_runware_encode_route_specific_controls() {
     request.params.seed = Some(2147483648);
     assert!(models::validate(&request).is_err());
     for provider in ["comfy", "runware"] {
-        let mut request = req(provider, "gemini-nano-banana-2.1", json!({"resolution":"1K","aspectRatio":"1:1"}));
+        let mut request = req(
+            provider,
+            "gemini-nano-banana-2.1",
+            json!({"resolution":"1K","aspectRatio":"1:1"}),
+        );
         request.images = vec![png(false); 14];
         models::validate(&request).unwrap();
         request.images.push(png(false));
@@ -437,6 +499,105 @@ fn qwen_payload_uses_native_messages_size_and_edit_dependencies() {
     request.params.prompt_extend = Some(true);
     request.params.prompt_extend_mode = Some("agent".into());
     assert!(comfy::build_payload(&request).is_err());
+}
+#[test]
+fn qwen_image_21_keeps_qwencloud_and_runware_capabilities() {
+    let mut pro = req(
+        "qwencloud",
+        "qwen-image-2.1-pro",
+        json!({"width":1536,"height":1024,"seed":7,"count":1,"promptExtend":true,"promptExtendMode":"direct","enableThinking":true,"watermark":false,"negativePrompt":"blur"}),
+    );
+    assert!(models::validate(&pro).is_err());
+    pro.params.negative_prompt = None;
+    let payload = qwencloud::build_payload(&pro).unwrap();
+    assert_eq!(payload["model"], "qwen-image-2.1-pro");
+    assert_eq!(payload["parameters"]["size"], "1536*1024");
+    assert_eq!(payload["parameters"]["enable_thinking"], true);
+    assert_eq!(payload["parameters"]["prompt_extend_mode"], "direct");
+    assert!(payload["parameters"].get("negative_prompt").is_none());
+    pro.images = vec![png(false), png(false)];
+    let edit = qwencloud::build_payload(&pro).unwrap();
+    assert_eq!(
+        edit["input"]["messages"][0]["content"][0]["image"],
+        pro.images[0]
+    );
+    assert_eq!(
+        edit["input"]["messages"][0]["content"][2]["text"],
+        pro.final_prompt
+    );
+    pro.params.prompt_extend_mode = Some("agent".into());
+    assert!(qwencloud::build_payload(&pro).is_err());
+    pro.params.prompt_extend = Some(false);
+    pro.params.prompt_extend_mode = None;
+    pro.params.enable_thinking = Some(true);
+    assert!(qwencloud::build_payload(&pro).is_err());
+    pro.params.enable_thinking = None;
+    pro.params.width = None;
+    pro.params.height = None;
+    let auto = qwencloud::build_payload(&pro).unwrap();
+    assert!(auto["parameters"].get("size").is_none());
+    assert!(auto["parameters"].get("enable_thinking").is_none());
+    assert!(auto["parameters"].get("prompt_extend_mode").is_none());
+
+    let mut turbo = req(
+        "qwencloud",
+        "qwen-image-2.1-turbo",
+        json!({"promptExtend":true,"watermark":false,"negativePrompt":"blur","enableThinking":true}),
+    );
+    assert!(models::validate(&turbo).is_err());
+    turbo.params.enable_thinking = None;
+    let turbo_payload = qwencloud::build_payload(&turbo).unwrap();
+    assert_eq!(turbo_payload["model"], "qwen-image-2.1-turbo");
+    assert_eq!(turbo_payload["parameters"]["negative_prompt"], "blur");
+    assert!(turbo_payload["parameters"]
+        .get("prompt_extend_mode")
+        .is_none());
+    assert!(turbo_payload["parameters"].get("enable_thinking").is_none());
+
+    let runware_req = req(
+        "runware",
+        "qwen-image-2.1-pro",
+        json!({"width":1536,"height":1024,"promptExtend":true,"promptExtendMode":"direct","enableThinking":false,"outputFormat":"png"}),
+    );
+    let task =
+        runware::build_payload(&runware_req, "50836053-a0ee-4cf5-b9d6-ae7c5d140ada").unwrap();
+    assert_eq!(task[0]["model"], "alibaba:qwen-image@2.1-pro");
+    assert_eq!(task[0]["width"], 1536);
+    assert_eq!(task[0]["settings"]["thinking"], false);
+    assert!(task[0].get("negativePrompt").is_none());
+    let mut narrow = runware_req;
+    narrow.params.width = Some(100);
+    assert!(models::validate(&narrow).is_err());
+    let legacy = runware::build_payload(
+        &req(
+            "runware",
+            "qwen-image-3",
+            json!({"width":1024,"height":1024,"promptExtend":true}),
+        ),
+        "50836053-a0ee-4cf5-b9d6-ae7c5d140ada",
+    )
+    .unwrap();
+    assert!(legacy[0]["settings"].get("thinking").is_none());
+    assert!(models::validate(&req("openrouter", "qwen-image-2.1-pro", json!({}))).is_err());
+    assert!(models::validate(&req("comfy", "qwen-image-2.1-turbo", json!({}))).is_err());
+
+    pro.images = vec![png(false); 10];
+    pro.params.prompt_extend = Some(true);
+    pro.params.prompt_extend_mode = Some("direct".into());
+    pro.params.enable_thinking = Some(true);
+    pro.params.width = Some(1024);
+    pro.params.height = Some(1024);
+    models::validate(&pro).unwrap();
+    pro.images.push(png(false));
+    assert!(models::validate(&pro).is_err());
+    let urls = qwencloud::image_urls(&json!({
+        "output": {"choices": [{"message": {"content": [{"image": "https://example.com/a.png"}]}}]},
+        "usage": {"image_count": 1, "width": 1024, "height": 1024},
+        "request_id": "req"
+    }))
+    .unwrap();
+    assert_eq!(urls, vec!["https://example.com/a.png".to_string()]);
+    assert!(qwencloud::image_urls(&json!({"code":"InvalidParameter","message":"bad"})).is_err());
 }
 #[test]
 fn flux_runware_uses_structured_regions_and_exact_dimensions() {

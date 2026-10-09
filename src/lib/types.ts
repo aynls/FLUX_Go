@@ -29,7 +29,8 @@ export type ProviderId =
   | "google"
   | "ark"
   | "byteplus"
-  | "xai";
+  | "xai"
+  | "qwencloud";
 export type FamilyId = "flux" | "gpt" | "qwen" | "gemini" | "seedream" | "grok";
 export type TaskIntent = "create" | "edit";
 export type WorkspaceKey = TaskIntent;
@@ -61,6 +62,7 @@ export interface GenerateParams {
   negativePrompt?: string;
   promptExtend?: boolean;
   promptExtendMode?: string;
+  enableThinking?: boolean;
   watermark?: boolean;
   thinkingLevel?: string;
   includeThoughts?: boolean;
@@ -77,6 +79,7 @@ export interface ProviderStatus {
   ark: boolean;
   byteplus: boolean;
   xai: boolean;
+  qwencloud: boolean;
   sources?: Record<ProviderId, string>;
   settings?: Record<ProviderId, CredentialSettings>;
   storedKeys?: Record<ProviderId, boolean>;

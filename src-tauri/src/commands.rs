@@ -44,6 +44,7 @@ pub struct ProviderStatus {
     pub ark: bool,
     pub byteplus: bool,
     pub xai: bool,
+    pub qwencloud: bool,
     pub sources: std::collections::HashMap<String, String>,
     pub settings: std::collections::HashMap<String, crate::provider::CredentialSettings>,
     pub stored_keys: std::collections::HashMap<String, bool>,
@@ -74,6 +75,7 @@ pub async fn provider_status() -> ProviderStatus {
         ark: crate::provider::configured_key("ark").is_some(),
         byteplus: crate::provider::configured_key("byteplus").is_some(),
         xai: crate::provider::configured_key("xai").is_some(),
+        qwencloud: crate::provider::configured_key("qwencloud").is_some(),
         sources,
         settings,
         stored_keys,
@@ -142,7 +144,7 @@ pub async fn credential_check(provider: String) -> Result<String, String> {
             .header("x-key", &key),
         "xai" => client.get("https://api.x.ai/v1/models").bearer_auth(&key),
         "google" => client.get("https://generativelanguage.googleapis.com/v1/models").header("x-goog-api-key", &key),
-        "ark" | "byteplus" => {
+        "ark" | "byteplus" | "qwencloud" => {
             return Err(coded(
                 "backend_check_unsupported",
                 "This provider has no confirmed free key check endpoint. Confirm model access by generating an image.",
