@@ -22,6 +22,7 @@ import ResizableReferences from "./components/ResizableReferences";
 import { WorkspaceSidebar, WorkspaceStage } from "./workspaces";
 import { useWorkspace } from "./app/useWorkspace";
 import * as api from "./lib/api";
+import { rebaseHistoryPaths } from "./lib/library";
 import { imageSize } from "./lib/image";
 import { exportDefaultPath } from "./lib/export";
 import {
@@ -70,7 +71,9 @@ export default function App() {
   const [closeRequested, setCloseRequested] = useState(false);
   const requestClose = useCallback(() => setCloseRequested(true), []);
   const submitting = useRef(false);
-  const ws = useWorkspace(submitting, showNotice, requestClose);
+  const [storageMigrating, setStorageMigrating] = useState(false);
+  const migrating = useRef(false);
+  const ws = useWorkspace(submitting, showNotice, requestClose, storageMigrating);
   const {
     prefs,
     setPrefs,
@@ -249,6 +252,52 @@ export default function App() {
   );
   const generationTask = generation.task;
   const busy = generation.tasks.length > 0;
+  const storageBusy =
+    !ready ||
+    !generation.ready ||
+    generation.accepting ||
+    generation.tasks.length > 0 ||
+    importing ||
+    savingResult;
+  const storageBusyRef = useRef(storageBusy);
+  storageBusyRef.current = storageBusy;
+  const storageBlocked = () => {
+    if (!migrating.current) return false;
+    showNotice(m.backend_storage_migrating(), true);
+    return true;
+  };
+  const onMigrate = async (path: string): Promise<api.LibraryMigration> => {
+    if (migrating.current) throw new Error(m.backend_storage_migrating());
+    if (storageBusyRef.current || submitting.current || importJobs.current > 0)
+      throw new Error(m.backend_library_busy());
+    migrating.current = true;
+    setStorageMigrating(true);
+    try {
+      await ws.persist();
+      const moved = await api.libraryMigrate(path);
+      const rebase = (r: SavedResult): SavedResult => ({
+        ...r,
+        item: rebaseHistoryPaths(r.item, moved.previousPath, moved.path),
+      });
+      currentResults.current = Object.fromEntries(
+        Object.entries(currentResults.current).map(([key, value]) => [
+          key,
+          value && rebase(value),
+        ]),
+      );
+      setResults(currentResults.current);
+      setAttempts((s) =>
+        Object.fromEntries(
+          Object.entries(s).map(([key, value]) => [key, value?.map(rebase)]),
+        ),
+      );
+      await refreshHistory();
+      return moved;
+    } finally {
+      migrating.current = false;
+      setStorageMigrating(false);
+    }
+  };
   useEffect(() => {
     void refreshProviders().catch((e) =>
       showNotice(m.notice_provider_status_failed({ detail: String(e) })),
@@ -275,6 +324,7 @@ export default function App() {
       loaders: (() => Promise<api.ImportedImage>)[],
       source: "file" | "clipboard" | "url" = "file",
     ) => {
+      if (storageBlocked()) return;
       const destination = galleryContext.current ? "gallery" : "references";
       const target = workspaceKey(current.current);
       setImporting(true);
@@ -511,6 +561,7 @@ export default function App() {
       : []),
   ];
   const retryHistory = async (r: SavedResult) => {
+    if (storageBlocked()) return;
     setSavingResult(true);
     try {
       const item = await api.historySave(r.item, r.files);
@@ -524,7 +575,7 @@ export default function App() {
     }
   };
   const generate = async (count: number) => {
-    if (!ready || importing) return;
+    if (storageBlocked() || !ready || importing) return;
     const snapshot = singleImageDraft(current.current);
     const compiled = compileDraft(snapshot);
     const invalid = [
@@ -537,6 +588,7 @@ export default function App() {
     }
     try {
       await ws.persist(snapshot);
+      if (storageBlocked()) return;
       const id = await generation.submit(snapshot, count);
       if (!id) return;
       setRequestFeedback({ key: workspaceKey(snapshot), id });
@@ -594,6 +646,7 @@ export default function App() {
     }
   };
   const useGalleryRefs = async (ids: string[]) => {
+    if (migrating.current) throw new Error(m.backend_storage_migrating());
     const target = current.current;
     const unique = [...new Set(ids)].filter(
       (id) => !target.refs.some((r) => r.assetId === id),
@@ -634,6 +687,7 @@ export default function App() {
     }
   };
   const editGalleryImage = async (item: GalleryItem) => {
+    if (storageBlocked()) return false;
     setImporting(true);
     try {
       const image = await api.galleryRead(item.id);
@@ -648,6 +702,7 @@ export default function App() {
     }
   };
   const restoreHistory = async (item: HistoryItem) => {
+    if (storageBlocked()) return;
     if (importing) {
       showNotice(m.notice_wait_import());
       return;
@@ -679,6 +734,7 @@ export default function App() {
     }
   };
   const historyAsInput = async (item: HistoryItem) => {
+    if (storageBlocked()) return;
     try {
       if (!item.resultFiles[0]) throw new Error(m.error_no_result_image());
       await useResult(await api.importImage(item.resultFiles[0]), true);
@@ -791,7 +847,7 @@ export default function App() {
             : undefined
         }
         ready={ready}
-        importing={importing}
+        importing={importing || storageMigrating}
         onChange={(d, discrete = true) => commit(d, discrete)}
         onPreview={setRefPreview}
         onFiles={() => void openFiles()}
@@ -805,7 +861,7 @@ export default function App() {
   const galleryProps = {
     items: galleryItems,
     error: galleryError,
-    importing,
+    importing: importing || storageMigrating,
     saveDirectory: prefs.saveDirectory,
     onRefresh: refreshHistory,
     onFiles: () => void openFiles(),
@@ -950,7 +1006,11 @@ export default function App() {
               }}
               providerStatus={pStatus}
               busy={
-                generation.accepting || !generation.ready || !ready || importing
+                generation.accepting ||
+                !generation.ready ||
+                !ready ||
+                importing ||
+                storageMigrating
               }
               generationTask={generationTask}
               onStopRemaining={() => generation.stopRemaining()}
@@ -1205,6 +1265,9 @@ export default function App() {
             setSettings(false);
             setTab("history");
           }}
+          storageBusy={storageBusy}
+          storageMigrating={storageMigrating}
+          onMigrate={onMigrate}
           onClose={() => setSettings(false)}
         />
       )}

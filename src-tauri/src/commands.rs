@@ -197,14 +197,25 @@ pub async fn credential_check(provider: String) -> Result<String, String> {
     Ok("backend_check_verified".into())
 }
 
+fn active_root(state: &State<'_, AppState>) -> Result<std::path::PathBuf, String> {
+    state
+        .history
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|s| s.dir().to_path_buf())
+        .ok_or_else(|| {
+            String::from(coded(
+                "backend_history_uninitialized",
+                "History storage isn't initialized",
+            ))
+        })
+}
+
 #[tauri::command]
-pub async fn draft_load(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
-    let p = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("workbench")
-        .join("session.json");
+pub async fn draft_load(state: State<'_, AppState>) -> Result<Option<serde_json::Value>, String> {
+    let _operation = state.gate.operation()?;
+    let p = active_root(&state)?.join("session.json");
     if !p.exists() {
         return Ok(None);
     }
@@ -220,21 +231,17 @@ pub async fn draft_load(app: tauri::AppHandle) -> Result<Option<serde_json::Valu
 
 #[tauri::command]
 pub async fn draft_save(
-    app: tauri::AppHandle,
     state: State<'_, AppState>,
     draft: serde_json::Value,
 ) -> Result<(), String> {
+    let _operation = state.gate.operation()?;
     let _guard = state.draft_lock.lock().map_err(|_| {
         coded(
             "backend_draft_unavailable",
             "Draft storage is temporarily unavailable",
         )
     })?;
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(io_failed)?
-        .join("workbench");
+    let dir = active_root(&state)?;
     std::fs::create_dir_all(&dir).map_err(io_failed)?;
     let p = dir.join("session.json");
     let tmp = dir.join("session.json.tmp");
@@ -378,21 +385,38 @@ pub fn copy_image(data_url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn history_storage(app: tauri::AppHandle) -> Result<String, String> {
-    Ok(app
-        .path()
-        .app_data_dir()
-        .map_err(io_failed)?
-        .join("workbench")
-        .to_string_lossy()
-        .to_string())
+pub fn history_storage(state: State<'_, AppState>) -> Result<String, String> {
+    let _operation = state.gate.operation()?;
+    Ok(active_root(&state)?.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn library_migrate(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<crate::storage::LibraryMigration, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::storage::migrate(&app, std::path::Path::new(&path))
+    })
+    .await
+    .map_err(|e| {
+        String::from(
+            coded(
+                "backend_library_failed",
+                format!("Couldn't move the library: {e}"),
+            )
+            .with_param("detail", e.to_string()),
+        )
+    })?
 }
 
 #[tauri::command]
 pub async fn generate(
     app: tauri::AppHandle,
+    state: State<'_, AppState>,
     request: GenerateRequest,
 ) -> Result<GenerateOutput, String> {
+    let _generation = state.gate.generation()?;
     let request_id = request.request_id.clone();
     let history_id = request.history_id.clone().or_else(|| request_id.clone());
     let reporter: crate::provider::progress::Reporter = std::sync::Arc::new(
@@ -496,6 +520,7 @@ fn with_store<T>(
     state: &State<'_, AppState>,
     f: impl FnOnce(&HistoryStore) -> Result<T, String>,
 ) -> Result<T, String> {
+    let _operation = state.gate.operation()?;
     let guard = state.history.lock().unwrap();
     let s = guard.as_ref().ok_or_else(|| {
         String::from(coded(

@@ -177,6 +177,14 @@ export const historyStorage = () =>
     ? call<string>("history_storage")
     : Promise.resolve(m.error_desktop_only_history());
 
+export interface LibraryMigration {
+  previousPath: string;
+  path: string;
+}
+
+export const libraryMigrate = (path: string) =>
+  call<LibraryMigration>("library_migrate", { path });
+
 export const galleryList = async (): Promise<GalleryItem[]> => {
   if (!isTauri()) return [];
   const items = await call<GalleryItem[]>("gallery_list");

@@ -59,6 +59,18 @@ let deletedIds: string[] = [];
 let failedDeletes = new Set<string>();
 let draftWrites: (Draft | WorkspaceSession)[] = [];
 let exportPath = "";
+let pickedDirectory = "D:\\Pictures\\LutriUI";
+let storageRoot = "test";
+let migrateCalls: string[] = [];
+let migrateDraftCount = 0;
+let migrateError: Error | null = null;
+let migrateResolvers: (() => void)[] | null = null;
+let migrateResult = { previousPath: "test", path: "D:\\NewLibrary" };
+let savesDuringMigration = 0;
+let migratingBackend = false;
+let historyListCalls = 0;
+let savedItems: HistoryItem[] = [];
+let failFinalSave = false;
 let reportProgress: (progress: GenerationProgress) => void = () => {};
 let closeHandler: (event: {
   preventDefault: () => void;
@@ -88,7 +100,7 @@ mock.module("@tauri-apps/api/window", () => ({
 }));
 mock.module("@tauri-apps/plugin-dialog", () => ({
   open: async (options: { directory?: boolean }) =>
-    options.directory ? "D:\\Pictures\\LutriUI" : ["first.png", "second.png"],
+    options.directory ? pickedDirectory : ["first.png", "second.png"],
   save: async (options: { defaultPath: string }) => {
     exportPath = options.defaultPath;
     return null;
@@ -124,9 +136,13 @@ mock.module("./lib/api", () => ({
           }
         : null,
   draftSave: async (d: Draft | WorkspaceSession) => {
+    if (migratingBackend) savesDuringMigration++;
     draftWrites.push(d);
   },
-  historyList: async () => historyItems,
+  historyList: async () => {
+    historyListCalls++;
+    return historyItems;
+  },
   galleryList: async () => galleryItems,
   galleryImport: async (
     image: { name: string; width: number; height: number },
@@ -178,6 +194,8 @@ mock.module("./lib/api", () => ({
     item: HistoryItem,
     files: { kind: string; name: string; data: string }[] = [],
   ) => {
+    if (failFinalSave && item.phase === "completed")
+      throw new Error("disk full");
     const saved = structuredClone(item);
     const path = (file: { name: string }) => `test/${item.id}/${file.name}.png`;
     saved.inputFiles = [
@@ -194,6 +212,7 @@ mock.module("./lib/api", () => ({
     ];
     const mask = files.find((f) => f.kind === "mask");
     if (mask) saved.maskFile = path(mask);
+    savedItems.push(saved);
     historyItems = [...historyItems.filter((it) => it.id !== item.id), saved];
     return saved;
   },
@@ -210,7 +229,23 @@ mock.module("./lib/api", () => ({
     height: 512,
   }),
   copyImage: async () => {},
-  historyStorage: async () => "test-only",
+  historyStorage: async () => storageRoot,
+  libraryMigrate: (path: string) => {
+    migrateCalls.push(path);
+    migrateDraftCount = draftWrites.length;
+    if (migrateError) return Promise.reject(migrateError);
+    migratingBackend = true;
+    const settle = () => {
+      migratingBackend = false;
+      storageRoot = migrateResult.path;
+      return migrateResult;
+    };
+    if (migrateResolvers)
+      return new Promise((resolve) =>
+        migrateResolvers!.push(() => resolve(settle())),
+      );
+    return Promise.resolve(settle());
+  },
   assetUrl: (s: string) => s,
   historyDelete: async (id: string) => {
     if (failedDeletes.has(id)) throw new Error("file locked");
@@ -224,7 +259,7 @@ mock.module("./lib/api", () => ({
   credentialCheck: async () => "verified",
   credentialConfigure: async () => {},
 }));
-const { render, fireEvent, waitFor, cleanup, act } =
+const { render, fireEvent, waitFor, cleanup, act, within } =
   await import("@testing-library/react");
 const { default: App } = await import("./App");
 beforeEach(() => {
@@ -238,6 +273,18 @@ beforeEach(() => {
   failedDeletes = new Set();
   draftWrites = [];
   exportPath = "";
+  pickedDirectory = "D:\\Pictures\\LutriUI";
+  storageRoot = "test";
+  migrateCalls = [];
+  migrateDraftCount = 0;
+  migrateError = null;
+  migrateResolvers = null;
+  migrateResult = { previousPath: "test", path: "D:\\NewLibrary" };
+  savesDuringMigration = 0;
+  migratingBackend = false;
+  historyListCalls = 0;
+  savedItems = [];
+  failFinalSave = false;
   reportProgress = () => {};
   dom.localStorage.clear();
 });
@@ -890,3 +937,197 @@ test("source suggestions cannot execute provider HTML or open non-web URLs", () 
   expect(frame.getAttribute("sandbox")).toBe("allow-same-origin");
 });
 
+test("choosing a library folder flushes the draft, migrates the library and rebases cached result paths", async () => {
+  failFinalSave = true;
+  pickedDirectory = "D:\\NewLibrary";
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
+    target: { value: "library move" },
+  });
+  fireEvent.click(ui.getByRole("button", { name: /^生成图像 ·/ }));
+  await waitFor(() => expect(submitted).not.toBeNull());
+  await act(async () => finish(output));
+  await waitFor(() => expect(ui.getByText("图片尚未保存")).toBeTruthy());
+  const listsBefore = historyListCalls;
+  fireEvent.click(
+    within(ui.container.querySelector(".app-header")!).getByRole("button", {
+      name: "设置",
+    }),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "存储" }));
+  const section = ui
+    .getByRole("heading", { name: "图库位置" })
+    .closest("section")!;
+  await waitFor(() => expect(section.textContent).toContain("test"));
+  fireEvent.click(
+    within(section).getByRole("button", { name: "选择文件夹" }),
+  );
+  await waitFor(() => expect(migrateCalls).toEqual(["D:\\NewLibrary"]));
+  expect(migrateDraftCount).toBeGreaterThan(0);
+  await waitFor(() =>
+    expect(section.textContent).toContain("D:\\NewLibrary"),
+  );
+  expect(section.textContent).toContain("已迁移到");
+  expect(savesDuringMigration).toBe(0);
+  expect(historyListCalls).toBeGreaterThan(listsBefore);
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("library move");
+  fireEvent.click(ui.getByRole("button", { name: "撤销 Ctrl+Z" }));
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("");
+  fireEvent.click(ui.getByRole("button", { name: "关闭" }));
+  failFinalSave = false;
+  fireEvent.click(ui.getByRole("button", { name: "重新保存历史" }));
+  await waitFor(() =>
+    expect(savedItems.at(-1)!.resultFiles[0]).toMatch(
+      /^D:[\\/]NewLibrary[\\/]/,
+    ),
+  );
+  expect(savedItems.at(-1)!.resultFiles[0]).not.toContain("test/");
+});
+
+test("a failed library move keeps the old location and the app stays editable", async () => {
+  migrateError = new Error("所选目录不是空的");
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(
+    within(ui.container.querySelector(".app-header")!).getByRole("button", {
+      name: "设置",
+    }),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "存储" }));
+  const section = ui
+    .getByRole("heading", { name: "图库位置" })
+    .closest("section")!;
+  fireEvent.click(
+    within(section).getByRole("button", { name: "选择文件夹" }),
+  );
+  await waitFor(() =>
+    expect(ui.getByRole("alert").textContent).toContain("不是空的"),
+  );
+  expect(migrateCalls).toEqual(["D:\\Pictures\\LutriUI"]);
+  expect(section.textContent).toContain("test");
+  expect(storageRoot).toBe("test");
+  fireEvent.click(ui.getByRole("button", { name: "关闭" }));
+  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
+    target: { value: "still works" },
+  });
+  expect(
+    (ui.getByRole("textbox", { name: "提示词" }) as HTMLTextAreaElement).value,
+  ).toBe("still works");
+});
+
+test("a running task disables moving the library", async () => {
+  initial = { ...newDraft(), prompt: "running task" };
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: /^生成图像 ·/ }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(ui.getByRole("button", { name: /^生成图像 ·/ }));
+  await waitFor(() => expect(submitted).not.toBeNull());
+  fireEvent.click(
+    within(ui.container.querySelector(".app-header")!).getByRole("button", {
+      name: "设置",
+    }),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "存储" }));
+  const section = ui
+    .getByRole("heading", { name: "图库位置" })
+    .closest("section")!;
+  expect(
+    within(section)
+      .getByRole("button", { name: "选择文件夹" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  await act(async () => finish(output));
+});
+
+test("a pending move keeps its status and can't be started twice", async () => {
+  migrateResolvers = [];
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(
+    within(ui.container.querySelector(".app-header")!).getByRole("button", {
+      name: "设置",
+    }),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "存储" }));
+  const section = ui
+    .getByRole("heading", { name: "图库位置" })
+    .closest("section")!;
+  const choose = within(section).getByRole("button", { name: "选择文件夹" });
+  fireEvent.click(choose);
+  await waitFor(() => expect(migrateCalls).toHaveLength(1));
+  await waitFor(() => expect(ui.getByText("正在迁移图库…")).toBeTruthy());
+  expect(choose.hasAttribute("disabled")).toBe(true);
+  fireEvent.click(choose);
+  expect(migrateCalls).toHaveLength(1);
+  fireEvent.click(ui.getByRole("button", { name: "关闭" }));
+  fireEvent.change(ui.getByRole("textbox", { name: "提示词" }), {
+    target: { value: "edit during move" },
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 550));
+  });
+  expect(savesDuringMigration).toBe(0);
+  await act(async () => {
+    migrateResolvers!.forEach((resolve) => resolve());
+    migrateResolvers = null;
+  });
+  await waitFor(
+    () =>
+      expect(
+        (draftWrites.at(-1) as WorkspaceSession | undefined)?.tasks.create
+          ?.prompt,
+      ).toBe("edit during move"),
+    { timeout: 2000 },
+  );
+});
+
+test("the export folder preference stays independent of the library location", async () => {
+  dom.localStorage.setItem(
+    "lutriui-preferences-v2",
+    JSON.stringify({ saveDirectory: "D:\\Exports" }),
+  );
+  const ui = render(<App />);
+  await waitFor(() =>
+    expect(
+      ui.getByRole("button", { name: "新建" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(
+    within(ui.container.querySelector(".app-header")!).getByRole("button", {
+      name: "设置",
+    }),
+  );
+  fireEvent.click(ui.getByRole("button", { name: "存储" }));
+  const section = ui
+    .getByRole("heading", { name: "图库位置" })
+    .closest("section")!;
+  fireEvent.click(
+    within(section).getByRole("button", { name: "选择文件夹" }),
+  );
+  await waitFor(() => expect(migrateCalls).toHaveLength(1));
+  const saveSection = ui
+    .getByRole("heading", { name: "图片默认保存位置" })
+    .closest("section")!;
+  expect(saveSection.textContent).toContain("D:\\Exports");
+  expect(saveSection.textContent).not.toContain("D:\\NewLibrary");
+});

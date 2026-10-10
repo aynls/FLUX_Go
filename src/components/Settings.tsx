@@ -16,6 +16,7 @@ import type {
   CredentialSettings,
 } from "../lib/types";
 import Modal from "./Modal";
+import type { LibraryMigration } from "../lib/api";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   providers,
@@ -38,6 +39,9 @@ export default function Settings({
   onClose,
   onHistory,
   initialProvider,
+  storageBusy,
+  storageMigrating,
+  onMigrate,
 }: {
   prefs: Preferences;
   onChange: (p: Preferences) => void;
@@ -46,6 +50,9 @@ export default function Settings({
   onClose: () => void;
   onHistory: () => void;
   initialProvider?: ProviderId;
+  storageBusy: boolean;
+  storageMigrating: boolean;
+  onMigrate: (path: string) => Promise<LibraryMigration>;
 }) {
   const [page, setPage] = useState("connection");
   const [provider, setProvider] = useState<ProviderId>(
@@ -54,11 +61,14 @@ export default function Settings({
   const [family, setFamily] = useState<FamilyId>(prefs.defaultFamily ?? "flux");
   const [storage, setStorage] = useState("");
   const [directoryError, setDirectoryError] = useState("");
+  const [libraryError, setLibraryError] = useState("");
+  const [libraryMoved, setLibraryMoved] = useState("");
   useEffect(() => {
+    if (storageMigrating) return;
     historyStorage()
       .then(setStorage)
       .catch((e) => setStorage(String(e)));
-  }, []);
+  }, [storageMigrating]);
   const defaults = newDraft(prefs, family),
     fields = fieldsFor(defaults);
   const updateDefaults = (d: Draft) =>
@@ -87,6 +97,27 @@ export default function Settings({
       }
     } catch (e) {
       setDirectoryError(m.error_choose_directory({ detail: String(e) }));
+    }
+  };
+  const chooseLibrary = async () => {
+    try {
+      const directory = await open({
+        directory: true,
+        multiple: false,
+        title: m.settings_library_choose_dir(),
+      });
+      if (typeof directory !== "string") return;
+      setLibraryError("");
+      setLibraryMoved("");
+      try {
+        const moved = await onMigrate(directory);
+        setStorage(moved.path);
+        setLibraryMoved(moved.path);
+      } catch (e) {
+        setLibraryError(String(e));
+      }
+    } catch (e) {
+      setLibraryError(m.error_choose_directory({ detail: String(e) }));
     }
   };
   return (
@@ -351,6 +382,32 @@ export default function Settings({
                 {directoryError && (
                   <p className="error-text" role="alert">
                     {directoryError}
+                  </p>
+                )}
+              </section>
+              <section>
+                <h3>{m.settings_library_location()}</h3>
+                <p className="storage-path">{storage}</p>
+                <p className="help">{m.settings_library_help()}</p>
+                <button
+                  disabled={storageBusy || storageMigrating}
+                  onClick={() => void chooseLibrary()}
+                >
+                  {m.settings_choose_folder()}
+                </button>
+                {storageMigrating && (
+                  <p className="help" role="status">
+                    {m.settings_library_moving()}
+                  </p>
+                )}
+                {libraryMoved && !storageMigrating && (
+                  <p className="help" role="status">
+                    {m.settings_library_moved({ path: libraryMoved })}
+                  </p>
+                )}
+                {libraryError && (
+                  <p className="error-text" role="alert">
+                    {libraryError}
                   </p>
                 )}
               </section>

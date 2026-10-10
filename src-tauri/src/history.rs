@@ -110,8 +110,19 @@ impl HistoryStore {
         Ok(store)
     }
 
+    pub fn dir(&self) -> &std::path::Path {
+        &self.dir
+    }
+
     fn index_path(&self) -> PathBuf {
         self.dir.join("index.json")
+    }
+
+    pub fn has_active(&self) -> Result<bool, String> {
+        Ok(self
+            .read_index()?
+            .iter()
+            .any(|it| matches!(it.status.as_str(), "queued" | "running")))
     }
 
     fn read_index(&self) -> Result<Vec<HistoryItem>, String> {

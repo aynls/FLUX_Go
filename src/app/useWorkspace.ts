@@ -69,7 +69,10 @@ export function useWorkspace(
   submitting: RefObject<boolean>,
   onNotice: (s: string) => void,
   onRequestClose?: () => void,
+  storageMigrating = false,
 ) {
+  const migrating = useRef(storageMigrating);
+  migrating.current = storageMigrating;
   const [prefs, setPrefsState] = useState<Preferences>(() => {
     const initial = readPreferences();
     applyLocale(resolveLocale(initial.locale));
@@ -276,6 +279,10 @@ export function useWorkspace(
     );
   };
   const closeApp = async () => {
+    if (migrating.current) {
+      onNotice(m.notice_library_moving());
+      return;
+    }
     try {
       await persist();
       await getCurrentWindow().destroy();
@@ -314,7 +321,8 @@ export function useWorkspace(
     };
   }, [replace, onNotice]);
   useEffect(() => {
-    if (!ready || !saveAllowed.current || !api.isDesktop()) return;
+    if (!ready || !saveAllowed.current || !api.isDesktop() || storageMigrating)
+      return;
     const timer = window.setTimeout(() => {
       const snapshot = session(draft);
       saveQueue.current = saveQueue.current
@@ -325,7 +333,7 @@ export function useWorkspace(
         );
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [draft, ready, session, onNotice]);
+  }, [draft, ready, session, onNotice, storageMigrating]);
   useEffect(() => {
     if (!api.isDesktop()) return;
     let disposed = false;
@@ -333,6 +341,10 @@ export function useWorkspace(
     getCurrentWindow()
       .onCloseRequested(async (event) => {
         event.preventDefault();
+        if (migrating.current) {
+          onNotice(m.notice_library_moving());
+          return;
+        }
         if (submitting.current) {
           onRequestClose?.();
           return;

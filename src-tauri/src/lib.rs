@@ -3,6 +3,7 @@ mod gallery;
 mod history;
 pub mod models;
 pub mod provider;
+pub mod storage;
 
 use std::sync::Mutex;
 
@@ -11,6 +12,7 @@ use tauri::Manager;
 pub struct AppState {
     pub history: Mutex<Option<history::HistoryStore>>,
     pub draft_lock: Mutex<()>,
+    pub gate: storage::StorageGate,
 }
 
 impl Default for AppState {
@@ -18,6 +20,7 @@ impl Default for AppState {
         Self {
             history: Mutex::new(None),
             draft_lock: Mutex::new(()),
+            gate: storage::StorageGate::default(),
         }
     }
 }
@@ -32,7 +35,8 @@ pub fn run() {
         )
         .manage(AppState::default())
         .setup(|app| {
-            let dir = app.path().app_data_dir()?.join("workbench");
+            let dir = storage::resolve_root(&app.path().app_data_dir()?)
+                .map_err(|e| format!("Couldn't initialize history storage: {e}"))?;
             let store = history::HistoryStore::new(dir.clone())
                 .map_err(|e| format!("Couldn't initialize history storage: {e}"))?;
             // Register the existing, resolved image roots before the WebView reads assets.
@@ -56,6 +60,7 @@ pub fn run() {
             commands::clipboard_image,
             commands::copy_image,
             commands::history_storage,
+            commands::library_migrate,
             commands::generate,
             commands::import_image,
             commands::save_data_url,
