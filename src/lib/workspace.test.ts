@@ -38,6 +38,6 @@ test("重排参考图时同步改写标签，并保留来源身份", () => {
 test("更换主图不会把已有蒙版挪到另一张图上", () => {
   const d = fixture();
   d.mask = { ...d.refs[0], name: "mask" };
-  expect(() => setPrimaryImage(d, "b")).toThrow("蒙版");
+  expect(() => setPrimaryImage(d, "b")).toThrow();
   expect(d.refs[0].uid).toBe("a");
 });

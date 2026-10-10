@@ -5,6 +5,7 @@ import {
   credentialCheck,
   credentialConfigure,
   historyStorage,
+  libraryStats,
 } from "../lib/api";
 import { DEFAULT_PREFERENCES, newDraft } from "../lib/workspace";
 import type {
@@ -14,9 +15,13 @@ import type {
   ProviderId,
   ProviderStatus,
   CredentialSettings,
+  LibraryStats,
+  LibraryMaintainOp,
+  MaintenanceReport,
 } from "../lib/types";
 import Modal from "./Modal";
 import type { LibraryMigration } from "../lib/api";
+import { formatBytes, formatDateTime } from "../i18n";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   providers,
@@ -42,6 +47,7 @@ export default function Settings({
   storageBusy,
   storageMigrating,
   onMigrate,
+  onMaintain,
 }: {
   prefs: Preferences;
   onChange: (p: Preferences) => void;
@@ -53,6 +59,7 @@ export default function Settings({
   storageBusy: boolean;
   storageMigrating: boolean;
   onMigrate: (path: string) => Promise<LibraryMigration>;
+  onMaintain: (operation: LibraryMaintainOp) => Promise<MaintenanceReport>;
 }) {
   const [page, setPage] = useState("connection");
   const [provider, setProvider] = useState<ProviderId>(
@@ -63,12 +70,25 @@ export default function Settings({
   const [directoryError, setDirectoryError] = useState("");
   const [libraryError, setLibraryError] = useState("");
   const [libraryMoved, setLibraryMoved] = useState("");
+  const [stats, setStats] = useState<LibraryStats | null>(null);
+  const [statsError, setStatsError] = useState("");
+  const [maintainResult, setMaintainResult] = useState("");
+  const [confirmClean, setConfirmClean] = useState(false);
   useEffect(() => {
     if (storageMigrating) return;
     historyStorage()
       .then(setStorage)
       .catch((e) => setStorage(String(e)));
   }, [storageMigrating]);
+  useEffect(() => {
+    if (page !== "storage" || storageMigrating) return;
+    libraryStats()
+      .then((value) => {
+        setStats(value);
+        setStatsError("");
+      })
+      .catch((e) => setStatsError(String(e)));
+  }, [page, storageMigrating]);
   const defaults = newDraft(prefs, family),
     fields = fieldsFor(defaults);
   const updateDefaults = (d: Draft) =>
@@ -119,6 +139,39 @@ export default function Settings({
     } catch (e) {
       setLibraryError(m.error_choose_directory({ detail: String(e) }));
     }
+  };
+  const reportText = (op: LibraryMaintainOp, r: MaintenanceReport) => {
+    const parts =
+      op === "check"
+        ? m.settings_report_check({
+            checked: r.checked,
+            missing: r.missing,
+            restored: r.restored,
+          })
+        : op === "rebuild_thumbnails"
+          ? m.settings_report_rebuild({ count: r.rebuilt })
+          : m.settings_report_cleanup({ count: r.removed });
+    return r.failed.length
+      ? parts +
+          " " +
+          m.gallery_batch_failed({ count: r.failed.length }) +
+          "：" +
+          r.failed.map((f) => f.message).join("；")
+      : parts;
+  };
+  const runMaintain = async (op: LibraryMaintainOp) => {
+    setMaintainResult("");
+    setLibraryError("");
+    setConfirmClean(false);
+    try {
+      const report = await onMaintain(op);
+      setMaintainResult(reportText(op, report));
+    } catch (e) {
+      setLibraryError(String(e));
+    }
+    libraryStats()
+      .then(setStats)
+      .catch((e) => setStatsError(String(e)));
   };
   return (
     <Modal title={m.settings_title()} onClose={onClose} large>
@@ -397,7 +450,7 @@ export default function Settings({
                 </button>
                 {storageMigrating && (
                   <p className="help" role="status">
-                    {m.settings_library_moving()}
+                    {m.settings_operation_busy()}
                   </p>
                 )}
                 {libraryMoved && !storageMigrating && (
@@ -408,6 +461,95 @@ export default function Settings({
                 {libraryError && (
                   <p className="error-text" role="alert">
                     {libraryError}
+                  </p>
+                )}
+              </section>
+              <section>
+                <h3>{m.settings_library_contents()}</h3>
+                {statsError && (
+                  <p className="error-text" role="alert">
+                    {statsError}
+                  </p>
+                )}
+                {stats && (
+                  <dl className="storage-stats">
+                    <div>
+                      <dt>{m.settings_stats_images()}</dt>
+                      <dd>{stats.totalCount}</dd>
+                    </div>
+                    <div>
+                      <dt>{m.settings_stats_missing()}</dt>
+                      <dd>{stats.missingCount}</dd>
+                    </div>
+                    <div>
+                      <dt>{m.settings_stats_pending()}</dt>
+                      <dd>{stats.pendingDeleteCount}</dd>
+                    </div>
+                    <div>
+                      <dt>{m.settings_stats_originals()}</dt>
+                      <dd>{formatBytes(stats.originalBytes)}</dd>
+                    </div>
+                    <div>
+                      <dt>{m.settings_stats_database()}</dt>
+                      <dd>{formatBytes(stats.databaseBytes)}</dd>
+                    </div>
+                    <div>
+                      <dt>{m.settings_stats_checked()}</dt>
+                      <dd>
+                        {stats.lastCheckedAt != null
+                          ? formatDateTime(stats.lastCheckedAt)
+                          : m.settings_stats_never()}
+                      </dd>
+                    </div>
+                  </dl>
+                )}
+                <div className="row">
+                  <button
+                    disabled={storageBusy || storageMigrating}
+                    onClick={() => void runMaintain("check")}
+                  >
+                    {m.settings_check_files()}
+                  </button>
+                  <button
+                    disabled={storageBusy || storageMigrating}
+                    onClick={() => void runMaintain("rebuild_thumbnails")}
+                  >
+                    {m.settings_rebuild_thumbs()}
+                  </button>
+                  <button
+                    className="danger"
+                    disabled={
+                      storageBusy ||
+                      storageMigrating ||
+                      !stats ||
+                      stats.missingCount === 0
+                    }
+                    onClick={() => setConfirmClean(true)}
+                  >
+                    {m.settings_clean_missing()}
+                  </button>
+                </div>
+                {confirmClean && stats && !storageMigrating && (
+                  <div className="row" role="alertdialog" aria-label={m.settings_clean_missing()}>
+                    <p className="help">
+                      {m.settings_clean_missing_confirm({
+                        count: stats.missingCount,
+                      })}
+                    </p>
+                    <button onClick={() => setConfirmClean(false)}>
+                      {m.action_cancel()}
+                    </button>
+                    <button
+                      className="danger"
+                      onClick={() => void runMaintain("cleanup_missing")}
+                    >
+                      {m.settings_clean_missing()}
+                    </button>
+                  </div>
+                )}
+                {maintainResult && (
+                  <p className="help" role="status">
+                    {maintainResult}
                   </p>
                 )}
               </section>

@@ -51,7 +51,6 @@ export function rebaseHistoryPaths(
     resultFiles: item.resultFiles.map(
       (path) => rebase(path, previousRoot, newRoot) ?? path,
     ),
-    thumbFile: rebase(item.thumbFile, previousRoot, newRoot),
     maskFile: rebase(item.maskFile, previousRoot, newRoot),
   };
 }

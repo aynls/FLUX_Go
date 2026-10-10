@@ -51,6 +51,19 @@ export function formatNumber(value: number) {
   return value.toLocaleString(current);
 }
 
+export function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value < 0) return "—";
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let size = value / 1024;
+  for (const unit of units) {
+    if (size < 1024 || unit === "TB")
+      return `${size.toFixed(size >= 100 ? 0 : 1)} ${unit}`;
+    size /= 1024;
+  }
+  return `${size.toFixed(1)} PB`;
+}
+
 export function formatDate(value: number | Date) {
   return new Date(value).toLocaleDateString(current);
 }

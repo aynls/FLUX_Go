@@ -1,6 +1,8 @@
 mod commands;
 mod gallery;
 mod history;
+pub mod library;
+mod library_sql;
 pub mod models;
 pub mod provider;
 pub mod storage;
@@ -10,19 +12,24 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 pub struct AppState {
-    pub history: Mutex<Option<history::HistoryStore>>,
-    pub draft_lock: Mutex<()>,
+    pub library: Mutex<Option<library::LibraryStore>>,
     pub gate: storage::StorageGate,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
-            history: Mutex::new(None),
-            draft_lock: Mutex::new(()),
+            library: Mutex::new(None),
             gate: storage::StorageGate::default(),
         }
     }
+}
+
+fn thumbnail_error(status: u16) -> tauri::http::Response<Vec<u8>> {
+    tauri::http::Response::builder()
+        .status(status)
+        .body(Vec::new())
+        .unwrap()
 }
 
 pub fn run() {
@@ -34,10 +41,37 @@ pub fn run() {
                 .build(),
         )
         .manage(AppState::default())
+        .register_asynchronous_uri_scheme_protocol("lutri-thumb", |ctx, request, responder| {
+            let path = request.uri().path().trim_matches('/').to_string();
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let uuid_ok = uuid::Uuid::parse_str(&path).is_ok();
+                let response = if !uuid_ok {
+                    thumbnail_error(400)
+                } else {
+                    match commands::thumbnail_bytes(&app, &path) {
+                        Ok(bytes) => tauri::http::Response::builder()
+                            .status(200)
+                            .header(tauri::http::header::CONTENT_TYPE, "image/png")
+                            .header(tauri::http::header::CACHE_CONTROL, "no-store")
+                            .body(bytes)
+                            .unwrap(),
+                        Err(e) if e.contains("bad_request")
+                            || e.contains("backend_gallery_id_invalid") =>
+                        {
+                            thumbnail_error(400)
+                        }
+                        Err(e) if e.contains("backend_gallery_gone") => thumbnail_error(404),
+                        Err(_) => thumbnail_error(503),
+                    }
+                };
+                responder.respond(response);
+            });
+        })
         .setup(|app| {
             let dir = storage::resolve_root(&app.path().app_data_dir()?)
                 .map_err(|e| format!("Couldn't initialize history storage: {e}"))?;
-            let store = history::HistoryStore::new(dir.clone())
+            let store = library::LibraryStore::new(dir.clone())
                 .map_err(|e| format!("Couldn't initialize history storage: {e}"))?;
             // Register the existing, resolved image roots before the WebView reads assets.
             // Keep credentials, drafts and metadata outside the asset protocol scope.
@@ -45,7 +79,7 @@ pub fn run() {
             assets.allow_directory(dir.join("images"), true)?;
             assets.allow_directory(dir.join("gallery/images"), true)?;
             provider::init_key_settings(&app.path().app_data_dir()?)?;
-            *app.state::<AppState>().history.lock().unwrap() = Some(store);
+            *app.state::<AppState>().library.lock().unwrap() = Some(store);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -61,16 +95,22 @@ pub fn run() {
             commands::copy_image,
             commands::history_storage,
             commands::library_migrate,
+            commands::library_maintain,
+            commands::library_stats,
             commands::generate,
             commands::import_image,
             commands::save_data_url,
             commands::history_list,
             commands::history_save,
             commands::history_delete,
-            commands::gallery_list,
+            commands::gallery_query,
+            commands::gallery_facets,
+            commands::gallery_get,
+            commands::gallery_patch,
             commands::gallery_import,
             commands::gallery_read,
             commands::gallery_delete,
+            commands::gallery_export,
         ])
         .run(tauri::generate_context!())
         .expect("LutriUI failed to start");

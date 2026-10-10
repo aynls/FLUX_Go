@@ -64,6 +64,6 @@ Google 的 Nano Banana 2.1 提供 minimal/medium/high，Nano Banana 2 提供 min
 
 ## 验证
 
-离线测试覆盖跨模型编辑、草稿隔离与恢复、蒙版保护、来源与目标坐标、批次停止、逐张保存、图库导入与有序选图、删除后重启，以及保存重试不会恢复已删除资产。命令是 `bun test` 和 `cargo test --manifest-path src-tauri/Cargo.toml`。这些测试使用本地图片和 HTTP 模拟，不调用付费 API。
+离线测试覆盖模型请求契约、蒙版保护、来源与目标坐标、参考图身份、HTML 安全隔离、SQLite 存储与图库迁移，以及删除后保存重试不会恢复资产。运行 `bun run test` 和 `cargo test --manifest-path src-tauri/Cargo.toml`；这些测试使用本地图片和 HTTP 模拟，不调用付费 API。整页交互不再通过模拟界面和中文文案匹配来验证，需在桌面应用中实测。
 
 真实调用放在 `src-tauri/tests/live_nano_banana.rs` 与 `src-tauri/tests/live_creative_workflow.rs`，默认 `#[ignore]`。前者按供应商各计划两次付费请求；后者完整流程计划三次 Comfy 请求。设置 `LUTRIUI_TEST_CANDIDATE` 为已有 PNG 的绝对路径时，创意流程只做一次跨模型编辑。会话和图库使用当前契约，不扫描、不迁移旧目录。

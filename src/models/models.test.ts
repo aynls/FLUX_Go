@@ -50,7 +50,8 @@ test("切换路由会保留蒙版，并拒绝当前路由不支持的蒙版", ()
   expect(validateDraft(d)).toEqual([]);
   const incompatible = changeRoute(d, "openrouter");
   expect(incompatible.mask).toBe(d.mask);
-  expect(validateDraft(incompatible).join()).toContain("不支持蒙版");
+  expect(validateDraft(incompatible)).toHaveLength(1);
+  expect(validateDraft({ ...incompatible, mask: null })).toEqual([]);
 });
 
 test("Qwen Image 2.1 只发送当前路由支持的字段", () => {

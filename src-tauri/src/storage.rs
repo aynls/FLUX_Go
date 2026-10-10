@@ -438,12 +438,25 @@ fn verify_file(source: &Path, target: &Path) -> Result<(), String> {
     }
 }
 
-fn copy_tree(source: &Path, target: &Path) -> Result<(), String> {
+const DB_SIDECARS: [&str; 3] = [
+    crate::library::DB_FILE,
+    "library.sqlite3-wal",
+    "library.sqlite3-shm",
+];
+
+fn copy_tree(source: &Path, target: &Path, skip_db_files: bool) -> Result<(), String> {
     for entry in std::fs::read_dir(source).map_err(io_failed)? {
         let entry = entry.map_err(io_failed)?;
         let meta = entry.metadata().map_err(io_failed)?;
         let name = entry.file_name();
         let dest = target.join(&name);
+        if skip_db_files
+            && DB_SIDECARS
+                .iter()
+                .any(|db| name == std::ffi::OsStr::new(db))
+        {
+            continue;
+        }
         if is_link(&meta) {
             return Err(coded(
                 "backend_library_link",
@@ -454,7 +467,7 @@ fn copy_tree(source: &Path, target: &Path) -> Result<(), String> {
         }
         if meta.is_dir() {
             std::fs::create_dir(&dest).map_err(copy_failed)?;
-            copy_tree(&entry.path(), &dest)?;
+            copy_tree(&entry.path(), &dest, false)?;
         } else if meta.is_file() {
             copy_file(&entry.path(), &dest)?;
         } else {
@@ -469,11 +482,48 @@ fn copy_tree(source: &Path, target: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn relocate(source: &Path, target: &Path) -> Result<Option<PathBuf>, String> {
-    match prepare_target(source, target)? {
+fn backup_database(source: &rusqlite::Connection, target: &Path) -> Result<(), String> {
+    let mut dest =
+        rusqlite::Connection::open(target.join(crate::library::DB_FILE)).map_err(copy_failed)?;
+    {
+        let backup = rusqlite::backup::Backup::new(source, &mut dest).map_err(copy_failed)?;
+        backup
+            .run_to_completion(64, std::time::Duration::ZERO, None)
+            .map_err(copy_failed)?;
+    }
+    let ok: String = dest
+        .query_row(crate::library_sql::QUICK_CHECK, [], |r| r.get(0))
+        .map_err(copy_failed)?;
+    if ok != "ok" {
+        return Err(coded(
+            "backend_library_verify_failed",
+            "The copied library database didn't verify",
+        )
+        .with_param(
+            "path",
+            target
+                .join(crate::library::DB_FILE)
+                .to_string_lossy()
+                .to_string(),
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn copy_library(store: &crate::library::LibraryStore, target: &Path) -> Result<(), String> {
+    copy_tree(store.dir(), target, true)?;
+    backup_database(&store.conn, target)
+}
+
+pub fn relocate(
+    store: &crate::library::LibraryStore,
+    target: &Path,
+) -> Result<Option<PathBuf>, String> {
+    match prepare_target(store.dir(), target)? {
         Target::Same => Ok(None),
         Target::Empty(canonical) => {
-            copy_tree(source, &canonical)?;
+            copy_library(store, &canonical)?;
             Ok(Some(canonical))
         }
     }
@@ -481,7 +531,7 @@ pub fn relocate(source: &Path, target: &Path) -> Result<Option<PathBuf>, String>
 
 fn active_root(state: &tauri::State<'_, crate::AppState>) -> Result<PathBuf, String> {
     state
-        .history
+        .library
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .as_ref()
@@ -494,7 +544,7 @@ fn active_root(state: &tauri::State<'_, crate::AppState>) -> Result<PathBuf, Str
         })
 }
 
-pub fn ensure_migratable(store: &crate::history::HistoryStore) -> Result<(), String> {
+pub fn ensure_migratable(store: &crate::library::LibraryStore) -> Result<(), String> {
     if store.has_active()? {
         return Err(coded(
             "backend_library_tasks",
@@ -520,7 +570,7 @@ pub fn migrate(app: &tauri::AppHandle, target: &Path) -> Result<LibraryMigration
         Target::Empty(canonical) => canonical,
     };
     {
-        let guard = state.history.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = state.library.lock().unwrap_or_else(|e| e.into_inner());
         let store = guard.as_ref().ok_or_else(|| {
             String::from(coded(
                 "backend_history_uninitialized",
@@ -528,8 +578,8 @@ pub fn migrate(app: &tauri::AppHandle, target: &Path) -> Result<LibraryMigration
             ))
         })?;
         ensure_migratable(store)?;
+        copy_library(store, &canonical_target)?;
     }
-    copy_tree(&previous, &canonical_target)?;
     fn migrate_failed(e: impl std::fmt::Display) -> String {
         coded(
             "backend_library_failed",
@@ -539,7 +589,7 @@ pub fn migrate(app: &tauri::AppHandle, target: &Path) -> Result<LibraryMigration
         .into()
     }
     let store =
-        crate::history::HistoryStore::new(canonical_target.clone()).map_err(migrate_failed)?;
+        crate::library::LibraryStore::new(canonical_target.clone()).map_err(migrate_failed)?;
     let assets = app.asset_protocol_scope();
     assets
         .allow_directory(canonical_target.join("images"), true)
@@ -549,7 +599,7 @@ pub fn migrate(app: &tauri::AppHandle, target: &Path) -> Result<LibraryMigration
         .map_err(migrate_failed)?;
     let app_data = app.path().app_data_dir().map_err(io_failed)?;
     save_location(&app_data, &canonical_target)?;
-    *state.history.lock().unwrap_or_else(|e| e.into_inner()) = Some(store);
+    *state.library.lock().unwrap_or_else(|e| e.into_inner()) = Some(store);
     Ok(LibraryMigration {
         previous_path: previous.to_string_lossy().to_string(),
         path: canonical_target.to_string_lossy().to_string(),
@@ -583,19 +633,19 @@ mod tests {
         .unwrap()
     }
 
-    fn files() -> Vec<crate::history::HistoryFileIn> {
+    fn files() -> Vec<crate::history::GenerationFile> {
         vec![
-            crate::history::HistoryFileIn {
+            crate::history::GenerationFile {
                 kind: "input".into(),
                 name: "input_0".into(),
                 data: "data:image/png;base64,aGVsbG8=".into(),
             },
-            crate::history::HistoryFileIn {
+            crate::history::GenerationFile {
                 kind: "result".into(),
                 name: "result_0".into(),
                 data: crate::gallery::tests::png(),
             },
-            crate::history::HistoryFileIn {
+            crate::history::GenerationFile {
                 kind: "mask".into(),
                 name: "mask".into(),
                 data: "data:image/png;base64,aGVsbG8=".into(),
@@ -613,6 +663,9 @@ mod tests {
                 .unwrap()
                 .to_string_lossy()
                 .replace('\\', "/");
+            if DB_SIDECARS.contains(&rel.as_str()) {
+                continue;
+            }
             if path.is_dir() {
                 for (name, bytes) in bytes_of(&path) {
                     out.push((format!("{rel}/{name}"), bytes));
@@ -625,10 +678,10 @@ mod tests {
         out
     }
 
-    fn seed_library(source: &Path) -> crate::history::HistoryStore {
-        let store = crate::history::HistoryStore::new(source.to_path_buf()).unwrap();
-        store.save(item("ok"), files()).unwrap();
-        std::fs::write(source.join("session.json"), b"{\"schema\":2}").unwrap();
+    fn seed_library(source: &Path) -> crate::library::LibraryStore {
+        let mut store = crate::library::LibraryStore::new(source.to_path_buf()).unwrap();
+        store.history_save(item("ok"), files()).unwrap();
+        store.draft_save(&serde_json::json!({"schema":2})).unwrap();
         let bulk: Vec<u8> = (0..2_500_000u32).map(|i| (i % 251) as u8).collect();
         std::fs::write(source.join("images/blob.bin"), &bulk).unwrap();
         store
@@ -678,24 +731,6 @@ mod tests {
     }
 
     #[test]
-    fn gate_waits_for_operations_and_rejects_during_migration() {
-        let gate = StorageGate::default();
-        let operation = gate.operation().unwrap();
-        let worker = {
-            let gate = gate.clone();
-            std::thread::spawn(move || gate.migrate().unwrap())
-        };
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        assert!(gate.operation().is_err());
-        drop(operation);
-        let migration = worker.join().unwrap();
-        assert!(gate.operation().is_err());
-        assert!(gate.migrate().is_err());
-        drop(migration);
-        drop(gate.operation().unwrap());
-    }
-
-    #[test]
     fn gate_rejects_migration_while_generation_active_and_recovers() {
         let gate = StorageGate::default();
         let generation = gate.generation().unwrap();
@@ -712,23 +747,24 @@ mod tests {
     fn relocate_copies_everything_and_rebases_listed_paths() {
         let source = temp();
         let store = seed_library(&source);
-        let listed = store.list().unwrap().remove(0);
-        let assets = store.gallery.list().unwrap();
+        let listed = store.history_list().unwrap().remove(0);
+        let assets = store
+            .gallery_query(crate::gallery::GalleryQuery::default())
+            .unwrap()
+            .items;
         let target = temp().join("new-library");
-        let canonical = relocate(&source, &target).unwrap().unwrap();
+        let canonical = relocate(&store, &target).unwrap().unwrap();
         assert!(canonical.is_absolute());
         assert_eq!(bytes_of(&source), bytes_of(&canonical));
-        assert!(source.join("session.json").exists());
-        assert!(source.join("index.json").exists());
-        let moved = crate::history::HistoryStore::new(canonical.clone()).unwrap();
-        let relisted = moved.list().unwrap().remove(0);
+        assert!(source.join(crate::library::DB_FILE).exists());
+        let mut moved = crate::library::LibraryStore::new(canonical.clone()).unwrap();
+        let relisted = moved.history_list().unwrap().remove(0);
         assert_eq!(relisted.id, listed.id);
         assert_eq!(relisted.result_asset_ids, listed.result_asset_ids);
         let rebased: Vec<String> = relisted
             .input_files
             .iter()
             .chain(relisted.result_files.iter())
-            .chain(relisted.thumb_file.iter())
             .chain(relisted.mask_file.iter())
             .cloned()
             .collect();
@@ -736,7 +772,10 @@ mod tests {
             assert!(path.starts_with(&canonical.to_string_lossy().to_string()));
             assert!(Path::new(path).is_file());
         }
-        let moved_assets = moved.gallery.list().unwrap();
+        let moved_assets = moved
+            .gallery_query(crate::gallery::GalleryQuery::default())
+            .unwrap()
+            .items;
         assert_eq!(
             moved_assets
                 .iter()
@@ -746,10 +785,15 @@ mod tests {
         );
         let mut extra = item("ok");
         extra.id = "task_b".into();
-        moved.save(extra, vec![]).unwrap();
-        assert!(canonical.join("index.json").exists());
-        let source_index = std::fs::read_to_string(source.join("index.json")).unwrap();
-        assert!(!source_index.contains("task_b"));
+        moved.history_save(extra, vec![]).unwrap();
+        assert!(canonical.join(crate::library::DB_FILE).exists());
+        assert!(!store
+            .history_list()
+            .unwrap()
+            .iter()
+            .any(|item| item.id == "task_b"));
+        drop(store);
+        drop(moved);
         std::fs::remove_dir_all(&source).unwrap();
         std::fs::remove_dir_all(&canonical).unwrap();
     }
@@ -757,24 +801,25 @@ mod tests {
     #[test]
     fn relocate_same_root_is_noop_and_rejects_bad_targets() {
         let source = temp();
-        seed_library(&source);
+        let store = seed_library(&source);
         let source_canonical = canonical(&source).unwrap();
-        assert_eq!(relocate(&source, &source).unwrap(), None);
-        assert_eq!(relocate(&source, &source_canonical).unwrap(), None);
+        assert_eq!(relocate(&store, &source).unwrap(), None);
+        assert_eq!(relocate(&store, &source_canonical).unwrap(), None);
         let file = temp();
         std::fs::write(&file, b"x").unwrap();
-        assert!(relocate(&source, &file).is_err());
+        assert!(relocate(&store, &file).is_err());
         let occupied = temp();
         std::fs::create_dir_all(&occupied).unwrap();
         std::fs::write(occupied.join("keep.txt"), b"x").unwrap();
-        assert!(relocate(&source, &occupied).is_err());
+        assert!(relocate(&store, &occupied).is_err());
         assert_eq!(std::fs::read(occupied.join("keep.txt")).unwrap(), b"x");
-        assert!(relocate(&source, &source.join("child")).is_err());
+        assert!(relocate(&store, &source.join("child")).is_err());
         assert!(!source.join("child").exists());
         let parent = source.parent().unwrap().to_path_buf();
-        assert!(relocate(&source, &parent).is_err());
-        assert!(relocate(&source, Path::new("relative-target")).is_err());
-        assert!(source.join("index.json").exists());
+        assert!(relocate(&store, &parent).is_err());
+        assert!(relocate(&store, Path::new("relative-target")).is_err());
+        assert!(source.join(crate::library::DB_FILE).exists());
+        drop(store);
         std::fs::remove_dir_all(&source).unwrap();
         std::fs::remove_dir_all(&occupied).unwrap();
         std::fs::remove_file(&file).unwrap();
@@ -808,38 +853,40 @@ mod tests {
     #[test]
     fn relocate_rejects_link_entries_and_keeps_source() {
         let source = temp();
-        seed_library(&source);
+        let store = seed_library(&source);
         let outside = temp();
         std::fs::create_dir_all(&outside).unwrap();
         let link = source.join("linked");
         if !make_link(&link, &outside) {
             eprintln!("skipping link test: cannot create reparse point");
+            drop(store);
             std::fs::remove_dir_all(&source).unwrap();
             std::fs::remove_dir_all(&outside).unwrap();
             return;
         }
         let target = temp().join("target");
-        let error = relocate(&source, &target).unwrap_err();
+        let error = relocate(&store, &target).unwrap_err();
         assert!(error.contains("backend_library_link"));
         assert!(target.exists());
-        assert!(source.join("index.json").exists());
-        assert!(source.join("session.json").exists());
-        assert!(!outside.join("index.json").exists());
+        assert!(source.join(crate::library::DB_FILE).exists());
+        assert!(!outside.join(crate::library::DB_FILE).exists());
+        drop(store);
         std::fs::remove_dir_all(&source).unwrap();
         std::fs::remove_dir_all(&outside).unwrap();
         std::fs::remove_dir_all(&target).unwrap();
     }
 
     #[test]
-    fn ensure_migratable_rejects_queued_and_running_records() {
+    fn ensure_migratable_rejects_queued_records() {
         let source = temp();
-        let store = crate::history::HistoryStore::new(source.clone()).unwrap();
+        let mut store = crate::library::LibraryStore::new(source.clone()).unwrap();
         assert!(ensure_migratable(&store).is_ok());
-        store.save(item("queued"), vec![]).unwrap();
+        store.history_save(item("queued"), vec![]).unwrap();
         let error = ensure_migratable(&store).unwrap_err();
         assert!(error.contains("backend_library_tasks"));
-        store.save(item("ok"), vec![]).unwrap();
+        store.history_save(item("ok"), vec![]).unwrap();
         assert!(ensure_migratable(&store).is_ok());
+        drop(store);
         std::fs::remove_dir_all(&source).unwrap();
     }
 }

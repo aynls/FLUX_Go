@@ -4,7 +4,12 @@ use base64::Engine;
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
 
-use crate::history::{HistoryFileIn, HistoryItem, HistoryStore};
+use crate::gallery::{
+    GalleryBatchResult, GalleryFacets, GalleryItem, GalleryPage, GalleryPatch, GalleryQuery,
+    ImportedImage, LibraryStats, MaintainOp, MaintenanceReport,
+};
+use crate::history::{GenerationFile, HistoryItem};
+use crate::library::{invalid, validate_id, LibraryStore};
 use crate::provider::{io_failed, GenerateOutput, GenerateRequest, ProviderError};
 use crate::AppState;
 
@@ -31,6 +36,37 @@ fn image_area_64mp() -> String {
         "The image area exceeds 64MP. Reduce it before importing",
     )
     .into()
+}
+
+fn uninitialized() -> String {
+    coded(
+        "backend_history_uninitialized",
+        "History storage isn't initialized",
+    )
+    .into()
+}
+
+async fn with_library<T: Send + 'static>(
+    app: tauri::AppHandle,
+    f: impl FnOnce(&mut LibraryStore) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let _operation = state.gate.operation()?;
+        let mut guard = state.library.lock().unwrap_or_else(|e| e.into_inner());
+        let store = guard.as_mut().ok_or_else(uninitialized)?;
+        f(store)
+    })
+    .await
+    .map_err(|e| {
+        String::from(
+            coded(
+                "backend_library_failed",
+                format!("Library task failed: {e}"),
+            )
+            .with_param("detail", e.to_string()),
+        )
+    })?
 }
 
 #[derive(Debug, Serialize)]
@@ -197,58 +233,14 @@ pub async fn credential_check(provider: String) -> Result<String, String> {
     Ok("backend_check_verified".into())
 }
 
-fn active_root(state: &State<'_, AppState>) -> Result<std::path::PathBuf, String> {
-    state
-        .history
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .as_ref()
-        .map(|s| s.dir().to_path_buf())
-        .ok_or_else(|| {
-            String::from(coded(
-                "backend_history_uninitialized",
-                "History storage isn't initialized",
-            ))
-        })
+#[tauri::command]
+pub async fn draft_load(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
+    with_library(app, |store| store.draft_load()).await
 }
 
 #[tauri::command]
-pub async fn draft_load(state: State<'_, AppState>) -> Result<Option<serde_json::Value>, String> {
-    let _operation = state.gate.operation()?;
-    let p = active_root(&state)?.join("session.json");
-    if !p.exists() {
-        return Ok(None);
-    }
-    let s = std::fs::read_to_string(p).map_err(io_failed)?;
-    serde_json::from_str(&s).map(Some).map_err(|_| {
-        coded(
-            "backend_draft_unreadable",
-            "The draft file couldn't be read",
-        )
-        .into()
-    })
-}
-
-#[tauri::command]
-pub async fn draft_save(
-    state: State<'_, AppState>,
-    draft: serde_json::Value,
-) -> Result<(), String> {
-    let _operation = state.gate.operation()?;
-    let _guard = state.draft_lock.lock().map_err(|_| {
-        coded(
-            "backend_draft_unavailable",
-            "Draft storage is temporarily unavailable",
-        )
-    })?;
-    let dir = active_root(&state)?;
-    std::fs::create_dir_all(&dir).map_err(io_failed)?;
-    let p = dir.join("session.json");
-    let tmp = dir.join("session.json.tmp");
-    let json = serde_json::to_vec(&draft).map_err(io_failed)?;
-    std::fs::write(&tmp, json).map_err(io_failed)?;
-    std::fs::rename(tmp, p).map_err(io_failed)?;
-    Ok(())
+pub async fn draft_save(app: tauri::AppHandle, draft: serde_json::Value) -> Result<(), String> {
+    with_library(app, move |store| store.draft_save(&draft)).await
 }
 
 fn imported_bytes(bytes: Vec<u8>, name: String) -> Result<ImportedImage, String> {
@@ -277,6 +269,7 @@ fn imported_bytes(bytes: Vec<u8>, name: String) -> Result<ImportedImage, String>
         width,
         height,
         name,
+        asset_id: None,
     })
 }
 
@@ -385,9 +378,8 @@ pub fn copy_image(data_url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn history_storage(state: State<'_, AppState>) -> Result<String, String> {
-    let _operation = state.gate.operation()?;
-    Ok(active_root(&state)?.to_string_lossy().to_string())
+pub async fn history_storage(app: tauri::AppHandle) -> Result<String, String> {
+    with_library(app, |store| Ok(store.dir().to_string_lossy().into_owned())).await
 }
 
 #[tauri::command]
@@ -411,6 +403,37 @@ pub async fn library_migrate(
 }
 
 #[tauri::command]
+pub async fn library_maintain(
+    app: tauri::AppHandle,
+    operation: String,
+) -> Result<MaintenanceReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let _migration = state.gate.migrate()?;
+        let mut guard = state.library.lock().unwrap_or_else(|e| e.into_inner());
+        let store = guard.as_mut().ok_or_else(uninitialized)?;
+        crate::storage::ensure_migratable(store)?;
+        let op = match operation.as_str() {
+            "check" => MaintainOp::Check,
+            "rebuild_thumbnails" => MaintainOp::Rebuild,
+            "cleanup_missing" => MaintainOp::Cleanup,
+            _ => return Err(invalid("unknown maintenance operation")),
+        };
+        store.maintain(op)
+    })
+    .await
+    .map_err(|e| {
+        String::from(
+            coded(
+                "backend_library_failed",
+                format!("Library maintenance failed: {e}"),
+            )
+            .with_param("detail", e.to_string()),
+        )
+    })?
+}
+
+#[tauri::command]
 pub async fn generate(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -422,10 +445,10 @@ pub async fn generate(
     let reporter: crate::provider::progress::Reporter = std::sync::Arc::new(
         move |phase, task_id, completed, status| {
             if let Some(id) = history_id.as_deref() {
-                if let Ok(store) = app.state::<AppState>().history.lock() {
-                    if let Some(store) = store.as_ref() {
-                        let _ = store.progress(id, phase, task_id);
-                    }
+                let state = app.state::<AppState>();
+                let guard = state.library.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(store) = guard.as_ref() {
+                    let _ = store.history_progress(id, phase, task_id);
                 }
             }
             let _ = app.emit("generation-progress", serde_json::json!({"requestId": request_id, "phase": phase, "taskId": task_id, "completed": completed, "status": status}));
@@ -437,15 +460,6 @@ pub async fn generate(
     })
     .await
     .map_err(|e| e.to_json())
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ImportedImage {
-    pub data_url: String,
-    pub width: u32,
-    pub height: u32,
-    pub name: String,
 }
 
 const MAX_IMPORT_BYTES: u64 = 64 * 1024 * 1024;
@@ -506,6 +520,7 @@ pub async fn import_image(path: String) -> Result<ImportedImage, String> {
         width,
         height,
         name,
+        asset_id: None,
     })
 }
 
@@ -516,73 +531,104 @@ pub async fn save_data_url(data_url: String, path: String) -> Result<String, Str
     Ok(path)
 }
 
-fn with_store<T>(
-    state: &State<'_, AppState>,
-    f: impl FnOnce(&HistoryStore) -> Result<T, String>,
-) -> Result<T, String> {
-    let _operation = state.gate.operation()?;
-    let guard = state.history.lock().unwrap();
-    let s = guard.as_ref().ok_or_else(|| {
-        String::from(coded(
-            "backend_history_uninitialized",
-            "History storage isn't initialized",
-        ))
-    })?;
-    f(s)
-}
-
 #[tauri::command]
-pub async fn history_list(state: State<'_, AppState>) -> Result<Vec<HistoryItem>, String> {
-    with_store(&state, |s| s.list())
+pub async fn history_list(app: tauri::AppHandle) -> Result<Vec<HistoryItem>, String> {
+    with_library(app, |store| store.history_list()).await
 }
 
 #[tauri::command]
 pub async fn history_save(
-    state: State<'_, AppState>,
+    app: tauri::AppHandle,
     item: HistoryItem,
-    files: Vec<HistoryFileIn>,
+    files: Option<Vec<GenerationFile>>,
 ) -> Result<HistoryItem, String> {
-    with_store(&state, |s| s.save(item, files))
+    let files = files.unwrap_or_default();
+    with_library(app, move |store| store.history_save(item, files)).await
 }
 
 #[tauri::command]
-pub async fn history_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    with_store(&state, |s| s.delete(&id))
+pub async fn history_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    with_library(app, move |store| store.history_delete(&id)).await
 }
 
 #[tauri::command]
-pub async fn gallery_list(
-    state: State<'_, AppState>,
-) -> Result<Vec<crate::gallery::GalleryItem>, String> {
-    with_store(&state, |s| s.gallery.list())
+pub async fn gallery_query(
+    app: tauri::AppHandle,
+    query: GalleryQuery,
+) -> Result<GalleryPage, String> {
+    with_library(app, move |store| store.gallery_query(query)).await
+}
+
+#[tauri::command]
+pub async fn gallery_facets(app: tauri::AppHandle) -> Result<GalleryFacets, String> {
+    with_library(app, |store| store.gallery_facets()).await
+}
+
+#[tauri::command]
+pub async fn gallery_get(
+    app: tauri::AppHandle,
+    ids: Vec<String>,
+) -> Result<Vec<GalleryItem>, String> {
+    with_library(app, move |store| store.gallery_get(&ids)).await
+}
+
+#[tauri::command]
+pub async fn gallery_patch(
+    app: tauri::AppHandle,
+    ids: Vec<String>,
+    patch: GalleryPatch,
+) -> Result<Vec<GalleryItem>, String> {
+    with_library(app, move |store| store.gallery_patch(&ids, patch)).await
+}
+
+#[tauri::command]
+pub async fn gallery_delete(
+    app: tauri::AppHandle,
+    ids: Vec<String>,
+) -> Result<GalleryBatchResult, String> {
+    with_library(app, move |store| store.gallery_delete(&ids)).await
+}
+
+#[tauri::command]
+pub async fn gallery_export(
+    app: tauri::AppHandle,
+    ids: Vec<String>,
+    directory: String,
+) -> Result<GalleryBatchResult, String> {
+    with_library(app, move |store| store.gallery_export(&ids, &directory)).await
 }
 
 #[tauri::command]
 pub async fn gallery_import(
-    state: State<'_, AppState>,
+    app: tauri::AppHandle,
     data_url: String,
     name: String,
     source: String,
-) -> Result<crate::gallery::GalleryItem, String> {
-    with_store(&state, |s| s.gallery.import(&data_url, &name, &source))
-}
-
-#[tauri::command]
-pub async fn gallery_read(state: State<'_, AppState>, id: String) -> Result<ImportedImage, String> {
-    with_store(&state, |s| {
-        let asset = s.gallery.get(&id)?;
-        let bytes = std::fs::read(&asset.file_path).map_err(|e| {
-            coded(
-                "backend_gallery_read_failed",
-                format!("The gallery image can't be read: {e}"),
-            )
-            .with_param("detail", e.to_string())
-        })?;
-        imported_bytes(bytes, asset.name)
+) -> Result<GalleryItem, String> {
+    with_library(app, move |store| {
+        store.gallery_import(&data_url, &name, &source)
     })
+    .await
 }
 
 #[tauri::command]
-pub async fn gallery_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    with_store(&state, |s| s.gallery.delete(&id))
+pub async fn gallery_read(app: tauri::AppHandle, id: String) -> Result<ImportedImage, String> {
+    with_library(app, move |store| store.gallery_read(&id)).await
+}
+
+#[tauri::command]
+pub async fn library_stats(app: tauri::AppHandle) -> Result<LibraryStats, String> {
+    with_library(app, |store| store.library_stats()).await
+}
+
+/// lutri-thumb 协议的图片读取：严格单 UUID 路径，经操作门与库锁返回缩略图 BLOB。
+pub fn thumbnail_bytes(app: &tauri::AppHandle, id: &str) -> Result<Vec<u8>, String> {
+    let state = app.state::<AppState>();
+    let _operation = state.gate.operation()?;
+    validate_id(id)?;
+    let guard = state.library.lock().unwrap_or_else(|e| e.into_inner());
+    let store = guard.as_ref().ok_or_else(uninitialized)?;
+    store
+        .thumbnail(id)?
+        .ok_or_else(|| coded("backend_gallery_gone", "Image was removed from the gallery").into())
 }

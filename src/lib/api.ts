@@ -16,6 +16,14 @@ import type {
   ProviderId,
   CredentialSettings,
   GalleryItem,
+  GalleryQuery,
+  GalleryPage,
+  GalleryFacets,
+  GalleryPatch,
+  GalleryBatchResult,
+  LibraryStats,
+  LibraryMaintainOp,
+  MaintenanceReport,
 } from "./types";
 
 export class AppError extends Error {
@@ -185,13 +193,37 @@ export interface LibraryMigration {
 export const libraryMigrate = (path: string) =>
   call<LibraryMigration>("library_migrate", { path });
 
-export const galleryList = async (): Promise<GalleryItem[]> => {
-  if (!isTauri()) return [];
-  const items = await call<GalleryItem[]>("gallery_list");
-  return items.map((item) =>
-    item.name ? item : { ...item, name: m.default_name_generated() },
-  );
+function withDefaultItemName(item: GalleryItem): GalleryItem {
+  return item.name ? item : { ...item, name: m.default_name_generated() };
+}
+
+function localizedBatch(result: GalleryBatchResult): GalleryBatchResult {
+  return {
+    ...result,
+    failed: result.failed.map((failure) => ({
+      ...failure,
+      message: String(parseBackendError(failure.message)),
+    })),
+  };
+}
+
+export const galleryQuery = async (query: GalleryQuery): Promise<GalleryPage> => {
+  const page = await call<GalleryPage>("gallery_query", { query });
+  return { ...page, items: page.items.map(withDefaultItemName) };
 };
+export const galleryFacets = () => call<GalleryFacets>("gallery_facets");
+export const galleryGet = async (ids: string[]): Promise<GalleryItem[]> => {
+  const items = await call<GalleryItem[]>("gallery_get", { ids });
+  return items.map(withDefaultItemName);
+};
+export const galleryPatch = (ids: string[], patch: GalleryPatch) =>
+  call<GalleryItem[]>("gallery_patch", { ids, patch });
+export const galleryDelete = async (ids: string[]) =>
+  localizedBatch(await call<GalleryBatchResult>("gallery_delete", { ids }));
+export const galleryExport = async (ids: string[], directory: string) =>
+  localizedBatch(
+    await call<GalleryBatchResult>("gallery_export", { ids, directory }),
+  );
 export const galleryImport = (
   image: ImportedImage,
   source: "file" | "clipboard" | "url",
@@ -200,9 +232,7 @@ export const galleryImport = (
     dataUrl: image.dataUrl,
     name: image.name,
     source,
-  });
-export const galleryDelete = (id: string) =>
-  call<void>("gallery_delete", { id });
+  }).then(withDefaultItemName);
 export const galleryRead = async (id: string): Promise<ImportedImage> => ({
   ...withDefaultName(
     await call<ImportedImage>("gallery_read", { id }),
@@ -210,3 +240,21 @@ export const galleryRead = async (id: string): Promise<ImportedImage> => ({
   ),
   assetId: id,
 });
+/** lutri-thumb 协议缩略图；revision 变化时强制重新读取。 */
+export function galleryThumbnail(id: string, revision?: number): string {
+  const url = convertFileSrc(id, "lutri-thumb");
+  return revision != null ? `${url}?r=${revision}` : url;
+}
+export const libraryStats = () => call<LibraryStats>("library_stats");
+export const libraryMaintain = async (operation: LibraryMaintainOp) => {
+  const report = await call<MaintenanceReport>("library_maintain", {
+    operation,
+  });
+  return {
+    ...report,
+    failed: report.failed.map((failure) => ({
+      ...failure,
+      message: String(parseBackendError(failure.message)),
+    })),
+  };
+};

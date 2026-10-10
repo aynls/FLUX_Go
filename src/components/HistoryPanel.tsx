@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { ArrowClockwise, ArrowLeft, Trash } from "@phosphor-icons/react";
-import { assetUrl, historyDelete, importImage, saveDataUrl } from "../lib/api";
+import { assetUrl, galleryThumbnail, historyDelete, importImage, saveDataUrl } from "../lib/api";
 import type { HistoryItem } from "../lib/types";
 import { exportDefaultPath } from "../lib/export";
 import { localizeStored, m, formatDateTime } from "../i18n";
@@ -223,9 +223,13 @@ export default function HistoryPanel({
                       batchMode ? toggle(it.id) : setDetailId(it.id)
                     }
                   >
-                    {it.thumbFile || it.thumb ? (
+                    {it.thumbnailAssetId || it.thumb ? (
                       <img
-                        src={it.thumbFile ? assetUrl(it.thumbFile) : it.thumb!}
+                        src={
+                          it.thumbnailAssetId
+                            ? galleryThumbnail(it.thumbnailAssetId)
+                            : it.thumb!
+                        }
                         alt=""
                         className="h-14 w-14 shrink-0 rounded object-cover"
                       />

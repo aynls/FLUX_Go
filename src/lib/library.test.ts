@@ -35,7 +35,7 @@ test("rebaseHistoryPaths rewrites paths under the old root only", () => {
     ],
     resultFiles: ["D:/Library/workbench/images/task/result_0.png"],
     maskFile: "D:\\Library\\workbench\\images\\task\\mask.png",
-    thumbFile: null,
+    thumbnailAssetId: null,
   };
   const moved = rebaseHistoryPaths(item, "D:\\Library\\workbench", "E:\\Store\\lib");
   expect(moved.inputFiles).toEqual([
@@ -49,7 +49,7 @@ test("rebaseHistoryPaths rewrites paths under the old root only", () => {
     "E:\\Store\\lib\\images\\task\\result_0.png",
   ]);
   expect(moved.maskFile).toBe("E:\\Store\\lib\\images\\task\\mask.png");
-  expect(moved.thumbFile).toBeNull();
+  expect(moved.thumbnailAssetId).toBeNull();
   expect(moved.id).toBe("task");
   expect(item.inputFiles[0]).toBe("D:\\Library\\workbench\\images\\task\\input_0.png");
 });

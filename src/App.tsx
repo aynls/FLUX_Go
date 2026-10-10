@@ -45,6 +45,7 @@ import type {
   ProviderStatus,
   WorkingImage,
   GalleryItem,
+  LibraryMaintainOp,
   Draft,
 } from "./lib/types";
 
@@ -100,9 +101,8 @@ export default function App() {
     image: WorkingImage;
     decide: (keep: boolean | null) => void;
   } | null>(null);
-  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
-  const [galleryError, setGalleryError] = useState("");
-  const [galleryReady, setGalleryReady] = useState(false);
+  const [galleryRevision, setGalleryRevision] = useState(0);
+  const [galleryIds, setGalleryIds] = useState<string[] | undefined>(undefined);
   const galleryContext = useRef(false);
   galleryContext.current = galleryOpen || galleryPicker;
   const [settings, setSettings] = useState(false);
@@ -226,13 +226,7 @@ export default function App() {
     } catch (e) {
       setHistoryError(m.notice_history_read_failed({ detail: String(e) }));
     }
-    try {
-      setGalleryItems(await api.galleryList());
-      setGalleryReady(true);
-      setGalleryError("");
-    } catch (e) {
-      setGalleryError(m.notice_gallery_read_failed({ detail: String(e) }));
-    }
+    setGalleryRevision((n) => n + 1);
   }, []);
   const generation = useGenerationTasks(
     submitting,
@@ -298,12 +292,55 @@ export default function App() {
       setStorageMigrating(false);
     }
   };
+  const onMaintain = async (operation: LibraryMaintainOp) => {
+    if (migrating.current) throw new Error(m.backend_storage_migrating());
+    if (storageBusyRef.current || submitting.current || importJobs.current > 0)
+      throw new Error(m.backend_library_busy());
+    migrating.current = true;
+    setStorageMigrating(true);
+    try {
+      await ws.persist();
+      return await api.libraryMaintain(operation);
+    } finally {
+      migrating.current = false;
+      setStorageMigrating(false);
+      await refreshHistory();
+    }
+  };
   useEffect(() => {
     void refreshProviders().catch((e) =>
       showNotice(m.notice_provider_status_failed({ detail: String(e) })),
     );
     void refreshHistory();
   }, [refreshProviders, refreshHistory]);
+  const refAssetKey = draft.refs.map((r) => r.assetId ?? "").join(",");
+  useEffect(() => {
+    const ids = draft.refs.flatMap((r) => (r.assetId ? [r.assetId] : []));
+    if (!ids.length) {
+      setGalleryIds(undefined);
+      return;
+    }
+    let stale = false;
+    api
+      .galleryGet(ids)
+      .then((items) => {
+        if (stale) return;
+        setGalleryIds(
+          items
+            .filter(
+              (item) =>
+                !item.pendingDelete && item.availability === "available",
+            )
+            .map((item) => item.id),
+        );
+      })
+      .catch(() => {
+        if (!stale) setGalleryIds(undefined);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [refAssetKey, galleryRevision]);
   useEffect(() => {
     setSelected(null);
     setView(
@@ -839,13 +876,7 @@ export default function App() {
     >
       <References
         draft={draft}
-        galleryIds={
-          galleryReady && !galleryError
-            ? galleryItems
-                .filter((item) => !item.pendingDelete)
-                .map((item) => item.id)
-            : undefined
-        }
+        galleryIds={galleryIds}
         ready={ready}
         importing={importing || storageMigrating}
         onChange={(d, discrete = true) => commit(d, discrete)}
@@ -859,8 +890,7 @@ export default function App() {
     </ResizableReferences>
   );
   const galleryProps = {
-    items: galleryItems,
-    error: galleryError,
+    revision: galleryRevision,
     importing: importing || storageMigrating,
     saveDirectory: prefs.saveDirectory,
     onRefresh: refreshHistory,
@@ -1219,6 +1249,11 @@ export default function App() {
           </button>
         </div>
       )}
+      {storageMigrating && !settings && (
+        <div className="notice" role="status">
+          <span>{m.backend_storage_migrating()}</span>
+        </div>
+      )}
       {tasksOpen && (
         <Modal title={m.tasks_title()} onClose={() => setTasksOpen(false)}>
           <p className="help">{m.tasks_help()}</p>
@@ -1268,6 +1303,7 @@ export default function App() {
           storageBusy={storageBusy}
           storageMigrating={storageMigrating}
           onMigrate={onMigrate}
+          onMaintain={onMaintain}
           onClose={() => setSettings(false)}
         />
       )}

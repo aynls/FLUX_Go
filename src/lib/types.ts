@@ -152,7 +152,7 @@ export interface HistoryBatchRequest {
 export interface HistoryItem {
   resultDetails?: Record<string, GenerationDetails>;
   resultAssetIds?: string[];
-  thumbFile?: string | null;
+  thumbnailAssetId?: string | null;
   batch?: { requests: HistoryBatchRequest[]; stopped?: boolean } | null;
   error?: string | null;
   taskId?: string | null;
@@ -197,7 +197,6 @@ export interface WorkingImage {
 }
 
 export interface GalleryItem {
-  details?: GenerationDetails | null;
   id: string;
   name: string;
   createdAt: number;
@@ -208,9 +207,97 @@ export interface GalleryItem {
   historyId: string | null;
   model: string | null;
   provider: string | null;
+  prompt: string;
+  details?: GenerationDetails | null;
   filePath: string;
-  thumbPath: string;
+  byteSize: number;
+  favorite: boolean;
+  tags: string[];
+  availability: "available" | "missing";
   pendingDelete: boolean;
+  thumbnailRevision: number;
+  hasThumbnail: boolean;
+}
+
+export type GallerySort = "newest" | "oldest" | "name" | "size";
+export type GallerySourceFilter =
+  | "all"
+  | "imported"
+  | "generated"
+  | "file"
+  | "clipboard"
+  | "url";
+export type GalleryAvailabilityFilter =
+  | "all"
+  | "available"
+  | "missing"
+  | "pending";
+
+export interface GalleryQuery {
+  search: string;
+  source: GallerySourceFilter;
+  model: string | null;
+  tag: string | null;
+  createdFrom: number | null;
+  createdUntil: number | null;
+  favorite: boolean | null;
+  availability: GalleryAvailabilityFilter;
+  sort: GallerySort;
+  offset: number;
+  limit: number;
+}
+
+export interface GalleryPage {
+  items: GalleryItem[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface GalleryFacets {
+  models: string[];
+  tags: string[];
+}
+
+export interface GalleryPatch {
+  name?: string;
+  favorite?: boolean;
+  addTags?: string[];
+  removeTags?: string[];
+}
+
+export interface BatchFailure {
+  id: string;
+  message: string;
+}
+
+export interface GalleryBatchResult {
+  succeeded: string[];
+  failed: BatchFailure[];
+  paths: Record<string, string>;
+}
+
+export interface LibraryStats {
+  totalCount: number;
+  missingCount: number;
+  favoriteCount: number;
+  pendingDeleteCount: number;
+  originalBytes: number;
+  thumbnailBytes: number;
+  historyCount: number;
+  lastCheckedAt: number | null;
+  databaseBytes: number;
+}
+
+export type LibraryMaintainOp = "check" | "rebuild_thumbnails" | "cleanup_missing";
+
+export interface MaintenanceReport {
+  checked: number;
+  missing: number;
+  restored: number;
+  rebuilt: number;
+  removed: number;
+  failed: BatchFailure[];
 }
 
 export interface GenerateRequestPayload {
