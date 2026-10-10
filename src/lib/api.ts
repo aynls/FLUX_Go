@@ -245,6 +245,56 @@ export function galleryThumbnail(id: string, revision?: number): string {
   const url = convertFileSrc(id, "lutri-thumb");
   return revision != null ? `${url}?r=${revision}` : url;
 }
+// MCP server control + the WebView bridge it uses to reach the live workspace.
+export interface McpStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  url: string | null;
+  hasToken: boolean;
+  uiReady: boolean;
+  error: string | null;
+}
+export interface McpConnection {
+  url: string;
+  token: string;
+}
+export interface McpSubmissionRecord {
+  idempotencyKey: string;
+  workspaceVersion: string;
+  taskId: string;
+}
+export interface McpConfigureResult extends McpStatus {
+  /** Set only when this enable minted a token the settings page should show. */
+  issuedToken?: string;
+}
+export const mcpStatus = () => call<McpStatus>("mcp_status");
+export const mcpConfigure = (enabled: boolean, port: number) =>
+  call<McpConfigureResult>("mcp_configure", { enabled, port });
+export const mcpConnection = () => call<McpConnection>("mcp_connection");
+export const mcpRotateToken = () => call<McpStatus>("mcp_rotate_token");
+export const mcpSubmissionGet = (idempotencyKey: string) =>
+  call<McpSubmissionRecord | null>("mcp_submission_get", { idempotencyKey });
+export const mcpBridgeRegister = (instanceId: string) =>
+  call<void>("mcp_bridge_register", { instanceId });
+export const mcpBridgeUnregister = (instanceId: string) =>
+  call<void>("mcp_bridge_unregister", { instanceId });
+export const mcpBridgeClaim = (requestId: string, instanceId: string) =>
+  call<boolean>("mcp_bridge_claim", { requestId, instanceId });
+export const mcpBridgeReply = (
+  requestId: string,
+  instanceId: string,
+  result?: unknown,
+  error?: { code: string; message: string; details?: unknown },
+) => call<void>("mcp_bridge_reply", { requestId, instanceId, result, error });
+export interface McpRequestEvent {
+  requestId: string;
+  instanceId: string;
+  operation: string;
+  args: unknown;
+  deadlineMs: number;
+}
+
 export const libraryStats = () => call<LibraryStats>("library_stats");
 export const libraryMaintain = async (operation: LibraryMaintainOp) => {
   const report = await call<MaintenanceReport>("library_maintain", {

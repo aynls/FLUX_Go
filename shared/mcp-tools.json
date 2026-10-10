@@ -1,0 +1,265 @@
+{
+  "instructions": "LutriUI is a shared desktop image workspace. Read workspace_get and capabilities_get before editing. Use the returned version as expectedVersion for atomic patches, previews and submissions. A patch updates the visible draft and is undoable; it never generates an image. task_submit uses the configured provider and can incur charges. Reuse the SAME idempotencyKey and expectedVersion when retrying an uncertain submission. Inspect compiledRequest in workspace_preview: inactive settings may remain in the draft but are omitted from the provider request. Images use gallery asset IDs or current workspace reference UIDs, never filesystem paths. Follow each route's supported fields and limits. Provider credentials and application settings are not accessible through these tools.",
+  "tools": [
+    {
+      "name": "capabilities_get",
+      "description": "List supported models, providers and configured-provider flags. Return the selected route's complete parameter JSON Schema, defaults, reference/mask/layout limits and conditional field behavior. Defaults to the active workspace route. Model IDs are LutriUI catalog IDs; nativeModel identifies the provider's model.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "modelId": { "type": "string", "minLength": 1 },
+          "provider": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "workspace_get",
+      "description": "Read the active visible create/edit draft, its version, ordered image references, current mask and regions, route schema and validation issues. Image bytes, filesystem paths, credentials and inactive route history are excluded.",
+      "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
+      "annotations": { "readOnlyHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "workspace_patch",
+      "description": "Atomically edit the visible draft as one undo step. Read workspace_get first. Unknown or unsupported fields and invalid field values are rejected without changing the draft. Incomplete drafts are allowed and returned with validation issues. Read capabilities_get for the target model/provider before changing params. refs and boxes replace their respective lists. Existing reference UIDs retain identity and exact prompt image tags are remapped when reordered; an explicitly supplied prompt addresses the FINAL reference order. A new reference may specify an assetId and an optional fresh UUID uid. Changing the primary image while a mask exists requires explicitly clearing or replacing the mask. Intent changes target and activate the existing create/edit draft. All supplied values are applied together; no generation occurs. If references still used by an unchanged prompt are removed, the patch succeeds and returns warnings with code PROMPT_REFERENCES_REMOVED and the removed references' original tags. Review the returned prompt and refs and update the prompt before submitting. Region identity is determined only by uid; reuse it to edit an existing region, or omit it for a new region.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": { "type": "string", "minLength": 1 },
+          "patch": {
+            "type": "object",
+            "minProperties": 1,
+            "properties": {
+              "intent": { "type": "string", "enum": ["create", "edit"] },
+              "modelId": { "type": "string", "minLength": 1 },
+              "provider": { "type": "string", "minLength": 1 },
+              "prompt": { "type": "string", "maxLength": 100000 },
+              "params": {
+                "type": "object",
+                "description": "Only keys advertised by the TARGET route are accepted. All route-supported controls are available, including seed, resolution/aspect or explicit size, quality, output encoding, safety, thinking, search, prompt extension and provider-specific options. Read the route schema for actual fields. Native count is fixed at 1; use repeatCount for total images. Null is accepted only for nullable fields.",
+                "additionalProperties": { "type": ["string", "number", "boolean", "null"] }
+              },
+              "resetParams": {
+                "type": "array",
+                "description": "Reset named supported parameters to their route defaults. A key cannot also appear in params.",
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "refs": {
+                "type": "array",
+                "description": "Replace ordered references using existing workspace uid or gallery assetId. For edit intent the primary reference is sent first.",
+                "maxItems": 32,
+                "items": { "$ref": "#/$defs/reference" }
+              },
+              "primaryRefUid": {
+                "type": ["string", "null"],
+                "description": "Existing or explicitly assigned reference uid to use as the edit primary. Null is valid for create intent."
+              },
+              "mask": {
+                "description": "Replace the mask with a matching PNG gallery image or create a PNG mask from editable rectangles in primary-image pixels. Null removes it. Rectangles replace the previous painted/rectangular mask.",
+                "oneOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "properties": { "assetId": { "type": "string", "format": "uuid" } },
+                    "required": ["assetId"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "rects": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/rect" } }
+                    },
+                    "required": ["rects"],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "boxes": {
+                "type": "array",
+                "description": "Replace FLUX semantic regions. Target rect uses canvas pixels; srcRect uses the source reference's original pixels. sourceId is a reference uid, not its index.",
+                "maxItems": 100,
+                "items": { "$ref": "#/$defs/box" }
+              },
+              "canvas": {
+                "type": "object",
+                "description": "Coordinate-space size, not an arbitrary provider output-size override. Control output dimensions through route params. Total canvas area cannot exceed 64 million pixels.",
+                "properties": {
+                  "w": { "type": "integer", "minimum": 1, "maximum": 16384 },
+                  "h": { "type": "integer", "minimum": 1, "maximum": 16384 }
+                },
+                "required": ["w", "h"],
+                "additionalProperties": false
+              },
+              "layoutEnabled": { "type": "boolean", "description": "Enable FLUX structured layout. Some routes require layout for text-to-image." },
+              "compressEnabled": { "type": "boolean", "description": "Resize reference images and mask before submission." },
+              "maxInputEdge": { "type": "integer", "minimum": 256, "maximum": 8192 },
+              "repeatCount": { "type": "integer", "minimum": 1, "maximum": 20, "description": "Number of independent one-image provider requests submitted as one batch." }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["expectedVersion", "patch"],
+        "additionalProperties": false,
+        "$defs": {
+          "rect": {
+            "type": "object",
+            "properties": {
+              "x": { "type": "number", "minimum": 0 },
+              "y": { "type": "number", "minimum": 0 },
+              "w": { "type": "number", "exclusiveMinimum": 0 },
+              "h": { "type": "number", "exclusiveMinimum": 0 }
+            },
+            "required": ["x", "y", "w", "h"],
+            "additionalProperties": false
+          },
+          "reference": {
+            "type": "object",
+            "properties": {
+              "uid": { "type": "string", "minLength": 1 },
+              "assetId": { "type": "string", "format": "uuid" },
+              "name": { "type": "string", "maxLength": 240 },
+              "purpose": { "type": "string", "enum": ["reference", "style", "subject", "composition", "custom"] },
+              "note": { "type": "string", "maxLength": 10000 }
+            },
+            "anyOf": [{ "required": ["uid"] }, { "required": ["assetId"] }],
+            "additionalProperties": false
+          },
+          "box": {
+            "type": "object",
+            "properties": {
+              "uid": { "type": "string", "format": "uuid", "description": "Stable region identity, unique within boxes. Reuse an existing uid to retain identity; omitting uid creates a new region. id is the prompt label, not identity." },
+              "id": { "type": "string", "pattern": "^[A-Za-z0-9_]+$", "maxLength": 100 },
+              "role": { "type": "string", "enum": ["new", "modify", "anchor", "move", "remove", "place"] },
+              "rect": { "$ref": "#/$defs/rect" },
+              "srcRect": { "$ref": "#/$defs/rect" },
+              "sourceId": { "type": "string", "minLength": 1 },
+              "desc": { "type": "string", "maxLength": 10000 }
+            },
+            "required": ["id", "role", "rect", "desc"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "workspace_preview",
+      "description": "Validate a workspace version and preview the shared compiled generation request without calling a provider. Return finalPrompt, instruction, supported projected params, regions, reference order and compression dimensions. Image bytes are explicit placeholders, not literal API payloads. Report omitted inactive parameters and validation issues. A random seed is assigned only when submitting.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "expectedVersion": { "type": "string", "minLength": 1 } },
+        "required": ["expectedVersion"],
+        "additionalProperties": false
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "workspace_read_image",
+      "description": "Read a 384-pixel preview of a current working reference or mask by its workspace uid. Use workspace_get to obtain UIDs. This can show a painted mask or an unsaved working image that has no gallery asset ID.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": { "type": "string", "minLength": 1 },
+          "uid": { "type": "string", "minLength": 1 }
+        },
+        "required": ["expectedVersion", "uid"],
+        "additionalProperties": false
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "task_submit",
+      "description": "Submit an immutable snapshot of the specified visible workspace version using its repeatCount. This invokes the configured image provider and can incur charges. Returns taskId promptly; query task_get for progress/results. Supply a fresh UUID idempotencyKey for a new task, and reuse EXACTLY the same key and expectedVersion to retry an uncertain response. A repeated key returns the existing task, including after restarting LutriUI; it never submits another paid request.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": { "type": "string", "minLength": 1 },
+          "idempotencyKey": { "type": "string", "format": "uuid" }
+        },
+        "required": ["expectedVersion", "idempotencyKey"],
+        "additionalProperties": false
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true }
+    },
+    {
+      "name": "task_get",
+      "description": "Read a task's persisted state, actual reported progress, request statuses and output asset IDs. Success remains success even when a result file was subsequently removed. No automatic retry or filesystem paths are returned. Results retain their original asset IDs and order. Each result's availability is available, missing (original absent but asset metadata remains), pendingDelete, or deleted (asset metadata removed); these states do not change task success.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "taskId": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "^[A-Za-z0-9_-]+$" } },
+        "required": ["taskId"],
+        "additionalProperties": false
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "task_stop_remaining",
+      "description": "Stop only the task's requests that have not yet been sent. Provider requests already in flight continue. This does not delete history, cancel completed work or automatically retry anything.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "taskId": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "^[A-Za-z0-9_-]+$" } },
+        "required": ["taskId"],
+        "additionalProperties": false
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "gallery_query",
+      "description": "Find reusable gallery assets by name, prompt, tag, source, model, favorite, availability or creation time. Returns metadata and stable asset IDs without image bytes or filesystem paths. Use gallery_read to inspect an image and workspace_patch.refs to reuse it. Omitting query or passing an empty query object uses the default page and filters.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "object",
+            "properties": {
+              "search": { "type": "string" },
+              "source": { "type": "string", "enum": ["all", "imported", "generated", "file", "clipboard", "url"] },
+              "model": { "type": ["string", "null"] },
+              "tag": { "type": ["string", "null"] },
+              "createdFrom": { "type": ["integer", "null"], "minimum": 0, "maximum": 8640000000000000 },
+              "createdUntil": { "type": ["integer", "null"], "minimum": 0, "maximum": 8640000000000000 },
+              "favorite": { "type": ["boolean", "null"] },
+              "availability": { "type": "string", "enum": ["all", "available", "missing", "pending"] },
+              "sort": { "type": "string", "enum": ["newest", "oldest", "name", "size"] },
+              "offset": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+              "limit": { "type": "integer", "minimum": 1, "maximum": 120 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "gallery_read",
+      "description": "Read a gallery image by asset ID. Defaults to the stored thumbnail; original returns the original image bytes and can be much larger. Missing originals do not prevent reading an existing thumbnail.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "assetId": { "type": "string", "format": "uuid" },
+          "variant": { "type": "string", "enum": ["thumbnail", "original"], "default": "thumbnail" }
+        },
+        "required": ["assetId"],
+        "additionalProperties": false
+      },
+      "annotations": { "readOnlyHint": true, "openWorldHint": false }
+    },
+    {
+      "name": "gallery_import",
+      "description": "Import an image into the managed gallery from a base64 data URL (PNG, JPEG, WebP or GIF; maximum 64 MiB and 64 million pixels). Returns an asset ID for workspace references or a PNG mask. No local file paths or remote URLs are accepted. Repeating this tool creates another asset.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dataUrl": { "type": "string", "maxLength": 90000000, "pattern": "^data:image/(png|jpeg|webp|gif);base64," },
+          "name": { "type": "string", "maxLength": 240 }
+        },
+        "required": ["dataUrl"],
+        "additionalProperties": false
+      },
+      "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false }
+    }
+  ]
+}

@@ -182,6 +182,8 @@ export interface HistoryItem {
     refNotes?: (string | undefined)[];
     maskName?: string;
   };
+  /** Ledger identity of an MCP-submitted task; survives history deletion. */
+  mcpSubmission?: { idempotencyKey: string; workspaceVersion: string } | null;
 }
 
 /** 有序参考图，其编辑和引用语义由模型定义。 */

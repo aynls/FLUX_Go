@@ -8,8 +8,10 @@ use crate::gallery::{
     GalleryBatchResult, GalleryFacets, GalleryItem, GalleryPage, GalleryPatch, GalleryQuery,
     ImportedImage, LibraryStats, MaintainOp, MaintenanceReport,
 };
-use crate::history::{GenerationFile, HistoryItem};
-use crate::library::{invalid, validate_id, LibraryStore};
+use crate::history::{GenerationFile, HistoryItem, McpSubmissionRecord};
+use crate::library::{invalid, validate_id};
+use crate::library_access::with_library;
+use crate::mcp;
 use crate::provider::{io_failed, GenerateOutput, GenerateRequest, ProviderError};
 use crate::AppState;
 
@@ -46,27 +48,139 @@ fn uninitialized() -> String {
     .into()
 }
 
-async fn with_library<T: Send + 'static>(
-    app: tauri::AppHandle,
-    f: impl FnOnce(&mut LibraryStore) -> Result<T, String> + Send + 'static,
-) -> Result<T, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<AppState>();
-        let _operation = state.gate.operation()?;
-        let mut guard = state.library.lock().unwrap_or_else(|e| e.into_inner());
-        let store = guard.as_mut().ok_or_else(uninitialized)?;
-        f(store)
-    })
-    .await
-    .map_err(|e| {
-        String::from(
-            coded(
-                "backend_library_failed",
-                format!("Library task failed: {e}"),
-            )
-            .with_param("detail", e.to_string()),
+/// Read-only history lookup used by the UI bridge and MCP task reads.
+#[tauri::command]
+pub async fn history_get(app: tauri::AppHandle, id: String) -> Result<Option<HistoryItem>, String> {
+    with_library(app, move |store| store.history_find(&id)).await
+}
+
+// ---------------------------------------------------------------------------
+// MCP server settings and the WebView bridge. Sensitive configuration, the
+// token reveal and bridge callbacks are restricted to the main window.
+// ---------------------------------------------------------------------------
+
+fn require_main(window: &tauri::WebviewWindow) -> Result<(), String> {
+    if window.label() == "main" {
+        Ok(())
+    } else {
+        Err(coded(
+            "backend_forbidden",
+            "This action is only available to the main window",
         )
-    })?
+        .into())
+    }
+}
+
+#[tauri::command]
+pub async fn mcp_status(state: State<'_, AppState>) -> Result<mcp::McpStatus, String> {
+    Ok(state.mcp()?.status())
+}
+
+#[tauri::command]
+pub async fn mcp_configure(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+    port: u16,
+) -> Result<mcp::McpConfigureResult, String> {
+    require_main(&window)?;
+    state.mcp()?.configure(&app, enabled, port).await
+}
+
+#[tauri::command]
+pub async fn mcp_connection(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<mcp::McpConnection, String> {
+    require_main(&window)?;
+    state.mcp()?.connection()
+}
+
+#[tauri::command]
+pub async fn mcp_rotate_token(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<mcp::McpStatus, String> {
+    require_main(&window)?;
+    state.mcp()?.rotate_token(&app)
+}
+
+#[tauri::command]
+pub async fn mcp_submission_get(
+    app: tauri::AppHandle,
+    idempotency_key: String,
+) -> Result<Option<McpSubmissionRecord>, String> {
+    with_library(app, move |store| store.mcp_submission_get(&idempotency_key)).await
+}
+
+#[tauri::command]
+pub async fn mcp_bridge_register(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    instance_id: String,
+) -> Result<(), String> {
+    require_main(&window)?;
+    if uuid::Uuid::parse_str(&instance_id).is_err() {
+        return Err(coded("backend_invalid_args", "Invalid bridge instance id").into());
+    }
+    let mcp = state.mcp()?;
+    mcp.bridge.register(instance_id);
+    mcp.emit_status(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn mcp_bridge_unregister(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    instance_id: String,
+) -> Result<(), String> {
+    require_main(&window)?;
+    let mcp = state.mcp()?;
+    mcp.bridge.unregister(&instance_id);
+    mcp.emit_status(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn mcp_bridge_claim(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+    request_id: String,
+    instance_id: String,
+) -> Result<bool, String> {
+    require_main(&window)?;
+    Ok(state.mcp()?.bridge.claim(&request_id, &instance_id))
+}
+
+#[tauri::command]
+pub async fn mcp_bridge_reply(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+    request_id: String,
+    instance_id: String,
+    result: Option<serde_json::Value>,
+    error: Option<serde_json::Value>,
+) -> Result<(), String> {
+    require_main(&window)?;
+    let error = error.map(|value| mcp::ToolError {
+        code: value["code"].as_str().unwrap_or("UI_ERROR").to_string(),
+        message: value["message"]
+            .as_str()
+            .unwrap_or("The workspace action failed")
+            .to_string(),
+        details: value.get("details").cloned(),
+    });
+    state.mcp()?.bridge.reply(
+        &request_id,
+        &instance_id,
+        mcp::BridgeReply { result, error },
+    );
+    Ok(())
 }
 
 #[derive(Debug, Serialize)]

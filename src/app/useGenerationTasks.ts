@@ -92,6 +92,7 @@ export function useGenerationTasks(
           error: job.item.error,
           phase: job.item.phase,
           taskId: job.item.taskId,
+          mcpSubmission: job.item.mcpSubmission,
         };
       });
       writes = next.catch(() => {
@@ -171,6 +172,7 @@ export function useGenerationTasks(
                 taskId: job.item.taskId,
                 phase: "saving",
                 thumb: job.item.thumb ?? thumb,
+                mcpSubmission: job.item.mcpSubmission,
               };
               job.files = combined.files;
             });
@@ -256,7 +258,11 @@ export function useGenerationTasks(
     running.current.delete(job.item.id);
     updateTask(job.item.id, () => null);
   };
-  const submit = async (snapshot: Draft, count = 1) => {
+  const submit = async (
+    snapshot: Draft,
+    count = 1,
+    mcpSubmission?: { idempotencyKey: string; workspaceVersion: string },
+  ) => {
     if (locked.current || !ready) return;
     if (!Number.isInteger(count) || count < 1 || count > 20)
       throw new Error(m.error_count_range());
@@ -271,6 +277,14 @@ export function useGenerationTasks(
         ...entries[0],
         snapshots: entries.map((entry) => entry.snapshot),
       };
+      // MCP submissions reserve the idempotency key as the task id so the
+      // durable ledger can never bill the same submission twice.
+      if (mcpSubmission)
+        job.item = {
+          ...job.item,
+          id: mcpSubmission.idempotencyKey,
+          mcpSubmission,
+        };
       job.item.batch = {
         requests: entries.map((entry) => ({
           requestId: entry.item.id,
@@ -288,7 +302,7 @@ export function useGenerationTasks(
       sync();
     }
   };
-  const stopRemaining = (id?: string) => {
+  const stopRemaining = (id?: string): { stopped: boolean } => {
     const job = id
       ? running.current.get(id)
       : running.current.values().next().value;
@@ -297,7 +311,7 @@ export function useGenerationTasks(
       job.stopRequested ||
       !job.item.batch?.requests.some((r) => r.status === "queued")
     )
-      return;
+      return { stopped: false };
     job.stopRequested = true;
     job.item.batch.stopped = true;
     for (const request of job.item.batch.requests) {
@@ -310,6 +324,7 @@ export function useGenerationTasks(
       t ? { ...t, remainingRequests: 0, stopRequested: true } : t,
     );
     callbacks.current.onNotice(m.notice_stopped_remaining());
+    return { stopped: true };
   };
   useEffect(() => {
     alive.current = true;

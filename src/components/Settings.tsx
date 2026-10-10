@@ -20,6 +20,7 @@ import type {
   MaintenanceReport,
 } from "../lib/types";
 import Modal from "./Modal";
+import McpSettings from "./McpSettings";
 import type { LibraryMigration } from "../lib/api";
 import { formatBytes, formatDateTime } from "../i18n";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -182,6 +183,7 @@ export default function Settings({
             ["defaults", m.settings_defaults()],
             ["appearance", m.settings_appearance()],
             ["storage", m.settings_storage()],
+            ["mcp", m.settings_mcp()],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -560,6 +562,7 @@ export default function Settings({
               </section>
             </>
           )}
+          {page === "mcp" && <McpSettings />}
         </div>
       </div>
     </Modal>

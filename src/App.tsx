@@ -1,6 +1,14 @@
 import { useGenerationTasks } from "./app/useGenerationTasks";
+import { useMcpBridge } from "./app/useMcpBridge";
+import {
+  createApplicationActions,
+  type ApplicationHost,
+} from "./app/applicationActions";
+import { McpError } from "./app/workspaceActions";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   ArrowCounterClockwise,
@@ -23,7 +31,7 @@ import { WorkspaceSidebar, WorkspaceStage } from "./workspaces";
 import { useWorkspace } from "./app/useWorkspace";
 import * as api from "./lib/api";
 import { rebaseHistoryPaths } from "./lib/library";
-import { imageSize } from "./lib/image";
+import { imageSize, makeThumb } from "./lib/image";
 import { exportDefaultPath } from "./lib/export";
 import {
   renameBox,
@@ -255,6 +263,62 @@ export default function App() {
     savingResult;
   const storageBusyRef = useRef(storageBusy);
   storageBusyRef.current = storageBusy;
+  // The MCP bridge acts on the live workspace through the same host callbacks
+  // the canvas uses; actions stay transport-independent in applicationActions.
+  const hostReady = useRef(false);
+  hostReady.current = ready && generation.ready;
+  // Running tasks never block agent edits; only migration, import/save and
+  // submission admission do.
+  const storageLocked = useRef(false);
+  storageLocked.current =
+    importing || savingResult || generation.accepting;
+  const submitLocked = useRef(false);
+  submitLocked.current =
+    importing || savingResult || generation.accepting;
+  const mcpHost = useRef<ApplicationHost | null>(null);
+  mcpHost.current = {
+    ready: () => hostReady.current,
+    getVersion: ws.getVersion,
+    isGestureActive: ws.isGestureActive,
+    canPersist: ws.canPersist,
+    isBusy: () => migrating.current || storageLocked.current,
+    submitBlocked: () => migrating.current || submitLocked.current,
+    readCurrent: () => current.current,
+    readIntent: (task) => ws.draftForIntent(task),
+    commit: (next) => {
+      flushSync(() => ws.commit(next, true));
+      showNotice(m.notice_agent_updated(), true);
+    },
+    persist: (snapshot) => ws.persist(snapshot),
+    submit: (snapshot, count, mcpSubmission) =>
+      generation.submit(snapshot, count, mcpSubmission),
+    stopRemaining: (id) => generation.stopRemaining(id),
+    mcpSubmissionGet: (key) => api.mcpSubmissionGet(key),
+    readAsset: (id) => api.galleryRead(id),
+    maskFromRects,
+    makePreview: (dataUrl) => makeThumb(dataUrl, 384),
+    providerStatus: () =>
+      pStatus as unknown as Record<string, boolean> | null,
+  };
+  const mcpActions = useRef(createApplicationActions(() => mcpHost.current!));
+  // Registration advertises readiness only once workspace and generation
+  // restoration finished; unmount/unready removes the matching instance.
+  useMcpBridge(mcpActions.current, ready && generation.ready);
+  useEffect(() => {
+    if (!api.isDesktop()) return;
+    let off: (() => void) | undefined;
+    let disposed = false;
+    void listen("mcp-library-changed", () => {
+      void refreshHistory();
+    }).then((fn) => {
+      if (disposed) fn();
+      else off = fn;
+    });
+    return () => {
+      disposed = true;
+      off?.();
+    };
+  }, [refreshHistory]);
   const storageBlocked = () => {
     if (!migrating.current) return false;
     showNotice(m.backend_storage_migrating(), true);
@@ -611,26 +675,28 @@ export default function App() {
       setSavingResult(false);
     }
   };
+  // UI and MCP share one admission path; the UI wrapper keeps the notice and
+  // request-feedback behavior.
   const generate = async (count: number) => {
     if (storageBlocked() || !ready || importing) return;
-    const snapshot = singleImageDraft(current.current);
-    const compiled = compileDraft(snapshot);
-    const invalid = [
-      ...validateDraft(snapshot),
-      ...(compiled.error ? [compiled.error] : []),
-    ];
-    if (invalid.length) {
-      showNotice(invalid.join("；"));
-      return;
-    }
     try {
-      await ws.persist(snapshot);
-      if (storageBlocked()) return;
-      const id = await generation.submit(snapshot, count);
-      if (!id) return;
-      setRequestFeedback({ key: workspaceKey(snapshot), id });
+      const result = await mcpActions.current.submitUi(count);
+      const s = result.structured as { taskId?: string; workspace?: string };
+      if (!s.taskId) return;
+      setRequestFeedback({ key: s.workspace ?? workspaceKey(current.current), id: s.taskId });
     } catch (e) {
-      showNotice(m.notice_submit_failed({ detail: String(e) }));
+      // Not-accepted submissions stay silent, matching the old `if (!id)` path.
+      if (
+        e instanceof McpError &&
+        (e.code === "UI_NOT_READY" || e.code === "UI_BUSY")
+      )
+        return;
+      const detail =
+        e instanceof McpError &&
+        Array.isArray((e.details as { issues?: unknown })?.issues)
+          ? (e.details as { issues: string[] }).issues.join("；")
+          : null;
+      showNotice(detail || m.notice_submit_failed({ detail: String(e) }));
     }
   };
   const useResult = async (

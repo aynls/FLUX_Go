@@ -97,3 +97,27 @@ test("Qwen Image 2.1 只发送当前路由支持的字段", () => {
   expect(turboSent.params.promptExtendMode).toBeUndefined();
   expect(turboSent.params.promptExtend).toBe(true);
 });
+
+test("每一条路由的参数模式完整暴露该路由支持的字段", async () => {
+  const { catalog, fieldsFor } = await import("./catalog");
+  const { parameterSchemaFor } = await import("../app/workspaceActions");
+  for (const model of catalog.models) {
+    for (const provider of Object.keys(model.routes)) {
+      const fields = fieldsFor({
+        modelId: model.id,
+        provider: provider as never,
+      });
+      const schema = parameterSchemaFor(fields) as {
+        properties: Record<string, Record<string, unknown>>;
+        additionalProperties?: boolean;
+      };
+      // 能力模式暴露且仅暴露该路由支持的参数键。
+      expect(Object.keys(schema.properties).sort()).toEqual(
+        Object.keys(fields).sort(),
+      );
+      expect(schema.additionalProperties).toBe(false);
+      // 原生 count 固定为 1：批量由 repeatCount 表达。
+      if (fields.count) expect(schema.properties.count?.const).toBe(1);
+    }
+  }
+});

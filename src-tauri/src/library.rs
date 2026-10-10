@@ -86,6 +86,9 @@ impl LibraryStore {
             conn.execute_batch("PRAGMA journal_mode = WAL;")
                 .map_err(|e| store_failed("configure library database", e))?;
         }
+        // Feature tables outside user_version run for both new and existing libraries.
+        conn.execute_batch(library_sql::MCP_SCHEMA)
+            .map_err(|e| store_failed("initialize library database", e))?;
         let mut store = Self { root, conn };
         store
             .retry_pending_deletes()

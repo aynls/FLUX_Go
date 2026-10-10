@@ -12,13 +12,12 @@ import {
   DEFAULT_PREFERENCES,
   newDraft,
   withIds,
-  resizeCanvas,
   readSession,
   changeFamily,
-  outputEstimate,
   taskIntent,
   workspaceKey,
 } from "../lib/workspace";
+import { normalizeDraftChange } from "./workspaceActions";
 import { families, fieldsFor, providers, modelById } from "../models/catalog";
 import { displayValue } from "../models/parameterLabels";
 import { referenceWidth } from "../components/ResizableReferences";
@@ -90,6 +89,10 @@ export function useWorkspace(
   );
   const [draft, setDraft] = useState<Draft>(() => newDraft(prefs));
   const current = useRef(draft);
+  // A monotonically increasing epoch identifies each committed draft state;
+  // the workspace version `${instanceId}:${revision}` changes on every replace.
+  const instanceId = useRef(crypto.randomUUID());
+  const revision = useRef(0);
   const tasks = useRef<WorkspaceSession["tasks"]>({
     [workspaceKey(draft)]: draft,
   });
@@ -104,6 +107,7 @@ export function useWorkspace(
     Partial<Record<WorkspaceKey, { undo: Draft[]; redo: Draft[] }>>
   >({});
   const replace = useCallback((d: Draft) => {
+    revision.current += 1;
     current.current = d;
     tasks.current[workspaceKey(d)] = d;
     setDraft(d);
@@ -161,23 +165,7 @@ export function useWorkspace(
             (field.nullable &&
               (next.params[key] == null) !== (previous.params[key] == null))),
       );
-    let d = next;
-    if (
-      fields.aspectRatio &&
-      (next.params.aspectRatio !== current.current.params.aspectRatio ||
-        next.params.resolution !== current.current.params.resolution ||
-        next.provider !== current.current.provider)
-    )
-      d = resizeCanvas(next, outputEstimate(next));
-    if (
-      (fields.size && next.params.size !== current.current.params.size) ||
-      (fields.width &&
-        (next.params.width !== current.current.params.width ||
-          next.params.height !== current.current.params.height))
-    ) {
-      const size = outputEstimate(next);
-      if (size.w > 0 && size.h > 0) d = resizeCanvas(next, size);
-    }
+    const d = normalizeDraftChange(previous, next);
     commit(d, discrete);
     if (
       next.modelId !== previous.modelId ||
@@ -395,6 +383,7 @@ export function useWorkspace(
     gesture.current = false;
     lastEdit.current = Date.now();
   };
+  const getVersion = () => `${instanceId.current}:${revision.current}`;
   return {
     prefs,
     setPrefs,
@@ -415,5 +404,8 @@ export function useWorkspace(
     persist,
     beginGesture,
     endGesture,
+    getVersion,
+    isGestureActive: () => gesture.current,
+    canPersist: () => saveAllowed.current && !migrating.current,
   };
 }

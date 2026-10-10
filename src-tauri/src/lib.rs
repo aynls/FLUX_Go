@@ -2,7 +2,9 @@ mod commands;
 mod gallery;
 mod history;
 pub mod library;
+mod library_access;
 mod library_sql;
+pub mod mcp;
 pub mod models;
 pub mod provider;
 pub mod storage;
@@ -14,6 +16,18 @@ use tauri::Manager;
 pub struct AppState {
     pub library: Mutex<Option<library::LibraryStore>>,
     pub gate: storage::StorageGate,
+    pub mcp: std::sync::OnceLock<mcp::Mcp>,
+}
+
+impl AppState {
+    pub fn mcp(&self) -> Result<&mcp::Mcp, String> {
+        self.mcp.get().ok_or_else(|| {
+            String::from(crate::provider::ProviderError::coded(
+                "backend_mcp_unavailable",
+                "The MCP server isn't initialized",
+            ))
+        })
+    }
 }
 
 impl Default for AppState {
@@ -21,6 +35,7 @@ impl Default for AppState {
         Self {
             library: Mutex::new(None),
             gate: storage::StorageGate::default(),
+            mcp: std::sync::OnceLock::new(),
         }
     }
 }
@@ -56,8 +71,9 @@ pub fn run() {
                             .header(tauri::http::header::CACHE_CONTROL, "no-store")
                             .body(bytes)
                             .unwrap(),
-                        Err(e) if e.contains("bad_request")
-                            || e.contains("backend_gallery_id_invalid") =>
+                        Err(e)
+                            if e.contains("bad_request")
+                                || e.contains("backend_gallery_id_invalid") =>
                         {
                             thumbnail_error(400)
                         }
@@ -69,7 +85,8 @@ pub fn run() {
             });
         })
         .setup(|app| {
-            let dir = storage::resolve_root(&app.path().app_data_dir()?)
+            let app_data = app.path().app_data_dir()?;
+            let dir = storage::resolve_root(&app_data)
                 .map_err(|e| format!("Couldn't initialize history storage: {e}"))?;
             let store = library::LibraryStore::new(dir.clone())
                 .map_err(|e| format!("Couldn't initialize history storage: {e}"))?;
@@ -78,8 +95,16 @@ pub fn run() {
             let assets = app.asset_protocol_scope();
             assets.allow_directory(dir.join("images"), true)?;
             assets.allow_directory(dir.join("gallery/images"), true)?;
-            provider::init_key_settings(&app.path().app_data_dir()?)?;
+            provider::init_key_settings(&app_data)?;
             *app.state::<AppState>().library.lock().unwrap() = Some(store);
+            let state = app.state::<AppState>();
+            state
+                .mcp
+                .set(mcp::Mcp::new(app_data))
+                .map_err(|_| "Couldn't initialize the MCP server state")?;
+            // Auto-start only when the saved setting is enabled; startup errors
+            // surface in the settings page instead of aborting the app.
+            state.mcp()?.setup(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -111,7 +136,24 @@ pub fn run() {
             commands::gallery_read,
             commands::gallery_delete,
             commands::gallery_export,
+            commands::history_get,
+            commands::mcp_status,
+            commands::mcp_configure,
+            commands::mcp_connection,
+            commands::mcp_rotate_token,
+            commands::mcp_submission_get,
+            commands::mcp_bridge_register,
+            commands::mcp_bridge_unregister,
+            commands::mcp_bridge_claim,
+            commands::mcp_bridge_reply,
         ])
-        .run(tauri::generate_context!())
-        .expect("LutriUI failed to start");
+        .build(tauri::generate_context!())
+        .expect("LutriUI failed to start")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Ok(mcp) = app.state::<AppState>().mcp() {
+                    mcp.shutdown();
+                }
+            }
+        });
 }

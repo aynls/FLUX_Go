@@ -1,7 +1,7 @@
 use crate::library::{
     check_roots, db_failed, decode_image_data, invalid, io_failed, make_thumbnail,
-    parse_image_data, sanitize_name, store_failed, validate_history_id, write_original,
-    write_snapshot, LibraryStore,
+    parse_image_data, sanitize_name, store_failed, validate_history_id, validate_id,
+    write_original, write_snapshot, LibraryStore,
 };
 use crate::library_sql;
 use crate::provider::GenerationDetails;
@@ -15,6 +15,21 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpSubmission {
+    pub idempotency_key: String,
+    pub workspace_version: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpSubmissionRecord {
+    pub idempotency_key: String,
+    pub workspace_version: String,
+    pub task_id: String,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
@@ -52,6 +67,8 @@ pub struct HistoryItem {
     pub batch: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recipe: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_submission: Option<McpSubmission>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -188,6 +205,22 @@ impl LibraryStore {
                 serde_json::from_str(&payload).map_err(|e| db_failed("parse workspace", e))
             })
             .transpose()
+    }
+
+    /// Idempotency ledger lookup used before dispatching an MCP submission.
+    /// Independent of history rows so deleting history cannot re-bill a retry.
+    pub fn mcp_submission_get(&self, key: &str) -> Result<Option<McpSubmissionRecord>, String> {
+        validate_id(key)?;
+        self.conn
+            .query_row(library_sql::MCP_SUBMISSION_GET, [key], |r| {
+                Ok(McpSubmissionRecord {
+                    idempotency_key: r.get(0)?,
+                    workspace_version: r.get(1)?,
+                    task_id: r.get(2)?,
+                })
+            })
+            .optional()
+            .map_err(|e| db_failed("load mcp submission", e))
     }
 
     pub fn draft_save(&self, draft: &serde_json::Value) -> Result<(), String> {
@@ -556,6 +589,38 @@ impl LibraryStore {
                 ]),
             )
             .map_err(|e| db_failed("save history", e))?;
+            if let Some(sub) = &item.mcp_submission {
+                if uuid::Uuid::parse_str(&sub.idempotency_key).is_err()
+                    || sub.idempotency_key != item.id
+                {
+                    return Err(invalid("invalid mcp submission key"));
+                }
+                let existing: Option<(String, String)> = tx
+                    .query_row(
+                        library_sql::MCP_SUBMISSION_GET,
+                        [&sub.idempotency_key],
+                        |r| Ok((r.get(1)?, r.get(2)?)),
+                    )
+                    .optional()
+                    .map_err(|e| db_failed("load mcp submission", e))?;
+                if let Some((version, task)) = existing {
+                    if version != sub.workspace_version || task != item.id {
+                        return Err(String::from(ProviderError::coded(
+                            "backend_mcp_submission_conflict",
+                            "The MCP submission key doesn't match the recorded task",
+                        )));
+                    }
+                }
+                tx.execute(
+                    library_sql::MCP_SUBMISSION_INSERT,
+                    params_from_iter([
+                        Value::Text(sub.idempotency_key.clone()),
+                        Value::Text(sub.workspace_version.clone()),
+                        Value::Text(item.id.clone()),
+                    ]),
+                )
+                .map_err(|e| db_failed("record mcp submission", e))?;
+            }
             for output in &outputs {
                 Self::insert_generated(&tx, &item, output)?;
             }
@@ -575,15 +640,24 @@ impl LibraryStore {
     }
 
     fn history_get(&self, id: &str) -> Result<HistoryItem, String> {
+        self.history_find(id)?
+            .ok_or_else(|| store_failed("load history", "record disappeared"))
+    }
+
+    pub fn history_find(&self, id: &str) -> Result<Option<HistoryItem>, String> {
+        validate_history_id(id)?;
         let payload: Option<String> = self
             .conn
             .query_row(library_sql::HISTORY_ONE, [id], |r| r.get(0))
             .optional()
             .map_err(|e| db_failed("load history", e))?;
-        let payload = payload.ok_or_else(|| store_failed("load history", "record disappeared"))?;
-        let item: HistoryItem =
-            serde_json::from_str(&payload).map_err(|e| db_failed("parse history", e))?;
-        self.resolve_item(item)
+        payload
+            .map(|payload| {
+                let item: HistoryItem =
+                    serde_json::from_str(&payload).map_err(|e| db_failed("parse history", e))?;
+                self.resolve_item(item)
+            })
+            .transpose()
     }
 }
 
@@ -797,6 +871,59 @@ mod tests {
             1
         );
         drop(store);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn mcp_ledger_survives_history_deletion_and_rejects_version_mismatch() {
+        let dir = temp();
+        let key = uuid::Uuid::new_v4().to_string();
+        let mut store = LibraryStore::new(dir.clone()).unwrap();
+        let item: HistoryItem = serde_json::from_value(serde_json::json!({
+            "id": key, "createdAt":1, "provider":"bfl", "model":"flux-3-image",
+            "mode":"t2i", "prompt":"p", "finalPrompt":"p", "params":{}, "boxes":[],
+            "status":"queued",
+            "mcpSubmission":{"idempotencyKey": key, "workspaceVersion":"ws-1"}
+        }))
+        .unwrap();
+        let mut saved = store
+            .history_save(
+                item,
+                vec![GenerationFile {
+                    kind: "input".into(),
+                    name: "input_0".into(),
+                    data: "data:image/png;base64,aGVsbG8=".into(),
+                }],
+            )
+            .unwrap();
+        assert_eq!(
+            saved.mcp_submission.as_ref().unwrap().workspace_version,
+            "ws-1"
+        );
+        saved.status = "ok".into();
+        store.history_save(saved, vec![]).unwrap();
+        store.history_delete(&key).unwrap();
+        drop(store);
+        let mut reopened = LibraryStore::new(dir.clone()).unwrap();
+        let record = reopened.mcp_submission_get(&key).unwrap().unwrap();
+        assert_eq!(record.idempotency_key, key);
+        assert_eq!(record.workspace_version, "ws-1");
+        assert_eq!(record.task_id, key);
+        // An actual retry with a mismatched workspace version must fail
+        // before any provider call and leave the original record intact.
+        let conflicting: HistoryItem = serde_json::from_value(serde_json::json!({
+            "id": key, "createdAt":2, "provider":"bfl", "model":"flux-3-image",
+            "mode":"t2i", "prompt":"p", "finalPrompt":"p", "params":{}, "boxes":[],
+            "status":"queued",
+            "mcpSubmission":{"idempotencyKey": key, "workspaceVersion":"ws-2"}
+        }))
+        .unwrap();
+        assert!(reopened.history_save(conflicting, vec![]).is_err());
+        let unchanged = reopened.mcp_submission_get(&key).unwrap().unwrap();
+        assert_eq!(unchanged.workspace_version, "ws-1");
+        assert_eq!(unchanged.task_id, key);
+        assert!(reopened.history_find(&key).unwrap().is_none());
+        drop(reopened);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

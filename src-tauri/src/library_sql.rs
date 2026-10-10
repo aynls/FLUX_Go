@@ -103,10 +103,8 @@ pub const ASSET_BY_ID: &str = " FROM assets a WHERE a.id = ?1";
 pub const ALL_ASSETS: &str = " FROM assets a ORDER BY a.created_at DESC, a.id DESC";
 pub const TAGS: &str = "SELECT DISTINCT tag FROM asset_tags ORDER BY tag";
 pub const MODELS: &str = "SELECT DISTINCT model FROM assets WHERE model IS NOT NULL ORDER BY model";
-pub const THUMBNAIL: &str =
-    "SELECT thumbnail FROM assets WHERE id = ?1 AND pending_delete = 0";
-pub const GENERATION_KEY: &str =
-    "SELECT asset_id FROM generated_keys WHERE generation_key = ?1";
+pub const THUMBNAIL: &str = "SELECT thumbnail FROM assets WHERE id = ?1 AND pending_delete = 0";
+pub const GENERATION_KEY: &str = "SELECT asset_id FROM generated_keys WHERE generation_key = ?1";
 pub const INSERT_GENERATION_KEY: &str =
     "INSERT INTO generated_keys(generation_key, asset_id) VALUES (?1, ?2)";
 pub const INSERT_ASSET: &str = r#"
@@ -117,8 +115,7 @@ INSERT INTO assets(
 "#;
 pub const RENAME: &str =
     "UPDATE assets SET name = ?2, search_text = ?3 WHERE id = ?1 AND pending_delete = 0";
-pub const FAVORITE: &str =
-    "UPDATE assets SET favorite = ?2 WHERE id = ?1 AND pending_delete = 0";
+pub const FAVORITE: &str = "UPDATE assets SET favorite = ?2 WHERE id = ?1 AND pending_delete = 0";
 pub const ADD_TAG: &str = "INSERT OR IGNORE INTO asset_tags(asset_id, tag) VALUES (?1, ?2)";
 pub const REMOVE_TAG: &str = "DELETE FROM asset_tags WHERE asset_id = ?1 AND tag = ?2";
 pub const MARK_DELETE: &str = "UPDATE assets SET pending_delete = 1 WHERE id = ?1";
@@ -182,3 +179,22 @@ INSERT INTO library_meta(key, value) VALUES ('last_checked_at', ?1)
 ON CONFLICT(key) DO UPDATE SET value = excluded.value
 "#;
 pub const QUICK_CHECK: &str = "PRAGMA quick_check";
+
+// Kept independently of history rows so deleting history cannot make a retried
+// MCP submission issue another paid request. Written with the initial task.
+pub const MCP_SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS mcp_submissions (
+    idempotency_key TEXT PRIMARY KEY,
+    workspace_version TEXT NOT NULL,
+    task_id TEXT NOT NULL UNIQUE
+);
+"#;
+pub const MCP_SUBMISSION_GET: &str = r#"
+SELECT idempotency_key, workspace_version, task_id
+FROM mcp_submissions WHERE idempotency_key = ?1
+"#;
+pub const MCP_SUBMISSION_INSERT: &str = r#"
+INSERT INTO mcp_submissions(idempotency_key, workspace_version, task_id)
+VALUES (?1, ?2, ?3)
+ON CONFLICT(idempotency_key) DO NOTHING
+"#;
