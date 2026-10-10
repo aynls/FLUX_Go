@@ -1,19 +1,10 @@
 # LutriUI
 
-基于 Tauri、React 和 TypeScript 的桌面图像生成与编辑工作台。支持 FLUX.3 Image、GPT Image 2.5、Qwen Image（3.0 / 2.1）、Gemini Image（Nano Banana 2.1 / 2 / Pro）、Seedream 5.0（Pro / Lite / Flash）和 Grok Imagine Image 2.0，通过 OpenRouter、BFL、Comfy、Runware、QwenCloud 或各家官方 API 调用。
+一站式桌面图像生成工作台。
+
+支持 FLUX.3 Image、GPT Image 2.5、Qwen Image（3.0 / 2.1）、Gemini Image（Nano Banana 2.1 / 2 / Pro）、Seedream 5.0（Pro / Lite / Flash）和 Grok Imagine Image 2.0，通过 OpenRouter、BFL、Comfy、Runware、QwenCloud 或各家官方 API 调用。
 
 ![LutriUI](docs/screenshot.png)
-
-## 启动
-
-支持 Windows x64、Linux x64 和 Apple Silicon Mac。
-
-安装 Bun、Rust 及 [Tauri 系统依赖](https://v2.tauri.app/start/prerequisites/)，然后运行：
-
-```sh
-bun install
-bun run app:dev
-```
 
 ## 使用
 
@@ -23,9 +14,7 @@ bun run app:dev
 
 “编辑”先添加一张主图，再描述修改内容，其余素材可作为风格、主体或构图参考。
 
-“图库”以等尺寸网格分页显示图片，支持搜索、来源、收藏、标签、模型和日期过滤，以及最新、最早、名称、大小排序。本机导入、粘贴或 URL 导入会复制一份到图库；每张生成结果完成后也会自动加入。可查看或复制原图、编辑名称/收藏/标签、批量导出或删除、选择多张作为参考素材，或用一张图片开始编辑。工作区素材栏的“从图库选择”会按选择顺序添加图片，不重复复制图库文件；选择器内也可导入文件或粘贴图片。
-
-图库保存在 SQLite 数据库中，原图位于库目录内，缩略图存为库内二进制数据。可在设置中选择其他空目录作为库位置，迁移会复制并校验全部内容，原目录保留；API Key 与导出目录偏好不随库迁移。删除图库图片会永久删除其原图、缩略图和图库记录，操作前需要确认。本机导入源文件、当前任务中的工作副本与生成参数记录会保留。图库使用新的独立存储，不迁移旧版数据。设置页还提供文件检查、缩略图重建和缺失记录清理。
+“图库”以等尺寸网格分页显示图片，支持搜索、来源、收藏、标签、模型和日期过滤，以及最新、最早、名称、大小排序。本机导入、粘贴或 URL 导入会复制一份到图库；每张生成结果完成后也会自动加入。可查看或复制原图、编辑名称/收藏/标签、批量导出或删除、选择多张作为参考素材，或用一张图片开始编辑。
 
 - FLUX 支持区域构图与编辑；GPT Image 支持部分供应商的蒙版编辑；Qwen、Gemini Image 和 Seedream 支持多图参考与文字指令。
 - Google 官方路由可控制思考级别、联网搜索、文字说明与思考摘要；结果和图库预览保留参考来源与搜索建议。
@@ -59,26 +48,4 @@ bun run app:dev
 
 3. “轮换令牌”会使旧令牌立即失效，需更新客户端配置。
 
-**工具工作流**
-
-共 11 个工具，定义在 `shared/mcp-tools.json`。建议的工作流：
-
-1. 调用 `capabilities_get` 读取模型、供应商与目标路由的完整参数模式、默认值和限制——所有可调整的供应商/模型参数都通过该模式暴露，不需要单独的参数白名单。
-2. 调用 `workspace_get` 读取当前草稿、`version` 和路由能力，作为原子操作的基准。
-3. `workspace_patch` 携带 `expectedVersion` 原子地修改草稿，整体作为一步撤销；版本冲突返回 `VERSION_CONFLICT`，重新读取后再试。草稿不完整时返回校验问题列表而不会失败。
-4. `workspace_preview` 查看共享编译请求（图片为占位符，非供应商原生报文）后再决定是否提交。
-5. `task_submit` 提交当前版本的不可变快照；提交后界面继续编辑不会影响已提交任务。该操作会调用已配置的供应商账户并可能产生费用——没有额外的付费确认机制，是否提交由客户端决定。
-6. `task_get` 查询任务状态与结果资产 ID，`task_stop_remaining` 仅停止尚未发出的请求。
-7. `gallery_query` / `gallery_read` / `gallery_import` 直接操作图库；图片始终以资产 ID 引用，没有文件路径或任意文件系统访问。
-
-**幂等与计数**
-
-- `repeatCount` 是批次数（1–20 个独立单图请求）；路由参数里的原生 `count` 固定为 1。
-- `task_submit` 的 `idempotencyKey` 是 UUID，记录在持久化账本中；不确定的重试使用完全相同的 key 与 `expectedVersion`，返回原任务而不会重复计费，应用重启后仍然有效。同一 key 配不同版本会返回 `IDEMPOTENCY_CONFLICT`。
-
-**约束**
-
-- 桌面应用必须保持运行；关闭应用后服务与共享工作区同时结束。这不是独立守护进程，也不附带 MCP 客户端。
-- 服务不暴露供应商凭据、应用设置或文件系统路径；凭据始终保存在系统凭据管理器中。
-
-`bun run dev` 仅预览界面；完整功能请运行桌面应用。模型能力与 API 差异见[架构说明](docs/architecture.md)。
+`bun run dev` 仅预览界面；完整功能请运行Release版本桌面应用。
